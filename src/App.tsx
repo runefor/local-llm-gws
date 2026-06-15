@@ -176,62 +176,61 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-background text-text-primary flex flex-col selection:bg-primary-container selection:text-primary">
       {/* 탑 내비게이션 바 */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-surface-variant bg-surface sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+          <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center">
+            <span className="material-symbols-rounded text-primary text-xl">hub</span>
           </div>
           <div>
-            <h1 className="text-lg font-bold font-outfit tracking-wide bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+            <h1 className="text-base font-semibold tracking-wide text-text-primary">
               GWS Knowledge Extractor
             </h1>
-            <p className="text-xs text-indigo-400 font-medium">Local LLM & Privacy-First RAG</p>
+            <p className="text-xs text-primary font-medium">Local LLM & Privacy-First RAG</p>
           </div>
         </div>
 
         {/* 연결 상태 표시 */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           {/* 백엔드 상태 */}
-          <div className="flex items-center space-x-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50 text-xs">
-            <span className="text-slate-400 font-medium">Server:</span>
+          <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-full border border-surface-variant text-xs text-text-secondary">
+            <span className="font-medium">Server:</span>
             {backendStatus === "online" && (
-              <span className="flex items-center text-emerald-400 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-ping"></span>
+              <span className="flex items-center text-emerald-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span>
                 Online
               </span>
             )}
             {backendStatus === "connecting" && (
-              <span className="flex items-center text-amber-400 font-semibold animate-pulse">
+              <span className="flex items-center text-amber-600 font-medium">
                 Connecting...
               </span>
             )}
             {backendStatus === "offline" && (
-              <span className="flex items-center text-rose-400 font-semibold">
+              <span className="flex items-center text-rose-600 font-medium">
                 Offline
               </span>
             )}
             <button 
               onClick={checkBackend} 
-              className="ml-2 text-indigo-400 hover:text-indigo-300 transition-colors"
+              className="ml-1 text-primary hover:text-primary/80 transition-colors flex items-center cursor-pointer"
               title="다시 연결 테스트"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89" />
-              </svg>
+              <span className="material-symbols-rounded text-base">refresh</span>
             </button>
           </div>
 
           {/* GWS 인증 상태 */}
-          <div className="flex items-center space-x-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/50 text-xs">
-            <span className="text-slate-400 font-medium">Google:</span>
+          <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-full border border-surface-variant text-xs text-text-secondary">
+            <span className="font-medium">Google:</span>
             {authChecking ? (
-              <span className="text-slate-400">Checking...</span>
+              <span className="text-text-secondary">Checking...</span>
             ) : isGwsAuthenticated ? (
-              <span className="text-emerald-400 font-semibold">Connected</span>
+              <span className="text-emerald-600 font-medium flex items-center">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span>
+                Connected
+              </span>
             ) : (
               <button 
                 onClick={async () => {
@@ -276,19 +275,17 @@ export default function App() {
                     addLog(`로그인 요청 중 오류 발생: ${e}`);
                   }
                 }}
-                className="bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-2 py-0.5 rounded font-semibold transition-colors cursor-pointer"
+                className="bg-primary text-on-primary hover:bg-[#094cb3] px-2.5 py-0.5 rounded-full font-medium transition-colors cursor-pointer text-[11px]"
               >
                 Login Required
               </button>
             )}
             <button 
               onClick={checkGwsAuth} 
-              className="ml-2 text-indigo-400 hover:text-indigo-300 transition-colors"
+              className="ml-1 text-primary hover:text-primary/80 transition-colors flex items-center cursor-pointer"
               title="구글 상태 갱신"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89" />
-              </svg>
+              <span className="material-symbols-rounded text-base">refresh</span>
             </button>
           </div>
         </div>
@@ -301,66 +298,58 @@ export default function App() {
         <section className="lg:col-span-2 space-y-6">
           
           {/* 로컬 데이터 및 동기화 카드 */}
-          <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl p-6 border border-slate-800/80 shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full filter blur-3xl -z-10"></div>
-            
-            <h2 className="text-lg font-bold font-outfit mb-4 flex items-center text-white">
-              <svg className="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
+          <div className="bg-surface rounded-2xl p-6 border border-surface-variant/80 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] relative overflow-hidden">
+            <h2 className="text-base font-semibold mb-3 flex items-center text-text-primary">
+              <span className="material-symbols-rounded mr-2 text-primary">sync</span>
               Google Workspace 지식 동기화
             </h2>
-            <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+            <p className="text-xs text-text-secondary mb-6 leading-relaxed">
               Google Workspace의 이메일 및 문서 데이터를 정교하게 파싱하여 로컬 마크다운 파일로 추출합니다. 
               모든 처리는 로컬 백엔드(FastAPI)에서 안전하게 이루어집니다.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Gmail Sync Card */}
-              <div className="bg-slate-950/50 p-5 rounded-xl border border-slate-800/80 hover:border-indigo-500/30 transition-all flex flex-col justify-between group">
+              <div className="bg-white p-5 rounded-2xl border border-surface-variant hover:border-primary/20 transition-all flex flex-col justify-between group shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:scale-110 transition-transform duration-300">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
+                    <span className="p-2 rounded-xl bg-primary-container text-primary flex items-center justify-center w-9 h-9">
+                      <span className="material-symbols-rounded text-primary">mail</span>
                     </span>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 bg-slate-900 px-2 py-0.5 rounded">API Quota: Free</span>
+                    <span className="text-[10px] uppercase font-semibold text-text-secondary bg-surface px-2.5 py-0.5 rounded-full border border-surface-variant/60">API Quota: Free</span>
                   </div>
-                  <h3 className="font-bold text-slate-200 mb-1">Gmail 요약 데이터 추출</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                  <h3 className="font-semibold text-text-primary mb-1">Gmail 요약 데이터 추출</h3>
+                  <p className="text-xs text-text-secondary leading-relaxed mb-4">
                     최근 이메일 목록을 읽고 본문을 로컬에 저장합니다. (속도 제한기 30~40msg/s 반영)
                   </p>
                 </div>
                 <button 
                   onClick={handleGmailSync}
                   disabled={syncStatus === "syncing" || backendStatus !== "online"}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-all shadow-md shadow-indigo-600/10 active:scale-95"
+                  className="w-full bg-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/50 text-on-primary font-medium py-2.5 px-4 rounded-full text-xs transition-all active:scale-95 cursor-pointer disabled:cursor-default"
                 >
                   {syncStatus === "syncing" ? "동기화 중..." : "Gmail 동기화 실행"}
                 </button>
               </div>
 
               {/* Google Drive Sync Card */}
-              <div className="bg-slate-950/50 p-5 rounded-xl border border-slate-800/80 hover:border-violet-500/30 transition-all flex flex-col justify-between group">
+              <div className="bg-white p-5 rounded-2xl border border-surface-variant hover:border-primary/20 transition-all flex flex-col justify-between group shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="p-2.5 rounded-lg bg-violet-500/10 text-violet-400 group-hover:scale-110 transition-transform duration-300">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9" />
-                      </svg>
+                    <span className="p-2 rounded-xl bg-primary-container text-primary flex items-center justify-center w-9 h-9">
+                      <span className="material-symbols-rounded text-primary">folder_shared</span>
                     </span>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 bg-slate-900 px-2 py-0.5 rounded">Markdownify</span>
+                    <span className="text-[10px] uppercase font-semibold text-text-secondary bg-surface px-2.5 py-0.5 rounded-full border border-surface-variant/60">Markdownify</span>
                   </div>
-                  <h3 className="font-bold text-slate-200 mb-1">Google Drive 문서 추출</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                  <h3 className="font-semibold text-text-primary mb-1">Google Drive 문서 추출</h3>
+                  <p className="text-xs text-text-secondary leading-relaxed mb-4">
                     Docs, Sheets, PDF 파일만 골라 마크다운 포맷으로 변환 및 동기화합니다.
                   </p>
                 </div>
                 <button 
                   onClick={handleDriveSync}
                   disabled={syncStatus === "syncing" || backendStatus !== "online"}
-                  className="w-full bg-violet-600 hover:bg-violet-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-all shadow-md shadow-violet-600/10 active:scale-95"
+                  className="w-full bg-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/50 text-on-primary font-medium py-2.5 px-4 rounded-full text-xs transition-all active:scale-95 cursor-pointer disabled:cursor-default"
                 >
                   {syncStatus === "syncing" ? "동기화 중..." : "Drive 동기화 실행"}
                 </button>
@@ -369,14 +358,14 @@ export default function App() {
 
             {/* 진행 표시줄 */}
             {syncStatus === "syncing" && (
-              <div className="mt-6 space-y-2 animate-fade-in">
-                <div className="flex justify-between text-xs text-slate-400">
+              <div className="mt-5 space-y-2">
+                <div className="flex justify-between text-xs text-text-secondary">
                   <span className="font-medium">동기화 진척도</span>
-                  <span className="font-bold text-indigo-400">{syncProgress}%</span>
+                  <span className="font-bold text-primary">{syncProgress}%</span>
                 </div>
-                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div className="w-full bg-surface-variant h-2 rounded-full overflow-hidden">
                   <div 
-                    className="bg-gradient-to-r from-indigo-500 to-violet-500 h-full rounded-full transition-all duration-300"
+                    className="bg-primary h-full rounded-full transition-all duration-300"
                     style={{ width: `${syncProgress}%` }}
                   ></div>
                 </div>
@@ -386,25 +375,23 @@ export default function App() {
 
           {/* 동기화 데이터 목록 카드 */}
           {(gmailItems.length > 0 || driveItems.length > 0) && (
-            <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl p-6 border border-slate-800/80 shadow-xl animate-fade-in space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h2 className="text-lg font-bold font-outfit flex items-center text-white">
-                  <svg className="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+            <div className="bg-surface rounded-2xl p-6 border border-surface-variant shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] space-y-4">
+              <div className="flex items-center justify-between border-b border-surface-variant/80 pb-3">
+                <h2 className="text-base font-semibold flex items-center text-text-primary">
+                  <span className="material-symbols-rounded mr-2 text-primary">database</span>
                   동기화된 지식 데이터
                 </h2>
                 
-                <div className="flex space-x-2 bg-slate-950 p-1 rounded-lg border border-slate-850 text-xs">
+                <div className="flex space-x-1 bg-[#f0f4f9] p-1 rounded-full border border-surface-variant/40 text-xs">
                   <button 
                     onClick={() => setActiveTab("gmail")}
-                    className={`px-3 py-1.5 rounded-md font-medium transition-all ${activeTab === "gmail" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"}`}
+                    className={`px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer ${activeTab === "gmail" ? "bg-primary-container text-primary shadow-sm" : "text-text-secondary hover:text-text-primary"}`}
                   >
                     Gmail ({gmailItems.length})
                   </button>
                   <button 
                     onClick={() => setActiveTab("drive")}
-                    className={`px-3 py-1.5 rounded-md font-medium transition-all ${activeTab === "drive" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"}`}
+                    className={`px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer ${activeTab === "drive" ? "bg-primary-container text-primary shadow-sm" : "text-text-secondary hover:text-text-primary"}`}
                   >
                     Drive ({driveItems.length})
                   </button>
@@ -412,57 +399,51 @@ export default function App() {
               </div>
 
               {activeTab === "gmail" ? (
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
                   {gmailItems.length === 0 ? (
-                    <div className="text-center py-8 text-slate-500 text-sm">
+                    <div className="text-center py-8 text-text-secondary text-xs">
                       가져온 Gmail 데이터가 없습니다. 상단에서 동기화를 실행하세요.
                     </div>
                   ) : (
                     gmailItems.map((item) => (
-                      <div key={item.id} className="bg-slate-950/40 p-4 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all">
+                      <div key={item.id} className="bg-white p-4 rounded-2xl border border-surface-variant hover:border-primary/20 transition-all shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
                         <div className="flex justify-between items-start mb-1.5">
-                          <span className="text-xs font-bold text-indigo-400 truncate max-w-[150px]">{item.from}</span>
-                          <span className="text-[10px] text-slate-500 font-mono">ID: {item.id}</span>
+                          <span className="text-xs font-semibold text-primary truncate max-w-[150px]">{item.from}</span>
+                          <span className="text-[10px] text-text-secondary font-mono">ID: {item.id}</span>
                         </div>
-                        <h4 className="text-sm font-bold text-slate-200 mb-1.5 line-clamp-1">{item.subject}</h4>
-                        <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{item.snippet}</p>
+                        <h4 className="text-sm font-semibold text-text-primary mb-1.5 line-clamp-1">{item.subject}</h4>
+                        <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">{item.snippet}</p>
                       </div>
                     ))
                   )}
                 </div>
               ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
                   {driveItems.length === 0 ? (
-                    <div className="text-center py-8 text-slate-500 text-sm">
+                    <div className="text-center py-8 text-text-secondary text-xs">
                       가져온 Google Drive 문서가 없습니다. 상단에서 동기화를 실행하세요.
                     </div>
                   ) : (
                     driveItems.map((item) => (
-                      <div key={item.id} className="bg-slate-950/40 p-4 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all flex items-center justify-between">
+                      <div key={item.id} className="bg-white p-4 rounded-2xl border border-surface-variant hover:border-primary/20 transition-all flex items-center justify-between shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
                         <div className="flex items-center space-x-3 overflow-hidden mr-4">
-                          <span className="p-2 rounded-lg bg-slate-900 text-indigo-400 flex-shrink-0">
+                          <span className="p-2 rounded-xl bg-surface-variant/30 text-primary flex items-center justify-center w-8 h-8 flex-shrink-0">
                             {item.mimeType.includes("document") ? (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                              </svg>
+                              <span className="material-symbols-rounded text-lg text-primary">description</span>
                             ) : item.mimeType.includes("spreadsheet") ? (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
+                              <span className="material-symbols-rounded text-lg text-primary">table_chart</span>
                             ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                              </svg>
+                              <span className="material-symbols-rounded text-lg text-primary">article</span>
                             )}
                           </span>
                           <div className="overflow-hidden">
-                            <h4 className="text-sm font-bold text-slate-200 truncate">{item.name}</h4>
-                            <p className="text-[10px] text-slate-500 font-mono mt-0.5">MimeType: {item.mimeType.split('.').pop()}</p>
+                            <h4 className="text-sm font-semibold text-text-primary truncate">{item.name}</h4>
+                            <p className="text-[10px] text-text-secondary font-mono mt-0.5">MimeType: {item.mimeType.split('.').pop()}</p>
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <span className="text-[10px] text-slate-400 block font-mono">{new Date(item.modifiedTime).toLocaleDateString()}</span>
-                          <span className="text-[9px] text-slate-500 block font-mono mt-0.5">{new Date(item.modifiedTime).toLocaleTimeString()}</span>
+                          <span className="text-[10px] text-text-secondary block font-mono">{new Date(item.modifiedTime).toLocaleDateString()}</span>
+                          <span className="text-[9px] text-text-secondary block font-mono mt-0.5">{new Date(item.modifiedTime).toLocaleTimeString()}</span>
                         </div>
                       </div>
                     ))
@@ -473,14 +454,12 @@ export default function App() {
           )}
 
           {/* 로컬 폴더 정책 안내 */}
-          <div className="bg-slate-900/30 rounded-2xl p-5 border border-slate-800/60 text-xs text-slate-400 flex items-start space-x-3">
-            <svg className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+          <div className="bg-primary-container/20 rounded-2xl p-5 border border-primary-container/30 text-xs text-text-secondary flex items-start space-x-3">
+            <span className="material-symbols-rounded text-primary flex-shrink-0 text-lg">security</span>
             <div>
-              <p className="font-bold text-slate-300 mb-1">엄격한 데이터 로컬(Local Only) 보존 원칙</p>
+              <p className="font-semibold text-text-primary mb-1">엄격한 데이터 로컬(Local Only) 보존 원칙</p>
               <p className="leading-relaxed">
-                가져온 이메일 캐시, 토큰 정보, 변환된 옵시디언 마크다운 지식베이스는 모두 실행 디렉토리 하위의 <code className="text-indigo-300 font-mono">./data/</code> 폴더 내에 저장되며, OS 시스템 폴더를 침범하지 않는 포터블 사양입니다.
+                가져온 이메일 캐시, 토큰 정보, 변환된 옵시디언 마크다운 지식베이스는 모두 실행 디렉토리 하위의 <code className="text-primary font-mono bg-primary-container/30 px-1 py-0.5 rounded">./data/</code> 폴더 내에 저장되며, OS 시스템 폴더를 침범하지 않는 포터블 사양입니다.
               </p>
             </div>
           </div>
@@ -490,42 +469,40 @@ export default function App() {
         <section className="space-y-6">
           
           {/* LLM 런타임 연동 설정 */}
-          <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl p-6 border border-slate-800/80 shadow-xl">
-            <h2 className="text-lg font-bold font-outfit mb-4 flex items-center text-white">
-              <svg className="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
+          <div className="bg-surface rounded-2xl p-6 border border-surface-variant shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]">
+            <h2 className="text-base font-semibold mb-3 flex items-center text-text-primary">
+              <span className="material-symbols-rounded mr-2 text-primary">dns</span>
               Local LLM 설정
             </h2>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+            <p className="text-xs text-text-secondary mb-4 leading-relaxed">
               LM Studio, Jan, GPT4All 등 로컬 LLM 런타임의 OpenAI 호환 주소를 입력해 연동하세요.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">API Endpoint URL</label>
+                <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">API Endpoint URL</label>
                 <input 
                   type="text" 
                   value={llmEndpoint}
                   onChange={(e) => setLlmEndpoint(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                  className="w-full bg-white border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-mono transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Model Name</label>
+                <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Model Name</label>
                 <input 
                   type="text" 
                   value={llmModel}
                   onChange={(e) => setLlmModel(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                  className="w-full bg-white border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-mono transition-colors"
                 />
               </div>
 
               <div className="pt-2">
                 <button 
                   onClick={handleLlmTest}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2 px-4 rounded-lg text-xs transition-colors border border-slate-700/50"
+                  className="w-full bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2.5 px-4 rounded-full text-xs transition-colors border border-surface-variant cursor-pointer"
                 >
                   LLM 서버 연결 테스트
                 </button>
@@ -534,18 +511,16 @@ export default function App() {
           </div>
 
           {/* RAG 및 지식 추출 맛보기 */}
-          <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl p-6 border border-slate-800/80 shadow-xl">
-            <h2 className="text-lg font-bold font-outfit mb-4 flex items-center text-white">
-              <svg className="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-              </svg>
+          <div className="bg-surface rounded-2xl p-6 border border-surface-variant shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]">
+            <h2 className="text-base font-semibold mb-3 flex items-center text-text-primary">
+              <span className="material-symbols-rounded mr-2 text-primary">search</span>
               RAG 지식 검색 테스트
             </h2>
             <div className="space-y-3">
               <input 
                 type="text" 
                 placeholder="지식베이스에서 검색할 질문을 입력하세요..." 
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-white border border-surface-variant rounded-lg px-3 py-2.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     const value = e.currentTarget.value;
@@ -558,7 +533,7 @@ export default function App() {
                   }
                 }}
               />
-              <p className="text-[10px] text-slate-500 leading-normal">
+              <p className="text-[10px] text-text-secondary leading-normal">
                 동기화된 옵시디언 마크다운 지식 베이스를 바탕으로 로컬 임베딩 DB(ChromaDB)와 연동해 질문할 수 있습니다. (엔터키를 눌러 테스트)
               </p>
             </div>
@@ -569,26 +544,26 @@ export default function App() {
       </main>
 
       {/* 하단 로그 콘솔 */}
-      <footer className="border-t border-slate-800 bg-slate-950 p-4 font-mono text-xs">
+      <footer className="border-t border-surface-variant bg-[#f0f4f9] p-4 font-mono text-xs text-text-secondary">
         <div className="max-w-7xl mx-auto w-full">
-          <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-850">
-            <span className="text-slate-400 font-bold flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mr-2 animate-pulse"></span>
+          <div className="flex items-center justify-between mb-2 pb-2 border-b border-surface-variant/80">
+            <span className="text-text-primary font-semibold flex items-center">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary mr-2"></span>
               동기화 및 API 시스템 로그
             </span>
             <button 
               onClick={() => setSyncLog([])} 
-              className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+              className="text-[10px] text-text-secondary hover:text-primary transition-colors cursor-pointer"
             >
               Clear Logs
             </button>
           </div>
-          <div className="h-32 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent pr-2 flex flex-col-reverse">
+          <div className="h-32 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent pr-2 flex flex-col-reverse">
             {syncLog.length === 0 ? (
-              <span className="text-slate-600 italic">로그가 비어 있습니다. 동기화를 진행하거나 백엔드 서버를 확인하세요.</span>
+              <span className="text-text-secondary italic">로그가 비어 있습니다. 동기화를 진행하거나 백엔드 서버를 확인하세요.</span>
             ) : (
               syncLog.map((log, index) => (
-                <div key={index} className="text-slate-300 hover:bg-slate-900/50 px-1 py-0.5 rounded transition-colors">
+                <div key={index} className="text-text-secondary hover:bg-primary-container/20 px-1 py-0.5 rounded transition-colors">
                   {log}
                 </div>
               ))
