@@ -39,6 +39,10 @@ interface AppContextType {
   setLlmEndpoint: (endpoint: string) => void;
   llmModel: string;
   setLlmModel: (model: string) => void;
+  llmMode: "internal" | "external";
+  setLlmMode: (mode: "internal" | "external") => void;
+  saveLlmConfig: (endpoint: string, model: string, mode: "llamacpp" | "ollama" | "external") => Promise<void>;
+  handleLlmDisconnect: () => Promise<void>;
   detectedServers: any[];
   isDetecting: boolean;
   scanLocalServers: () => Promise<void>;
@@ -79,6 +83,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // LLM 설정 상태
   const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:1234/v1");
   const [llmModel, setLlmModel] = useState("gemma4-9b-it");
+  const [llmMode, setLlmMode] = useState<"internal" | "external">("internal");
   
   // 로컬 LLM 자동 감지 상태
   const [detectedServers, setDetectedServers] = useState<any[]>([]);
@@ -249,6 +254,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // 백엔드로부터 LLM 설정 로드
+  const fetchLlmConfig = async () => {
+    try {
+      const response = await fetch("http://localhost:8000/api/llm/config");
+      if (response.ok) {
+        const data = await response.json();
+        setLlmEndpoint(data.endpoint);
+        setLlmModel(data.model);
+        if (data.mode === "llamacpp") {
+          setLlmMode("internal");
+        } else {
+          setLlmMode("external");
+        }
+        addLog(`로컬 LLM 설정 로드 완료: ${data.mode} 모드 - ${data.model}`);
+      }
+    } catch (error) {
+      console.error("LLM 설정 조회 실패:", error);
+    }
+  };
+
+  // 백엔드에 LLM 설정 저장 및 동기화
+  const saveLlmConfig = async (endpoint: string, model: string, mode: "llamacpp" | "ollama" | "external") => {
+    try {
+      addLog(`백엔드 LLM 설정 동기화 시도... (${mode} 모드)`);
+      const response = await fetch("http://localhost:8000/api/llm/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint, model, mode })
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        addLog("백엔드 LLM 설정 동기화 완료.");
+        setLlmEndpoint(endpoint);
+        setLlmModel(model);
+        setLlmMode(mode === "llamacpp" ? "internal" : "external");
+      } else {
+        addLog(`백엔드 설정 동기화 실패: ${data.message}`);
+      }
+    } catch (error) {
+      addLog(`백엔드 설정 동기화 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+    }
+  };
+
+  // 연결 해제 처리
+  const handleLlmDisconnect = async () => {
+    addLog("로컬 LLM 연결 해제 요청");
+    await saveLlmConfig("http://localhost:8080/v1", "", "llamacpp");
+  };
+
   // 실제 로컬 LLM 연결 여부 테스트
   const handleLlmTest = async (overrideEndpoint?: string, overrideModel?: string) => {
     const targetEndpoint = overrideEndpoint || llmEndpoint;
@@ -263,8 +317,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       if (data.status === "success") {
         addLog(`로컬 LLM 연결 확인: 성공 (${targetModel} 응답 확인)`);
+        const mode = targetEndpoint.includes("11434") ? "ollama" : "external";
+        await saveLlmConfig(targetEndpoint, targetModel, mode);
       } else {
         addLog(`로컬 LLM 연결 실패: ${data.message}`);
+        alert(`연결 테스트 실패: ${data.message}`);
       }
     } catch (error) {
       addLog(`로컬 LLM 연결 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
@@ -377,16 +434,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 초기 로드 시 체크 진행
+  // 초기 로드 시 백엔드 체크
   useEffect(() => {
     checkBackend();
-    
-    const timer = setTimeout(() => {
-      checkGwsAuth();
-    }, 1500);
-
-    return () => clearTimeout(timer);
   }, []);
+
+  // 백엔드 온라인 연결 시 설정 로드
+  useEffect(() => {
+    if (backendStatus === "online") {
+      checkGwsAuth();
+      fetchLlmConfig();
+    }
+  }, [backendStatus]);
 
   return (
     <AppContext.Provider
@@ -402,6 +461,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setLlmEndpoint,
         llmModel,
         setLlmModel,
+        llmMode,
+        setLlmMode,
+        saveLlmConfig,
+        handleLlmDisconnect,
         detectedServers,
         isDetecting,
         scanLocalServers,

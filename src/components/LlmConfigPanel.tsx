@@ -19,11 +19,11 @@ export default function LlmConfigPanel() {
   const { 
     llmEndpoint, setLlmEndpoint, 
     llmModel, setLlmModel, 
+    llmMode, setLlmMode,
+    handleLlmDisconnect,
     handleLlmTest, addLog, backendStatus,
     detectedServers, isDetecting, scanLocalServers
   } = useApp();
-  
-  const [llmMode, setLlmMode] = useState<"internal" | "external">("internal");
   
   const [presets, setPresets] = useState<Preset[]>([]);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
@@ -505,13 +505,22 @@ export default function LlmConfigPanel() {
                           </div>
                         )}
 
-                        <button 
-                          onClick={() => handleConnectServer(server)}
-                          disabled={!hasModels}
-                          className="bg-primary hover:bg-[#094cb3] text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
-                        >
-                          연결
-                        </button>
+                        {isCurrentServer && llmMode === "external" ? (
+                          <button 
+                            onClick={() => handleLlmDisconnect()}
+                            className="bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors cursor-pointer shadow-sm"
+                          >
+                            연결 해제
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => handleConnectServer(server)}
+                            disabled={!hasModels}
+                            className="bg-primary hover:bg-[#094cb3] text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
+                          >
+                            연결
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -554,13 +563,21 @@ export default function LlmConfigPanel() {
                     placeholder="gemma-2-9b-it"
                   />
                 </div>
-                <div className="pt-1">
+                <div className="pt-1 flex gap-2">
                   <button 
                     onClick={() => handleLlmTest()}
-                    className="w-full bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-lg text-xs transition-colors border border-surface-variant cursor-pointer"
+                    className="flex-1 bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-lg text-xs transition-colors border border-surface-variant cursor-pointer"
                   >
                     LLM 서버 연결 테스트
                   </button>
+                  {llmMode === "external" && (
+                    <button 
+                      onClick={() => handleLlmDisconnect()}
+                      className="bg-red-50 dark:bg-red-950/20 hover:bg-red-100 text-red-600 dark:text-red-400 font-semibold py-2 px-4 rounded-lg text-xs transition-colors border border-red-200 dark:border-red-900/30 cursor-pointer"
+                    >
+                      연결 해제
+                    </button>
+                  )}
                 </div>
               </div>
             )}

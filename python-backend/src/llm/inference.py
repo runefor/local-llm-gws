@@ -84,8 +84,9 @@ def chat_completion(
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    if model:
-        payload["model"] = model
+    target_model = model or config.LLM_MODEL
+    if target_model:
+        payload["model"] = target_model
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
 

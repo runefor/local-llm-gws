@@ -257,6 +257,50 @@ def llm_server_status():
     return llm_server.get_server_status()
 
 
+class LLMConfigResponse(BaseModel):
+    endpoint: str
+    model: str
+    mode: str
+
+class LLMConfigRequest(BaseModel):
+    endpoint: str
+    model: str
+    mode: str
+
+@app.get("/api/llm/config", response_model=LLMConfigResponse)
+def get_llm_config_route():
+    """현재 백엔드에 설정된 로컬 LLM 환경 설정을 반환합니다."""
+    from config import config
+    if config.LLM_SERVE_MODE == "llamacpp":
+        current_endpoint = f"http://{config.LLAMACPP_HOST}:{config.LLAMACPP_PORT}/v1"
+    elif config.LLM_SERVE_MODE == "ollama":
+        current_endpoint = config.OLLAMA_BASE
+    else:
+        current_endpoint = config.LLM_API_BASE
+        
+    return {
+        "endpoint": current_endpoint,
+        "model": config.LLM_MODEL,
+        "mode": config.LLM_SERVE_MODE
+    }
+
+@app.post("/api/llm/config")
+def update_llm_config_route(req: LLMConfigRequest):
+    """백엔드의 로컬 LLM 환경 설정을 실시간으로 갱신합니다."""
+    try:
+        from config import config
+        config.LLM_SERVE_MODE = req.mode
+        config.LLM_MODEL = req.model
+        config.LLM_API_BASE = req.endpoint
+        
+        if req.mode == "ollama":
+            config.OLLAMA_BASE = req.endpoint
+            
+        return {"status": "success", "message": "LLM 설정이 정상적으로 업데이트되었습니다."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # -----------------------------------------------------------------------
 # RAG 파이프라인 API (Phase 2에서 구현체 채워짐)
 # -----------------------------------------------------------------------

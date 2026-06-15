@@ -31,6 +31,7 @@ class Config:
     #   "external" — 사용자가 직접 입력한 외부 OpenAI 호환 서버에 연결
     # -------------------------------------------------------------------
     LLM_SERVE_MODE: str = os.getenv("LLM_SERVE_MODE", "llamacpp")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "")
 
     # llama.cpp 내장 서버 기본 주소 (LLM_SERVE_MODE="llamacpp")
     LLAMACPP_HOST: str = os.getenv("LLAMACPP_HOST", "127.0.0.1")
