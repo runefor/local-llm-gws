@@ -1,151 +1,226 @@
 import os
-import psutil
+import subprocess
 import threading
 from typing import List, Dict, Optional
 from pathlib import Path
+from pydantic import BaseModel
 from huggingface_hub import hf_hub_download
 from config import config
 
-# 검증된 추천 모델 프리셋 리스트
+# -----------------------------------------------------------------------
+# 2026년형 추천 모델 프리셋 (Harness-1 문서 기반)
+# -----------------------------------------------------------------------
 PRESET_MODELS = [
     {
-        "id": "qwen2.5-3b-instruct",
-        "name": "Qwen 2.5 3B Instruct (초경량/8GB 추천)",
-        "repo_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
-        "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
+        "id": "qwen3-30b-a3b",
+        "name": "Qwen3-30B-A3B (CPU 전용 / GPU 없음)",
+        "repo_id": "Qwen/Qwen3-30B-A3B-GGUF",
+        "filename": "qwen3-30b-a3b-q4_k_m.gguf",
+        "profile": "cpu_only",
         "ram_gb_required": 8,
-        "description": "8GB 환경에서 매우 원활하게 구동되는 강력한 3B 크기의 최신 모델입니다."
+        "vram_gb_required": 0,
+        "description": "GPU 없이도 동작하는 MoE 모델. 활성 파라미터 3B 수준으로 CPU에서도 실용적 속도를 냅니다.",
     },
     {
-        "id": "llama-3.2-3b-instruct",
-        "name": "Llama 3.2 3B Instruct (초경량)",
-        "repo_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
-        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "id": "qwen3.5-9b",
+        "name": "Qwen 3.5 9B Instruct (VRAM 6GB 추천)",
+        "repo_id": "Qwen/Qwen3.5-9B-Instruct-GGUF",
+        "filename": "qwen3.5-9b-instruct-q4_k_m.gguf",
+        "profile": "entry_6gb",
         "ram_gb_required": 8,
-        "description": "Meta의 최신 3B 경량 모델입니다."
+        "vram_gb_required": 6,
+        "description": "6GB VRAM 환경에서 35~55 tok/s. 한국어 지시 이행력이 뛰어납니다.",
     },
     {
-        "id": "gemma-2-9b-it",
-        "name": "Gemma 2 9B IT (표준/16GB 추천)",
-        "repo_id": "bartowski/gemma-2-9b-it-GGUF",
-        "filename": "gemma-2-9b-it-Q4_K_M.gguf",
+        "id": "gemma4-12b-q4",
+        "name": "Gemma 4 12B IT QAT Q4_0 (VRAM 8GB 추천)",
+        "repo_id": "google/gemma-4-12b-it-qat-q4_0-gguf",
+        "filename": "gemma-4-12b-it-qat-q4_0.gguf",
+        "profile": "mid_8gb",
         "ram_gb_required": 16,
-        "description": "16GB 환경에 적합한 구글의 강력한 9B 모델입니다. 한국어 처리가 우수합니다."
-    }
+        "vram_gb_required": 8,
+        "description": "QAT 기법으로 정확도 손실 없이 6.6GB VRAM만으로 구동. 초당 45~65 토큰.",
+    },
+    {
+        "id": "gemma4-12b-q5",
+        "name": "Gemma 4 12B IT Q5_K_M (VRAM 12GB 추천)",
+        "repo_id": "bartowski/gemma-4-12b-it-GGUF",
+        "filename": "gemma-4-12b-it-Q5_K_M.gguf",
+        "profile": "high_12gb",
+        "ram_gb_required": 16,
+        "vram_gb_required": 12,
+        "description": "12GB VRAM에서 50~90 tok/s. MMLU Pro 77.2% 기록, 구형 27B 성능 추월.",
+    },
+    {
+        "id": "deepseek-r1-14b",
+        "name": "DeepSeek-R1-Distill-Qwen-14B Q5_K_M (VRAM 16GB 추천)",
+        "repo_id": "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+        "filename": "DeepSeek-R1-Distill-Qwen-14B-Q5_K_M.gguf",
+        "profile": "ultra_16gb",
+        "ram_gb_required": 32,
+        "vram_gb_required": 16,
+        "description": "o1급 수리 논리력. 자가 디버깅 및 <think> 추론 체인 지원. 60~100 tok/s.",
+    },
 ]
 
-# 메모리 기반 다운로드 상태 추적용 변수
-_download_tasks = {}
+# 메모리 기반 다운로드 상태 추적
+_download_tasks: Dict[str, Dict] = {}
 
-def get_system_ram_gb() -> int:
-    """시스템의 총 RAM 용량을 GB 단위로 반환합니다."""
-    return round(psutil.virtual_memory().total / (1024**3))
+
+# -----------------------------------------------------------------------
+# 하드웨어 프로파일
+# -----------------------------------------------------------------------
+class HardwareProfile(BaseModel):
+    ram_gb: int
+    gpu_name: str = "없음"
+    vram_gb: int = 0          # 0 = GPU 없음 또는 감지 실패
+    profile_tier: str = "cpu_only"  # cpu_only / entry_6gb / mid_8gb / high_12gb / ultra_16gb
+
+
+def _detect_vram_nvidia() -> tuple[str, int]:
+    """nvidia-smi로 첫 번째 GPU 이름과 VRAM(GB)을 반환합니다."""
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            timeout=5,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip().split("\n")[0]
+        parts = [p.strip() for p in out.split(",")]
+        name = parts[0]
+        vram_mb = int(parts[1])
+        return name, vram_mb // 1024
+    except Exception:
+        return "", 0
+
+
+def get_hardware_profile() -> HardwareProfile:
+    """현재 시스템의 하드웨어 프로파일을 반환합니다."""
+    import psutil
+
+    ram_gb = round(psutil.virtual_memory().total / (1024 ** 3))
+    gpu_name, vram_gb = _detect_vram_nvidia()
+
+    if vram_gb == 0:
+        tier = "cpu_only"
+    elif vram_gb <= 6:
+        tier = "entry_6gb"
+    elif vram_gb <= 8:
+        tier = "mid_8gb"
+    elif vram_gb <= 12:
+        tier = "high_12gb"
+    else:
+        tier = "ultra_16gb"
+
+    return HardwareProfile(
+        ram_gb=ram_gb,
+        gpu_name=gpu_name or "없음",
+        vram_gb=vram_gb,
+        profile_tier=tier,
+    )
+
 
 def get_recommended_model_id() -> str:
-    """현재 시스템 사양에 맞는 추천 모델 ID를 반환합니다."""
-    ram = get_system_ram_gb()
-    if ram < 12:
-        return "qwen2.5-3b-instruct"
-    else:
-        return "gemma-2-9b-it"
+    """현재 하드웨어 프로파일에 맞는 추천 모델 ID를 반환합니다."""
+    hw = get_hardware_profile()
+    tier_map = {
+        "cpu_only":   "qwen3-30b-a3b",
+        "entry_6gb":  "qwen3.5-9b",
+        "mid_8gb":    "gemma4-12b-q4",
+        "high_12gb":  "gemma4-12b-q5",
+        "ultra_16gb": "deepseek-r1-14b",
+    }
+    return tier_map.get(hw.profile_tier, "qwen3-30b-a3b")
+
 
 def get_preset_models() -> List[Dict]:
     return PRESET_MODELS
+
 
 def get_local_models() -> List[Dict]:
     """로컬 models 디렉토리에 존재하는 GGUF 파일 목록을 반환합니다."""
     models_dir = Path(config.MODELS_DIR)
     local_files = []
-    
+
     if models_dir.exists():
         for file in models_dir.glob("*.gguf"):
-            matched_preset = next((p for p in PRESET_MODELS if p["filename"] == file.name), None)
+            matched = next((p for p in PRESET_MODELS if p["filename"] == file.name), None)
             local_files.append({
                 "filename": file.name,
                 "path": str(file),
-                "size_mb": round(file.stat().st_size / (1024**2), 2),
-                "preset_id": matched_preset["id"] if matched_preset else None,
-                "name": matched_preset["name"] if matched_preset else file.name
+                "size_mb": round(file.stat().st_size / (1024 ** 2), 2),
+                "preset_id": matched["id"] if matched else None,
+                "name": matched["name"] if matched else file.name,
+                "profile": matched["profile"] if matched else "unknown",
             })
     return local_files
 
+
 def is_model_downloaded(filename: str) -> bool:
-    models_dir = Path(config.MODELS_DIR)
-    return (models_dir / filename).exists()
+    return (Path(config.MODELS_DIR) / filename).exists()
+
 
 def download_model_background(preset_id: str):
-    """백그라운드에서 모델을 다운로드합니다."""
+    """백그라운드에서 HuggingFace로부터 모델을 다운로드합니다."""
     preset = next((p for p in PRESET_MODELS if p["id"] == preset_id), None)
     if not preset:
-        raise ValueError("Invalid preset_id")
-        
+        raise ValueError(f"알 수 없는 preset_id: {preset_id}")
+
     filename = preset["filename"]
     if is_model_downloaded(filename):
         return
-        
+
     if preset_id in _download_tasks and _download_tasks[preset_id]["status"] == "downloading":
         return
-        
-    _download_tasks[preset_id] = {
-        "status": "downloading",
-        "progress": 0.0,
-        "error": None
-    }
-    
-    def _download_thread():
+
+    _download_tasks[preset_id] = {"status": "downloading", "progress": 0.0, "error": None}
+
+    def _thread():
+        import httpx
+
+        url = f"https://huggingface.co/{preset['repo_id']}/resolve/main/{preset['filename']}"
+        models_dir = Path(config.MODELS_DIR)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        dest = models_dir / filename
+        tmp = models_dir / f"{filename}.downloading"
+
         try:
-            url = f"https://huggingface.co/{preset['repo_id']}/resolve/main/{preset['filename']}"
-            models_dir = Path(config.MODELS_DIR)
-            models_dir.mkdir(parents=True, exist_ok=True)
-            
-            dest_path = models_dir / preset["filename"]
-            temp_path = models_dir / f"{preset['filename']}.downloading"
-            
-            import httpx
-            # 리다이렉션을 추적하며 청크 단위 스트리밍을 수행합니다.
-            with httpx.stream("GET", url, follow_redirects=True, timeout=60.0) as response:
-                if response.status_code != 200:
-                    raise Exception(f"HTTP 에러 {response.status_code}: 다운로드 주소에 접근할 수 없습니다.")
-                
-                total_bytes = int(response.headers.get("content-length", 0))
-                downloaded_bytes = 0
-                
-                with open(temp_path, "wb") as f:
-                    for chunk in response.iter_bytes(chunk_size=1024 * 1024):  # 1MB 청크
+            with httpx.stream("GET", url, follow_redirects=True, timeout=60.0) as r:
+                if r.status_code != 200:
+                    raise Exception(f"HTTP {r.status_code}")
+                total = int(r.headers.get("content-length", 0))
+                done = 0
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_bytes(chunk_size=1024 * 1024):
                         f.write(chunk)
-                        downloaded_bytes += len(chunk)
-                        if total_bytes > 0:
-                            progress_val = round((downloaded_bytes / total_bytes) * 100, 1)
-                            _download_tasks[preset_id]["progress"] = progress_val
-            
-            # 다운로드 완료 후 임시 파일을 정식 모델 경로로 교체
-            if temp_path.exists():
-                if dest_path.exists():
-                    dest_path.unlink()
-                temp_path.rename(dest_path)
-                
+                        done += len(chunk)
+                        if total > 0:
+                            _download_tasks[preset_id]["progress"] = round(done / total * 100, 1)
+
+            if tmp.exists():
+                if dest.exists():
+                    dest.unlink()
+                tmp.rename(dest)
+
             _download_tasks[preset_id]["status"] = "completed"
             _download_tasks[preset_id]["progress"] = 100.0
+
         except Exception as e:
-            # 실패 시 다운로드 중이던 임시 파일 삭제
-            temp_path = Path(config.MODELS_DIR) / f"{preset['filename']}.downloading"
-            if temp_path.exists():
+            if tmp.exists():
                 try:
-                    temp_path.unlink()
+                    tmp.unlink()
                 except Exception:
                     pass
             _download_tasks[preset_id]["status"] = "error"
             _download_tasks[preset_id]["error"] = str(e)
-            
-    threading.Thread(target=_download_thread, daemon=True).start()
+
+    threading.Thread(target=_thread, daemon=True).start()
 
 
 def get_download_status(preset_id: str) -> Optional[Dict]:
-    """특정 모델의 다운로드 상태를 반환합니다."""
     return _download_tasks.get(preset_id)
 
+
 def delete_local_model(filename: str) -> bool:
-    """로컬 모델 파일을 삭제합니다."""
     filepath = Path(config.MODELS_DIR) / filename
     if filepath.exists():
         try:

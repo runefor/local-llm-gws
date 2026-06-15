@@ -14,6 +14,19 @@ export interface DriveItem {
   modifiedTime: string;
 }
 
+export interface AgentTurnLog {
+  turn: number;
+  thought: string;
+  action: string;
+  arguments: any;
+  result: string;
+  state?: {
+    curated_evidence: any[];
+    verification: any[];
+    search_history: string[];
+  };
+}
+
 interface AppContextType {
   backendStatus: "connecting" | "online" | "offline";
   isGwsAuthenticated: boolean;
@@ -37,6 +50,14 @@ interface AppContextType {
   handleLlmTest: () => Promise<void>;
   addLog: (msg: string) => void;
   triggerGoogleLogin: () => Promise<void>;
+  
+  // 에이전트 상태 및 함수 추가
+  agentStatus: "idle" | "running" | "done" | "error";
+  agentResult: string;
+  agentLogs: AgentTurnLog[];
+  agentActiveTurns: number;
+  runAgentHarness: (query: string, maxTurns?: number) => Promise<void>;
+  cancelAgentHarness: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -60,6 +81,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncLog, setSyncLog] = useState<string[]>([]);
+
+  // 에이전트 하네스 상태
+  const [agentStatus, setAgentStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [agentResult, setAgentResult] = useState("");
+  const [agentLogs, setAgentLogs] = useState<AgentTurnLog[]>([]);
+  const [agentActiveTurns, setAgentActiveTurns] = useState(0);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
@@ -234,6 +262,95 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // 에이전트 SSE 스트리밍 구동 함수
+  const runAgentHarness = async (query: str, maxTurns: number = 15) => {
+    if (backendStatus !== "online") {
+      addLog("오류: 백엔드 서버가 오프라인입니다.");
+      return;
+    }
+    
+    // 이전 실행 정리 및 초기화
+    if (abortController) {
+      abortController.abort();
+    }
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    setAgentStatus("running");
+    setAgentResult("");
+    setAgentLogs([]);
+    setAgentActiveTurns(0);
+    addLog(`하네스 에이전트 루프 실행 시작: "${query}"`);
+
+    try {
+      const url = `http://localhost:8000/api/agent/run/stream?query=${encodeURIComponent(query)}&max_turns=${maxTurns}`;
+      const response = await fetch(url, {
+        signal: controller.signal
+      });
+
+      if (!response.body) {
+        throw new Error("응답 바디를 읽을 수 없습니다.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.event === "turn") {
+                const turnData: AgentTurnLog = parsed.data;
+                setAgentActiveTurns(turnData.turn);
+                setAgentLogs((prev) => [...prev, turnData]);
+                addLog(`에이전트 턴 ${turnData.turn}: ${turnData.action} 실행`);
+              } else if (parsed.event === "final") {
+                const finalResult = parsed.data;
+                setAgentResult(finalResult.answer);
+                setAgentStatus("done");
+                addLog("하네스 에이전트 실행 완료.");
+              }
+            } catch (err) {
+              console.error("SSE 파싱 에러:", err);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        addLog("사용자가 에이전트 실행을 중단시켰습니다.");
+        setAgentStatus("idle");
+      } else {
+        setAgentStatus("error");
+        setAgentResult(error instanceof Error ? error.message : "네트워크 오류 발생");
+        addLog(`에이전트 실행 중 오류: ${error instanceof Error ? error.message : "알 수 없음"}`);
+      }
+    } finally {
+      setAbortController(null);
+    }
+  };
+
+  // 에이전트 취소 함수
+  const cancelAgentHarness = () => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+      setAgentStatus("idle");
+    }
+  };
+
   // 초기 로드 시 체크 진행
   useEffect(() => {
     checkBackend();
@@ -270,6 +387,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         handleLlmTest,
         addLog,
         triggerGoogleLogin,
+        
+        // 에이전트 상태 및 함수 주입
+        agentStatus,
+        agentResult,
+        agentLogs,
+        agentActiveTurns,
+        runAgentHarness,
+        cancelAgentHarness,
       }}
     >
       {children}

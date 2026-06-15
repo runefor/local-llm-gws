@@ -12,7 +12,6 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "vectordb").mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "models").mkdir(parents=True, exist_ok=True)
 
-
 # 환경 변수 로드
 env_path = BASE_DIR / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -23,9 +22,40 @@ class Config:
     CREDENTIALS_PATH = DATA_DIR / "client_secrets.json"
     TOKEN_PATH = DATA_DIR / "token.json"
     MODELS_DIR = DATA_DIR / "models"
-    
-    # LLM API 서버 (기본값: llama.cpp / LM Studio 로컬 서버)
-    LLM_API_BASE = os.getenv("LLM_API_BASE", "http://localhost:1234/v1")
-    LLM_API_KEY = os.getenv("LLM_API_KEY", "not-needed")
+
+    # -------------------------------------------------------------------
+    # LLM 추론 서버 설정
+    # LLM_SERVE_MODE:
+    #   "llamacpp" — 내장 llama.cpp 서버를 자동 기동 (기본값)
+    #   "ollama"   — 로컬 Ollama 서버에 연결
+    #   "external" — 사용자가 직접 입력한 외부 OpenAI 호환 서버에 연결
+    # -------------------------------------------------------------------
+    LLM_SERVE_MODE: str = os.getenv("LLM_SERVE_MODE", "llamacpp")
+
+    # llama.cpp 내장 서버 기본 주소 (LLM_SERVE_MODE="llamacpp")
+    LLAMACPP_HOST: str = os.getenv("LLAMACPP_HOST", "127.0.0.1")
+    LLAMACPP_PORT: int = int(os.getenv("LLAMACPP_PORT", "8080"))
+
+    # Ollama 서버 주소 (LLM_SERVE_MODE="ollama")
+    OLLAMA_BASE: str = os.getenv("OLLAMA_BASE", "http://localhost:11434/v1")
+
+    # 외부 API 주소 (LLM_SERVE_MODE="external" 또는 레거시 호환용)
+    LLM_API_BASE: str = os.getenv("LLM_API_BASE", "http://127.0.0.1:8080/v1")
+    LLM_API_KEY: str = os.getenv("LLM_API_KEY", "not-needed")
+
+    # -------------------------------------------------------------------
+    # ChromaDB 설정
+    # -------------------------------------------------------------------
+    CHROMA_DB_PATH = DATA_DIR / "vectordb"
+    CHROMA_COLLECTION_GMAIL: str = "gws_gmail"
+    CHROMA_COLLECTION_DRIVE: str = "gws_drive"
+
+    # -------------------------------------------------------------------
+    # 하네스 에이전트 설정
+    # -------------------------------------------------------------------
+    HARNESS_MAX_TURNS: int = int(os.getenv("HARNESS_MAX_TURNS", "15"))
+    HARNESS_TOP_K: int = int(os.getenv("HARNESS_TOP_K", "5"))           # RAG 검색 top-k
+    HARNESS_BM25_TOP_N: int = int(os.getenv("HARNESS_BM25_TOP_N", "4")) # 문장 압축 보존 개수
+
 
 config = Config()

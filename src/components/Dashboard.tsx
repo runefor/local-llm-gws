@@ -2,6 +2,7 @@ import SyncPanel from "./SyncPanel";
 import DataListPanel from "./DataListPanel";
 import LlmConfigPanel from "./LlmConfigPanel";
 import RagSearchPanel from "./RagSearchPanel";
+import AgentPanel from "./AgentPanel";
 
 export default function Dashboard() {
   return (
@@ -10,6 +11,7 @@ export default function Dashboard() {
       <section className="lg:col-span-2 space-y-6">
         <SyncPanel />
         <DataListPanel />
+        <AgentPanel />
         
         {/* 로컬 폴더 정책 안내 */}
         <div className="bg-primary-container/20 rounded-2xl p-5 border border-primary-container/30 text-xs text-text-secondary flex items-start space-x-3">

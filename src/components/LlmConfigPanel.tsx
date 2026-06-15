@@ -16,7 +16,7 @@ interface LocalModel {
 }
 
 export default function LlmConfigPanel() {
-  const { llmEndpoint, setLlmEndpoint, llmModel, setLlmModel, handleLlmTest, addLog } = useApp();
+  const { llmEndpoint, setLlmEndpoint, llmModel, setLlmModel, handleLlmTest, addLog, backendStatus } = useApp();
   
   const [llmMode, setLlmMode] = useState<"internal" | "external">("internal");
   
@@ -28,6 +28,27 @@ export default function LlmConfigPanel() {
   const [progress, setProgress] = useState<number>(0);
   const [backendOffline, setBackendOffline] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // 내장 서버 프로세스 관리 상태 추가
+  const [serverStatus, setServerStatus] = useState<{ running: boolean; model: string | null; endpoint: string | null }>({
+    running: false,
+    model: null,
+    endpoint: null
+  });
+  const [serverActionLoading, setServerActionLoading] = useState(false);
+
+  // 내장 서버 실행 상태 조회
+  const fetchServerStatus = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/llm/server/status");
+      if (res.ok) {
+        const data = await res.json();
+        setServerStatus(data);
+      }
+    } catch (e) {
+      console.error("서버 상태 조회 실패", e);
+    }
+  };
 
   const fetchModels = async () => {
     setIsLoading(true);
@@ -59,9 +80,70 @@ export default function LlmConfigPanel() {
     }
   };
 
+  // 내장 서버 시작 요청
+  const handleStartServer = async () => {
+    if (!llmModel) return;
+    setServerActionLoading(true);
+    addLog(`내장 서버 기동 요청: ${llmModel}`);
+    try {
+      const res = await fetch("http://localhost:8000/api/llm/server/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_filename: llmModel })
+      });
+      const data = await res.json();
+      if (data.status === "started" || data.status === "running") {
+        addLog(`내장 서버 기동 완료: ${data.message}`);
+        fetchServerStatus();
+      } else {
+        addLog(`내장 서버 기동 실패: ${data.message}`);
+        alert(`서버 기동에 실패했습니다: ${data.message}`);
+      }
+    } catch (err) {
+      addLog("서버 기동 요청 중 에러 발생");
+    } finally {
+      setServerActionLoading(false);
+    }
+  };
+
+  // 내장 서버 종료 요청
+  const handleStopServer = async () => {
+    setServerActionLoading(true);
+    addLog("내장 서버 종료 요청");
+    try {
+      const res = await fetch("http://localhost:8000/api/llm/server/stop", { method: "POST" });
+      const data = await res.json();
+      if (data.status === "stopped") {
+        addLog("내장 서버가 종료되었습니다.");
+        fetchServerStatus();
+      } else {
+        addLog(`내장 서버 종료 실패: ${data.message}`);
+      }
+    } catch (err) {
+      addLog("서버 종료 요청 중 에러 발생");
+    } finally {
+      setServerActionLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchModels();
-  }, []);
+    if (backendStatus === "online") {
+      fetchServerStatus();
+    }
+  }, [backendStatus]);
+
+  // 내장 서버 실행 여부 실시간 모니터링 폴링 (3초 간격)
+  useEffect(() => {
+    let timer: any;
+    if (backendStatus === "online") {
+      timer = setInterval(() => {
+        fetchServerStatus();
+      }, 3000);
+    }
+    return () => clearInterval(timer);
+  }, [backendStatus]);
+
 
   // 다운로드 진행상황 폴링
   useEffect(() => {
@@ -196,16 +278,47 @@ export default function LlmConfigPanel() {
                 </p>
               </div>
             ) : (
-              <select 
-                value={localModels.find(m => m.filename === llmModel) ? llmModel : (localModels[0]?.filename || "")}
-                onChange={(e) => setLlmModel(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded px-2.5 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
-              >
-                {localModels.map(m => (
-                  <option key={m.filename} value={m.filename}>{m.name} ({m.size_mb} MB)</option>
-                ))}
-              </select>
+              <div className="space-y-3">
+                <select 
+                  value={localModels.find(m => m.filename === llmModel) ? llmModel : (localModels[0]?.filename || "")}
+                  onChange={(e) => setLlmModel(e.target.value)}
+                  disabled={serverStatus.running}
+                  className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded px-2.5 py-2 text-sm text-text-primary focus:outline-none focus:border-primary disabled:opacity-60"
+                >
+                  {localModels.map(m => (
+                    <option key={m.filename} value={m.filename}>{m.name} ({m.size_mb} MB)</option>
+                  ))}
+                </select>
+
+                <div className="pt-2 border-t border-slate-100/60 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${serverStatus.running ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
+                    <span className="text-xs text-text-secondary">
+                      {serverStatus.running ? `서버 구동 중` : "서버 꺼짐"}
+                    </span>
+                  </div>
+                  
+                  {serverStatus.running ? (
+                    <button
+                      onClick={handleStopServer}
+                      disabled={serverActionLoading}
+                      className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
+                    >
+                      {serverActionLoading ? "중지 중..." : "서버 종료"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStartServer}
+                      disabled={serverActionLoading || localModels.length === 0}
+                      className="text-xs bg-primary hover:bg-[#094cb3] text-white font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
+                    >
+                      {serverActionLoading ? "구동 중..." : "서버 시작"}
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
+
           </div>
 
           <div className="mt-4">

@@ -1,16 +1,20 @@
 fastapi>=0.115.0
 uvicorn>=0.30.0
-openai==1.30.1
 pydantic>=2.9.0
 google-api-python-client==2.130.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.0
-langchain==0.2.1
-langchain-community==0.2.1
 chromadb==0.5.0
 sentence-transformers==2.7.0
 markdownify==0.12.1
 python-dotenv==1.0.1
-llama-cpp-python>=0.2.90
 huggingface_hub>=0.23.2
 psutil>=5.9.8
+# HTTP 클라이언트 (llama.cpp 서버 / Ollama 연동)
+httpx>=0.27.0
+# RAG 파이프라인
+rank_bm25>=0.2.2
+# 중복 제거 (MinHash-LSH)
+datasketch>=1.6.0
+# SSE 스트리밍 (에이전트 루프 실시간 전달)
+sse-starlette>=2.0.0
