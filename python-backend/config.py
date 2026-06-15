@@ -10,6 +10,8 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "raw").mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "vectordb").mkdir(parents=True, exist_ok=True)
+(DATA_DIR / "models").mkdir(parents=True, exist_ok=True)
+
 
 # 환경 변수 로드
 env_path = BASE_DIR / ".env"
@@ -20,6 +22,7 @@ class Config:
     VECTOR_DB_PATH = DATA_DIR / "vectordb"
     CREDENTIALS_PATH = DATA_DIR / "client_secrets.json"
     TOKEN_PATH = DATA_DIR / "token.json"
+    MODELS_DIR = DATA_DIR / "models"
     
     # LLM API 서버 (기본값: llama.cpp / LM Studio 로컬 서버)
     LLM_API_BASE = os.getenv("LLM_API_BASE", "http://localhost:1234/v1")

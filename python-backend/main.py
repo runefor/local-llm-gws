@@ -212,6 +212,65 @@ def sync_drive(req: SyncRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# --- Local LLM Manager APIs ---
+from src.llm import manager as llm_manager
+
+@app.get("/api/llm/presets")
+def get_presets():
+    return {"presets": llm_manager.get_preset_models(), "recommended": llm_manager.get_recommended_model_id()}
+
+@app.get("/api/llm/local_models")
+def get_local_models():
+    return {"models": llm_manager.get_local_models()}
+
+class LLMDownloadRequest(BaseModel):
+    preset_id: str
+
+@app.post("/api/llm/download")
+def download_model(req: LLMDownloadRequest):
+    try:
+        llm_manager.download_model_background(req.preset_id)
+        return {"status": "success", "message": "다운로드가 시작되었습니다."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/llm/download/progress/{preset_id}")
+def download_progress(preset_id: str):
+    status = llm_manager.get_download_status(preset_id)
+    if status:
+        return status
+    return {"status": "not_found", "progress": 0.0}
+
+class LLMDeleteRequest(BaseModel):
+    filename: str
+
+@app.post("/api/llm/delete")
+def delete_model(req: LLMDeleteRequest):
+    if llm_manager.delete_local_model(req.filename):
+        return {"status": "success"}
+    return {"status": "error", "message": "삭제 실패"}
+
+class LLMChatRequest(BaseModel):
+    model_filename: str
+    messages: list
+    max_tokens: int = 512
+    temperature: float = 0.7
+
+@app.post("/api/llm/chat/local")
+def chat_local(req: LLMChatRequest):
+    """내장 llama.cpp 엔진을 이용해 채팅 응답을 생성합니다."""
+    from src.llm import inference as llm_inference
+    res = llm_inference.chat_completion(
+        req.model_filename, 
+        req.messages, 
+        req.max_tokens, 
+        req.temperature
+    )
+    if "error" in res:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=res["error"])
+    return res
+
 if __name__ == "__main__":
     # Tauri 사이드카로 실행될 때를 고려하여 기본 포트를 지정
     uvicorn.run(app, host="127.0.0.1", port=8000)
