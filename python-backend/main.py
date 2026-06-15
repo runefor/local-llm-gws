@@ -198,6 +198,13 @@ def get_presets():
 def get_local_models():
     return {"models": llm_manager.get_local_models()}
 
+@app.get("/api/llm/detect")
+def detect_local_llms():
+    """실행 중인 로컬 LLM 서버(Ollama, LM Studio 등)를 감지합니다."""
+    from src.llm import detector
+    return {"status": "success", "servers": detector.detect_servers()}
+
+
 class LLMDownloadRequest(BaseModel):
     preset_id: str
 

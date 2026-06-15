@@ -23,7 +23,7 @@ function AppContent() {
         .then(async ({ getCurrentWindow }) => {
           const win = getCurrentWindow();
           await win.show();
-          await win.focus();
+          await win.setFocus();
         })
         .catch((e) => console.error("Tauri window show failed", e));
     }

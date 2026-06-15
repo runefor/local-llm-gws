@@ -39,6 +39,9 @@ interface AppContextType {
   setLlmEndpoint: (endpoint: string) => void;
   llmModel: string;
   setLlmModel: (model: string) => void;
+  detectedServers: any[];
+  isDetecting: boolean;
+  scanLocalServers: () => Promise<void>;
   syncStatus: "idle" | "syncing" | "done" | "error";
   syncProgress: number;
   syncLog: string[];
@@ -47,7 +50,7 @@ interface AppContextType {
   checkGwsAuth: () => Promise<void>;
   handleGmailSync: () => Promise<void>;
   handleDriveSync: () => Promise<void>;
-  handleLlmTest: () => Promise<void>;
+  handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
   addLog: (msg: string) => void;
   triggerGoogleLogin: () => Promise<void>;
   
@@ -76,6 +79,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // LLM 설정 상태
   const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:1234/v1");
   const [llmModel, setLlmModel] = useState("gemma4-9b-it");
+  
+  // 로컬 LLM 자동 감지 상태
+  const [detectedServers, setDetectedServers] = useState<any[]>([]);
+  const [isDetecting, setIsDetecting] = useState<boolean>(false);
   
   // 동기화 상태 시뮬레이션
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
@@ -243,17 +250,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // 실제 로컬 LLM 연결 여부 테스트
-  const handleLlmTest = async () => {
-    addLog(`로컬 LLM 서버에 연결 테스트 중: ${llmEndpoint} (모델: ${llmModel})`);
+  const handleLlmTest = async (overrideEndpoint?: string, overrideModel?: string) => {
+    const targetEndpoint = overrideEndpoint || llmEndpoint;
+    const targetModel = overrideModel || llmModel;
+    addLog(`로컬 LLM 서버에 연결 테스트 중: ${targetEndpoint} (모델: ${targetModel})`);
     try {
       const response = await fetch("http://localhost:8000/api/llm/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: llmEndpoint, model: llmModel })
+        body: JSON.stringify({ endpoint: targetEndpoint, model: targetModel })
       });
       const data = await response.json();
       if (data.status === "success") {
-        addLog(`로컬 LLM 연결 확인: 성공 (${llmModel} 응답 확인)`);
+        addLog(`로컬 LLM 연결 확인: 성공 (${targetModel} 응답 확인)`);
       } else {
         addLog(`로컬 LLM 연결 실패: ${data.message}`);
       }
@@ -262,8 +271,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // 실행 중인 로컬 LLM 서버 자동 감지 API 호출
+  const scanLocalServers = async () => {
+    setIsDetecting(true);
+    try {
+      const response = await fetch("http://localhost:8000/api/llm/detect");
+      const data = await response.json();
+      if (data.status === "success") {
+        setDetectedServers(data.servers || []);
+      }
+    } catch (error) {
+      console.error("로컬 LLM 서버 감지 실패:", error);
+    } finally {
+      setIsDetecting(false);
+    }
+  };
+
+
   // 에이전트 SSE 스트리밍 구동 함수
-  const runAgentHarness = async (query: str, maxTurns: number = 15) => {
+  const runAgentHarness = async (query: string, maxTurns: number = 15) => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
       return;
@@ -376,6 +402,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setLlmEndpoint,
         llmModel,
         setLlmModel,
+        detectedServers,
+        isDetecting,
+        scanLocalServers,
         syncStatus,
         syncProgress,
         syncLog,

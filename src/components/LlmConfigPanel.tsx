@@ -16,13 +16,22 @@ interface LocalModel {
 }
 
 export default function LlmConfigPanel() {
-  const { llmEndpoint, setLlmEndpoint, llmModel, setLlmModel, handleLlmTest, addLog, backendStatus } = useApp();
+  const { 
+    llmEndpoint, setLlmEndpoint, 
+    llmModel, setLlmModel, 
+    handleLlmTest, addLog, backendStatus,
+    detectedServers, isDetecting, scanLocalServers
+  } = useApp();
   
   const [llmMode, setLlmMode] = useState<"internal" | "external">("internal");
   
   const [presets, setPresets] = useState<Preset[]>([]);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [recommendedId, setRecommendedId] = useState<string>("");
+  
+  // 자동 감지용 로컬 상태
+  const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
+  const [showManualConfig, setShowManualConfig] = useState<boolean>(false);
   
   const [downloading, setDownloading] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
@@ -143,6 +152,48 @@ export default function LlmConfigPanel() {
     }
     return () => clearInterval(timer);
   }, [backendStatus]);
+
+  // 외장 API 선택 시 로컬 LLM 서버 백그라운드 자동 감지 폴링 (2.5초 간격)
+  useEffect(() => {
+    let timer: any;
+    if (llmMode === "external" && backendStatus === "online") {
+      scanLocalServers(); // 즉시 실행
+      timer = setInterval(() => {
+        scanLocalServers();
+      }, 2500);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [llmMode, backendStatus]);
+
+  // 감지된 로컬 서버의 모델 리스트 기본 선택값 매핑
+  useEffect(() => {
+    if (detectedServers && detectedServers.length > 0) {
+      setSelectedModels(prev => {
+        const next = { ...prev };
+        let updated = false;
+        detectedServers.forEach(server => {
+          if (server.models && server.models.length > 0 && !next[server.name]) {
+            next[server.name] = server.models[0];
+            updated = true;
+          }
+        });
+        return updated ? next : prev;
+      });
+    }
+  }, [detectedServers]);
+
+  // 자동 감지된 서버 연결 핸들러
+  const handleConnectServer = (server: any) => {
+    const modelName = selectedModels[server.name] || (server.models && server.models[0]) || "";
+    setLlmEndpoint(server.api_base);
+    setLlmModel(modelName);
+    addLog(`자동 감지 연결 시도: ${server.name} (${server.api_base}) - 모델: ${modelName}`);
+    
+    // State 업데이트 레이턴시 우회를 위해 즉시 값 전달하여 검증
+    handleLlmTest(server.api_base, modelName);
+  };
 
 
   // 다운로드 진행상황 폴링
@@ -377,34 +428,142 @@ export default function LlmConfigPanel() {
         </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-xs text-text-secondary mb-4 leading-relaxed">
-            LM Studio, Jan, Ollama 등 외부 로컬 LLM 런타임의 OpenAI 호환 주소를 입력해 연동하세요.
+          <p className="text-xs text-text-secondary leading-relaxed mb-3">
+            Ollama, LM Studio 등 실행 중인 외부 로컬 LLM 런타임을 자동으로 감지하여 연결해 줍니다. 
           </p>
-          <div>
-            <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">API Endpoint URL</label>
-            <input 
-              type="text" 
-              value={llmEndpoint}
-              onChange={(e) => setLlmEndpoint(e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
-            />
+
+          {/* 자동 감지 서버 리스트 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase text-text-secondary flex items-center">
+                <span className="material-symbols-rounded text-sm mr-1.5 text-primary">explore</span>
+                자동 감지된 로컬 서버
+              </h3>
+              {isDetecting && (
+                <span className="text-[10px] text-primary flex items-center font-semibold animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary mr-1 animate-ping" />
+                  감지 중...
+                </span>
+              )}
+            </div>
+
+            {detectedServers.length === 0 ? (
+              <div className="bg-surface-variant/20 border border-dashed border-surface-variant/80 p-5 rounded-xl text-center">
+                <span className="material-symbols-rounded text-2xl text-text-secondary/60 animate-pulse mb-1.5 block">
+                  search
+                </span>
+                <p className="text-xs font-semibold text-text-primary">실행 중인 로컬 LLM 서버를 찾을 수 없습니다.</p>
+                <p className="text-[10px] text-text-secondary mt-1 max-w-sm mx-auto">
+                  Ollama (기본: 11434), LM Studio (기본: 1234), Jan (기본: 1337) 등이 컴퓨터에 기동되어 있는지 확인해주세요.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {detectedServers.map((server) => {
+                  const hasModels = server.models && server.models.length > 0;
+                  const isCurrentServer = llmEndpoint.startsWith(server.api_base);
+
+                  return (
+                    <div 
+                      key={server.name} 
+                      className={`p-3.5 border rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all duration-200 ${
+                        isCurrentServer ? 'border-primary/45 bg-primary/5 shadow-sm' : 'border-surface-variant hover:border-text-secondary/20'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div className="bg-primary/10 text-primary p-2 rounded-lg">
+                          <span className="material-symbols-rounded text-base block">dns</span>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-sm flex items-center gap-1.5 text-text-primary">
+                            {server.name}
+                            <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">
+                              ON
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-text-secondary font-mono mt-0.5">{server.url}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3.5 ml-0 md:ml-auto">
+                        {hasModels ? (
+                          <div className="flex flex-col gap-0.5 min-w-[150px]">
+                            <label className="text-[9px] uppercase font-bold text-text-secondary tracking-wider">사용 가능한 모델</label>
+                            <select
+                              value={selectedModels[server.name] || server.models[0]}
+                              onChange={(e) => setSelectedModels(prev => ({ ...prev, [server.name]: e.target.value }))}
+                              className="bg-white border border-surface-variant rounded-lg px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary font-sans cursor-pointer"
+                            >
+                              {server.models.map((m: string) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-amber-700 font-semibold bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200/50">
+                            로드된 모델이 없습니다.
+                          </div>
+                        )}
+
+                        <button 
+                          onClick={() => handleConnectServer(server)}
+                          disabled={!hasModels}
+                          className="bg-primary hover:bg-[#094cb3] text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
+                        >
+                          연결
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Model Name</label>
-            <input 
-              type="text" 
-              value={llmModel}
-              onChange={(e) => setLlmModel(e.target.value)}
-              className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
-            />
-          </div>
-          <div className="pt-2">
-            <button 
-              onClick={handleLlmTest}
-              className="w-full bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2.5 px-4 rounded-full text-xs transition-colors border border-surface-variant cursor-pointer"
+
+          {/* 수동 설정 아코디언 */}
+          <div className="pt-2 border-t border-slate-100/50 dark:border-zinc-800">
+            <button
+              onClick={() => setShowManualConfig(!showManualConfig)}
+              className="text-xs text-text-secondary hover:text-text-primary font-semibold flex items-center transition cursor-pointer"
             >
-              LLM 서버 연결 테스트
+              <span className="material-symbols-rounded mr-1 text-sm transition-transform duration-200" style={{ transform: showManualConfig ? 'rotate(90deg)' : 'none' }}>
+                chevron_right
+              </span>
+              수동으로 직접 연결 정보 입력하기
             </button>
+
+            {showManualConfig && (
+              <div className="mt-4 space-y-3 p-4 bg-surface-variant/20 rounded-xl border border-surface-variant/40 animate-fadeIn">
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">API Endpoint URL</label>
+                  <input 
+                    type="text" 
+                    value={llmEndpoint}
+                    onChange={(e) => setLlmEndpoint(e.target.value)}
+                    className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
+                    placeholder="http://localhost:1234/v1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Model Name</label>
+                  <input 
+                    type="text" 
+                    value={llmModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                    className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
+                    placeholder="gemma-2-9b-it"
+                  />
+                </div>
+                <div className="pt-1">
+                  <button 
+                    onClick={() => handleLlmTest()}
+                    className="w-full bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-lg text-xs transition-colors border border-surface-variant cursor-pointer"
+                  >
+                    LLM 서버 연결 테스트
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
