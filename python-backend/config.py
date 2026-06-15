@@ -58,5 +58,12 @@ class Config:
     HARNESS_TOP_K: int = int(os.getenv("HARNESS_TOP_K", "5"))           # RAG 검색 top-k
     HARNESS_BM25_TOP_N: int = int(os.getenv("HARNESS_BM25_TOP_N", "4")) # 문장 압축 보존 개수
 
+    # -------------------------------------------------------------------
+    # Notion OAuth 설정
+    # -------------------------------------------------------------------
+    NOTION_CLIENT_ID: str = os.getenv("NOTION_CLIENT_ID", "")
+    NOTION_CLIENT_SECRET: str = os.getenv("NOTION_CLIENT_SECRET", "")
+    NOTION_REDIRECT_URI: str = os.getenv("NOTION_REDIRECT_URI", "http://localhost:8000/api/auth/notion/callback")
+
 
 config = Config()

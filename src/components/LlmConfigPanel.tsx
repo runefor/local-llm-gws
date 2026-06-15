@@ -566,14 +566,14 @@ export default function LlmConfigPanel() {
                 <div className="pt-1 flex gap-2">
                   <button 
                     onClick={() => handleLlmTest()}
-                    className="flex-1 bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-lg text-xs transition-colors border border-surface-variant cursor-pointer"
+                    className="flex-1 bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-full text-xs transition-colors border border-surface-variant cursor-pointer"
                   >
                     LLM 서버 연결 테스트
                   </button>
                   {llmMode === "external" && (
                     <button 
                       onClick={() => handleLlmDisconnect()}
-                      className="bg-red-50 dark:bg-red-950/20 hover:bg-red-100 text-red-600 dark:text-red-400 font-semibold py-2 px-4 rounded-lg text-xs transition-colors border border-red-200 dark:border-red-900/30 cursor-pointer"
+                      className="bg-red-50 dark:bg-red-950/20 hover:bg-red-100 text-red-600 dark:text-red-400 font-semibold py-2 px-4 rounded-full text-xs transition-colors border border-red-200 dark:border-red-900/30 cursor-pointer"
                     >
                       연결 해제
                     </button>

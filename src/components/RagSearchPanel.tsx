@@ -148,7 +148,7 @@ export default function RagSearchPanel() {
         <button
           type="submit"
           disabled={!query.trim() || loading || backendStatus !== "online"}
-          className="bg-primary hover:bg-[#094cb3] disabled:bg-slate-100 disabled:text-slate-400 text-white text-xs font-semibold px-4 rounded-xl transition-all cursor-pointer disabled:cursor-default"
+          className="bg-primary hover:bg-[#094cb3] disabled:bg-slate-100 disabled:text-slate-400 text-white text-xs font-semibold px-6 rounded-full transition-all cursor-pointer disabled:cursor-default"
         >
           {loading ? "검색 중..." : "검색"}
         </button>

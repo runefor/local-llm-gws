@@ -4,7 +4,9 @@ import Titlebar from "../components/Titlebar";
 import SyncPanel from "../components/SyncPanel";
 import DataListPanel from "../components/DataListPanel";
 import LlmConfigPanel from "../components/LlmConfigPanel";
+import ServiceConfigPanel from "../components/ServiceConfigPanel";
 import RagSearchPanel from "../components/RagSearchPanel";
+import KnowledgePipelinePanel from "../components/KnowledgePipelinePanel";
 import LogConsole from "../components/LogConsole";
 
 export default function DesktopLayout() {
@@ -17,7 +19,7 @@ export default function DesktopLayout() {
     checkGwsAuth
   } = useApp();
 
-  const [activeMenu, setActiveMenu] = useState<"sync" | "rag" | "settings" | "logs">("sync");
+  const [activeMenu, setActiveMenu] = useState<"sync" | "rag" | "pipeline" | "settings" | "logs">("sync");
 
   return (
     <div className="h-screen w-screen bg-background text-text-primary flex flex-col overflow-hidden select-none selection:bg-primary-container selection:text-primary">
@@ -67,6 +69,18 @@ export default function DesktopLayout() {
               >
                 <span className="material-symbols-rounded text-lg">search</span>
                 <span>RAG 지식 검색</span>
+              </button>
+
+              <button
+                onClick={() => setActiveMenu("pipeline")}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeMenu === "pipeline"
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-secondary hover:bg-[#e9eef6]/50 hover:text-text-primary"
+                }`}
+              >
+                <span className="material-symbols-rounded text-lg">insights</span>
+                <span>지식 파이프라인</span>
               </button>
 
               <button
@@ -187,9 +201,16 @@ export default function DesktopLayout() {
             </div>
           )}
 
+          {activeMenu === "pipeline" && (
+            <div className="h-full space-y-6 overflow-y-auto pr-1">
+              <KnowledgePipelinePanel />
+            </div>
+          )}
+
           {activeMenu === "settings" && (
             <div className="h-full space-y-6 overflow-y-auto pr-1">
               <LlmConfigPanel />
+              <ServiceConfigPanel />
             </div>
           )}
 

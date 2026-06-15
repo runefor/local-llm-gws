@@ -1,8 +1,10 @@
 import SyncPanel from "./SyncPanel";
 import DataListPanel from "./DataListPanel";
 import LlmConfigPanel from "./LlmConfigPanel";
+import ServiceConfigPanel from "./ServiceConfigPanel";
 import RagSearchPanel from "./RagSearchPanel";
 import AgentPanel from "./AgentPanel";
+import KnowledgePipelinePanel from "./KnowledgePipelinePanel";
 
 export default function Dashboard() {
   return (
@@ -10,6 +12,7 @@ export default function Dashboard() {
       {/* 좌측 패널: 동기화 컨트롤 및 데이터 목록 */}
       <section className="lg:col-span-2 space-y-6">
         <SyncPanel />
+        <KnowledgePipelinePanel />
         <DataListPanel />
         <AgentPanel />
         
@@ -28,6 +31,7 @@ export default function Dashboard() {
       {/* 우측 패널: 설정 및 테스팅 */}
       <section className="space-y-6">
         <LlmConfigPanel />
+        <ServiceConfigPanel />
         <RagSearchPanel />
       </section>
     </div>

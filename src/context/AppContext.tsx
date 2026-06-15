@@ -65,6 +65,20 @@ interface AppContextType {
   agentActiveTurns: number;
   runAgentHarness: (query: string, maxTurns?: number) => Promise<void>;
   cancelAgentHarness: () => void;
+
+  // 지식 파이프라인 연동 상태 및 함수 추가
+  obsidianVaultPath: string;
+  setObsidianVaultPath: React.Dispatch<React.SetStateAction<string>>;
+  notionApiKey: string;
+  setNotionApiKey: React.Dispatch<React.SetStateAction<string>>;
+  notionPageId: string;
+  setNotionPageId: React.Dispatch<React.SetStateAction<string>>;
+  loadPipelineSettings: () => Promise<void>;
+  savePipelineSettings: (vaultPath: string, apiKey: string, pageId: string) => Promise<boolean>;
+  exportToObsidian: (title: string, content: string, tags?: string[]) => Promise<{ status: string; message: string; filename?: string; filepath?: string }>;
+  exportToNotion: (title: string, content: string) => Promise<{ status: string; message: string }>;
+  triggerNotionLogin: () => Promise<void>;
+  fetchNotionPages: () => Promise<{ id: string; title: string; url: string }[]>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -100,6 +114,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [agentLogs, setAgentLogs] = useState<AgentTurnLog[]>([]);
   const [agentActiveTurns, setAgentActiveTurns] = useState(0);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  // 지식 파이프라인 연동 설정 상태
+  const [obsidianVaultPath, setObsidianVaultPath] = useState("");
+  const [notionApiKey, setNotionApiKey] = useState("");
+  const [notionPageId, setNotionPageId] = useState("");
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
@@ -434,6 +453,155 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // 지식 파이프라인 연동 설정 불러오기
+  const loadPipelineSettings = async () => {
+    try {
+      const response = await fetch("http://localhost:8000/api/settings");
+      if (response.ok) {
+        const data = await response.json();
+        setObsidianVaultPath(data.obsidian_vault_path || "");
+        setNotionApiKey(data.notion_api_key || "");
+        setNotionPageId(data.notion_page_id || "");
+      }
+    } catch (error) {
+      console.error("지식 파이프라인 설정 로드 실패:", error);
+    }
+  };
+
+  // 지식 파이프라인 연동 설정 저장하기
+  const savePipelineSettings = async (vaultPath: string, apiKey: string, pageId: string) => {
+    try {
+      addLog("지식 파이프라인 설정 저장 중...");
+      const response = await fetch("http://localhost:8000/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          obsidian_vault_path: vaultPath,
+          notion_api_key: apiKey,
+          notion_page_id: pageId
+        })
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        addLog("설정이 저장되었습니다.");
+        setObsidianVaultPath(vaultPath);
+        setNotionApiKey(apiKey);
+        setNotionPageId(pageId);
+        return true;
+      } else {
+        addLog(`설정 저장 실패: ${data.message}`);
+        return false;
+      }
+    } catch (error) {
+      addLog(`설정 저장 중 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+      return false;
+    }
+  };
+
+  // Obsidian 내보내기
+  const exportToObsidian = async (title: string, content: string, tags?: string[]) => {
+    try {
+      addLog(`Obsidian으로 내보내는 중... 제목: "${title}"`);
+      const response = await fetch("http://localhost:8000/api/export/obsidian", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, content, tags: tags || ["workspace"] })
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        addLog(`Obsidian 내보내기 완료: ${data.filename}`);
+      } else {
+        addLog(`Obsidian 내보내기 실패: ${data.message}`);
+      }
+      return data;
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "네트워크 오류";
+      addLog(`Obsidian 내보내기 오류: ${errMsg}`);
+      return { status: "error", message: errMsg };
+    }
+  };
+
+  // Notion 내보내기
+  const exportToNotion = async (title: string, content: string) => {
+    try {
+      addLog(`Notion으로 내보내는 중... 제목: "${title}"`);
+      const response = await fetch("http://localhost:8000/api/export/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, content })
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        addLog("Notion 내보내기 성공!");
+      } else {
+        addLog(`Notion 내보내기 실패: ${data.message}`);
+      }
+      return data;
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "네트워크 오류";
+      addLog(`Notion 내보내기 오류: ${errMsg}`);
+      return { status: "error", message: errMsg };
+    }
+  };
+
+  // Notion OAuth 로그인 트리거 및 폴링
+  const triggerNotionLogin = async () => {
+    addLog("Notion OAuth 로그인 창을 엽니다...");
+    try {
+      const response = await fetch("http://localhost:8000/api/auth/notion/url");
+      const data = await response.json();
+      if (data.status === "success" && data.url) {
+        addLog("Notion 로그인 링크를 브라우저에 엽니다...");
+        try {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(data.url);
+        } catch {
+          window.open(data.url, "_blank");
+        }
+        
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          attempts++;
+          try {
+            const res = await fetch("http://localhost:8000/api/settings");
+            const settingsData = await res.json();
+            if (settingsData.notion_api_key) {
+              setNotionApiKey(settingsData.notion_api_key);
+              setNotionPageId(settingsData.notion_page_id || "");
+              addLog("Notion OAuth 연동 성공!");
+              clearInterval(interval);
+            }
+          } catch (err) {
+            console.error("Notion 로그인 상태 체크 에러:", err);
+          }
+          if (attempts >= 60) {
+            clearInterval(interval);
+            addLog("Notion 로그인 인증 대기 시간이 초과되었습니다.");
+          }
+        }, 2000);
+      } else {
+        addLog(`Notion 인증 실패: ${data.message}`);
+      }
+    } catch (e) {
+      addLog(`Notion 로그인 요청 중 오류: ${e}`);
+    }
+  };
+
+  // Notion 페이지 목록 가져오기
+  const fetchNotionPages = async () => {
+    try {
+      const response = await fetch("http://localhost:8000/api/notion/pages");
+      const data = await response.json();
+      if (data.status === "success") {
+        return data.pages || [];
+      }
+      return [];
+    } catch (e) {
+      console.error("Notion 페이지 로드 실패:", e);
+      return [];
+    }
+  };
+
   // 초기 로드 시 백엔드 체크
   useEffect(() => {
     checkBackend();
@@ -444,6 +612,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (backendStatus === "online") {
       checkGwsAuth();
       fetchLlmConfig();
+      loadPipelineSettings();
     }
   }, [backendStatus]);
 
@@ -487,6 +656,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         agentActiveTurns,
         runAgentHarness,
         cancelAgentHarness,
+
+        // 지식 파이프라인 상태 및 함수 주입
+        obsidianVaultPath,
+        setObsidianVaultPath,
+        notionApiKey,
+        setNotionApiKey,
+        notionPageId,
+        setNotionPageId,
+        loadPipelineSettings,
+        savePipelineSettings,
+        exportToObsidian,
+        exportToNotion,
+        triggerNotionLogin,
+        fetchNotionPages,
       }}
     >
       {children}
