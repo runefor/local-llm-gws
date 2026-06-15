@@ -18,7 +18,7 @@ load_dotenv(dotenv_path=env_path)
 class Config:
     DATA_DIR = DATA_DIR
     VECTOR_DB_PATH = DATA_DIR / "vectordb"
-    CREDENTIALS_PATH = BASE_DIR / "credentials.json"
+    CREDENTIALS_PATH = DATA_DIR / "client_secrets.json"
     TOKEN_PATH = DATA_DIR / "token.json"
     
     # LLM API 서버 (기본값: llama.cpp / LM Studio 로컬 서버)

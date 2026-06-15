@@ -40,3 +40,6 @@ python-backend/.venv/
 
 # Tauri Sidecars
 src-tauri/bin/
+
+# oh my codex
+.omo

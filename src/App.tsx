@@ -1,12 +1,29 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+
+interface GmailItem {
+  id: string;
+  subject: string;
+  from: string;
+  snippet: string;
+}
+
+interface DriveItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+}
 
 export default function App() {
   // 백엔드 상태
   const [backendStatus, setBackendStatus] = useState<"connecting" | "online" | "offline">("connecting");
-  const [backendMessage, setBackendMessage] = useState("");
   const [isGwsAuthenticated, setIsGwsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState(false);
+  
+  // 동기화된 데이터 상태
+  const [gmailItems, setGmailItems] = useState<GmailItem[]>([]);
+  const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
+  const [activeTab, setActiveTab] = useState<"gmail" | "drive">("gmail");
   
   // LLM 설정 상태
   const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:1234/v1");
@@ -25,14 +42,14 @@ export default function App() {
       const data = await response.json();
       if (data.status === "ok") {
         setBackendStatus("online");
-        setBackendMessage(data.message);
+        addLog(`백엔드 서버 연결 성공: ${data.message}`);
       } else {
         setBackendStatus("offline");
-        setBackendMessage("정상적이지 않은 백엔드 응답");
+        addLog("오류: 정상적이지 않은 백엔드 응답");
       }
     } catch (error) {
       setBackendStatus("offline");
-      setBackendMessage("백엔드 서버에 연결할 수 없습니다. (FastAPI가 오프라인이거나 기동 중)");
+      addLog("오류: 백엔드 서버에 연결할 수 없습니다. (FastAPI가 오프라인이거나 기동 중)");
     }
   };
 
@@ -72,14 +89,14 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Gmail 동기화 실행 시뮬레이션 및 API 호출 뼈대
+  // Gmail 동기화 실행 및 API 호출
   const handleGmailSync = async () => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
       return;
     }
     setSyncStatus("syncing");
-    setSyncProgress(10);
+    setSyncProgress(20);
     addLog("Gmail 동기화 프로세스 시작...");
     
     try {
@@ -91,9 +108,10 @@ export default function App() {
       const data = await response.json();
       
       if (data.status === "success") {
+        setGmailItems(data.messages || []);
         setSyncProgress(100);
         setSyncStatus("done");
-        addLog(`Gmail 동기화 성공: ${data.count}개의 이메일을 동기화했습니다.`);
+        addLog(`Gmail 동기화 성공: ${data.count}개의 이메일을 가져왔습니다.`);
       } else {
         setSyncStatus("error");
         addLog(`Gmail 동기화 실패: ${data.message || "알 수 없는 오류"}`);
@@ -104,30 +122,57 @@ export default function App() {
     }
   };
 
-  // Google Drive 동기화 실행 시뮬레이션
-  const handleDriveSync = () => {
+  // Google Drive 동기화 실행 및 API 호출
+  const handleDriveSync = async () => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
       return;
     }
     setSyncStatus("syncing");
     setSyncProgress(20);
-    addLog("Google Drive 스캔 시작 (Docs, Sheets, PDFs 필터링)...");
+    addLog("Google Drive 동기화 시작 (Docs, Sheets, PDFs 필터링)...");
     
-    // UI 진행 상태 연출
-    const interval = setInterval(() => {
-      setSyncProgress((prev) => {
-        if (prev >= 90) {
-          clearInterval(interval);
-          setSyncStatus("done");
-          addLog("Google Drive 동기화 완료: 12개의 문서 추출 완료 및 Markdown 변환 완료.");
-          addLog("Local Obsidian Vault 디렉토리에 마크다운 저장을 완료했습니다.");
-          return 100;
-        }
-        addLog(`문서 가져오는 중... [${prev + 15}%]`);
-        return prev + 15;
+    try {
+      const response = await fetch("http://localhost:8000/api/sync/drive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ max_emails: 30 })
       });
-    }, 800);
+      const data = await response.json();
+      
+      if (data.status === "success") {
+        setDriveItems(data.files || []);
+        setSyncProgress(100);
+        setSyncStatus("done");
+        addLog(`Google Drive 동기화 성공: ${data.count}개의 문서를 가져왔습니다.`);
+      } else {
+        setSyncStatus("error");
+        addLog(`Google Drive 동기화 실패: ${data.message || "알 수 없는 오류"}`);
+      }
+    } catch (error) {
+      setSyncStatus("error");
+      addLog(`Google Drive 동기화 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+    }
+  };
+
+  // 실제 로컬 LLM 연결 여부 테스트
+  const handleLlmTest = async () => {
+    addLog(`로컬 LLM 서버에 연결 테스트 중: ${llmEndpoint} (모델: ${llmModel})`);
+    try {
+      const response = await fetch("http://localhost:8000/api/llm/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: llmEndpoint, model: llmModel })
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        addLog(`로컬 LLM 연결 확인: 성공 (${llmModel} 응답 확인)`);
+      } else {
+        addLog(`로컬 LLM 연결 실패: ${data.message}`);
+      }
+    } catch (error) {
+      addLog(`로컬 LLM 연결 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+    }
   };
 
   return (
@@ -188,7 +233,53 @@ export default function App() {
             ) : isGwsAuthenticated ? (
               <span className="text-emerald-400 font-semibold">Connected</span>
             ) : (
-              <span className="text-amber-400 font-semibold">Login Required</span>
+              <button 
+                onClick={async () => {
+                  addLog("Google OAuth 로그인 창을 엽니다...");
+                  try {
+                    const response = await fetch("http://localhost:8000/api/auth/login", { method: "POST" });
+                    const data = await response.json();
+                    if (data.status === "pending" && data.url) {
+                      addLog("Google OAuth 로그인 링크를 엽니다...");
+                      try {
+                        const { openUrl } = await import("@tauri-apps/plugin-opener");
+                        await openUrl(data.url);
+                      } catch {
+                        window.open(data.url, "_blank");
+                      }
+                      addLog("브라우저 창이 열렸습니다. 인증을 완료해 주세요.");
+                      
+                      // 로그인 완료 여부를 2초마다 폴링
+                      let attempts = 0;
+                      const interval = setInterval(async () => {
+                        attempts++;
+                        try {
+                          const res = await fetch("http://localhost:8000/api/auth/status");
+                          const statusData = await res.json();
+                          if (statusData.authenticated) {
+                            setIsGwsAuthenticated(true);
+                            addLog("Google Workspace 인증 성공!");
+                            clearInterval(interval);
+                          }
+                        } catch (err) {
+                          console.error("인증 상태 체크 에러:", err);
+                        }
+                        if (attempts >= 60) { // 최대 2분 대기
+                          clearInterval(interval);
+                          addLog("인증 대기 시간이 초과되었습니다. 다시 시도해 주세요.");
+                        }
+                      }, 2000);
+                    } else {
+                      addLog(`인증 요청 실패: ${data.message || "알 수 없는 오류"}`);
+                    }
+                  } catch (e) {
+                    addLog(`로그인 요청 중 오류 발생: ${e}`);
+                  }
+                }}
+                className="bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-2 py-0.5 rounded font-semibold transition-colors cursor-pointer"
+              >
+                Login Required
+              </button>
             )}
             <button 
               onClick={checkGwsAuth} 
@@ -293,6 +384,94 @@ export default function App() {
             )}
           </div>
 
+          {/* 동기화 데이터 목록 카드 */}
+          {(gmailItems.length > 0 || driveItems.length > 0) && (
+            <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl p-6 border border-slate-800/80 shadow-xl animate-fade-in space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h2 className="text-lg font-bold font-outfit flex items-center text-white">
+                  <svg className="w-5 h-5 mr-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  동기화된 지식 데이터
+                </h2>
+                
+                <div className="flex space-x-2 bg-slate-950 p-1 rounded-lg border border-slate-850 text-xs">
+                  <button 
+                    onClick={() => setActiveTab("gmail")}
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all ${activeTab === "gmail" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    Gmail ({gmailItems.length})
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab("drive")}
+                    className={`px-3 py-1.5 rounded-md font-medium transition-all ${activeTab === "drive" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    Drive ({driveItems.length})
+                  </button>
+                </div>
+              </div>
+
+              {activeTab === "gmail" ? (
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                  {gmailItems.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 text-sm">
+                      가져온 Gmail 데이터가 없습니다. 상단에서 동기화를 실행하세요.
+                    </div>
+                  ) : (
+                    gmailItems.map((item) => (
+                      <div key={item.id} className="bg-slate-950/40 p-4 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all">
+                        <div className="flex justify-between items-start mb-1.5">
+                          <span className="text-xs font-bold text-indigo-400 truncate max-w-[150px]">{item.from}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">ID: {item.id}</span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-200 mb-1.5 line-clamp-1">{item.subject}</h4>
+                        <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{item.snippet}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                  {driveItems.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 text-sm">
+                      가져온 Google Drive 문서가 없습니다. 상단에서 동기화를 실행하세요.
+                    </div>
+                  ) : (
+                    driveItems.map((item) => (
+                      <div key={item.id} className="bg-slate-950/40 p-4 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all flex items-center justify-between">
+                        <div className="flex items-center space-x-3 overflow-hidden mr-4">
+                          <span className="p-2 rounded-lg bg-slate-900 text-indigo-400 flex-shrink-0">
+                            {item.mimeType.includes("document") ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                              </svg>
+                            ) : item.mimeType.includes("spreadsheet") ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </span>
+                          <div className="overflow-hidden">
+                            <h4 className="text-sm font-bold text-slate-200 truncate">{item.name}</h4>
+                            <p className="text-[10px] text-slate-500 font-mono mt-0.5">MimeType: {item.mimeType.split('.').pop()}</p>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <span className="text-[10px] text-slate-400 block font-mono">{new Date(item.modifiedTime).toLocaleDateString()}</span>
+                          <span className="text-[9px] text-slate-500 block font-mono mt-0.5">{new Date(item.modifiedTime).toLocaleTimeString()}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 로컬 폴더 정책 안내 */}
           <div className="bg-slate-900/30 rounded-2xl p-5 border border-slate-800/60 text-xs text-slate-400 flex items-start space-x-3">
             <svg className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,12 +524,7 @@ export default function App() {
 
               <div className="pt-2">
                 <button 
-                  onClick={() => {
-                    addLog(`로컬 LLM 서버에 연결 테스트 중: ${llmEndpoint}`);
-                    setTimeout(() => {
-                      addLog(`로컬 LLM 연결 확인: 성공 (${llmModel} 모델 응답 확인)`);
-                    }, 800);
-                  }}
+                  onClick={handleLlmTest}
                   className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2 px-4 rounded-lg text-xs transition-colors border border-slate-700/50"
                 >
                   LLM 서버 연결 테스트
