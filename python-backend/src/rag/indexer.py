@@ -25,7 +25,11 @@ def get_embedding_model():
     return _embedding_model
 
 def get_chroma_client():
-    return chromadb.PersistentClient(path=str(config.CHROMA_DB_PATH))
+    from chromadb.config import Settings
+    return chromadb.PersistentClient(
+        path=str(config.CHROMA_DB_PATH),
+        settings=Settings(anonymized_telemetry=False)
+    )
 
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
     """텍스트를 청크 단위로 분할합니다."""
