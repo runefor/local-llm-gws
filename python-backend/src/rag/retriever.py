@@ -1,10 +1,12 @@
 import logging
 import pickle
+import re
 from typing import Dict, Any, List, Optional
 import chromadb
 from config import config
 from src.llm.inference import chat_completion
 from src.rag.indexer import get_embedding_model, get_chroma_client
+from src.evidence import EvidenceRecord, EvidenceScores, SourceLocation
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +51,67 @@ def reciprocal_rank_fusion(vector_results: List[Dict[str, Any]], bm25_results: L
     sorted_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
     
     merged = []
-    for doc_id in sorted_ids:
-        merged.append(doc_map[doc_id])
+    for rank, doc_id in enumerate(sorted_ids, 1):
+        doc = doc_map[doc_id]
+        doc["rrf_score"] = rrf_scores[doc_id]
+        doc["rank"] = rank
+        merged.append(doc)
     return merged
+
+def _evidence_id(chunk_id: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_]+", "_", chunk_id).strip("_")
+    return f"ev_{normalized}"
+
+def _to_int(value: Any) -> Optional[int]:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+def chunk_to_evidence_record(chunk: Dict[str, Any], rank: int) -> EvidenceRecord:
+    meta = chunk.get("metadata") or {}
+    source_type = chunk.get("source") or meta.get("source") or "unknown"
+    chunk_id = chunk.get("id") or f"{source_type}_{meta.get('doc_id', 'unknown')}_{rank}"
+    doc_id = meta.get("doc_id") or meta.get("provider_item_id") or chunk_id
+    title = meta.get("title") or meta.get("name") or "(제목 없음)"
+    content = chunk.get("content") or ""
+    snippet = content[:240] + "..." if len(content) > 240 else content
+    location = SourceLocation(
+        original_url=meta.get("original_url") or meta.get("webViewLink") or "",
+        location_label=meta.get("location_label") or f"{source_type.upper()}: {title}",
+        provider_item_id=meta.get("provider_item_id") or doc_id,
+        chunk_index=_to_int(meta.get("chunk_index")),
+        message_id=meta.get("message_id") or "",
+        thread_id=meta.get("thread_id") or "",
+        rfc822msgid=meta.get("rfc822msgid") or "",
+        file_id=meta.get("file_id") or (doc_id if source_type == "drive" else ""),
+        resource_key=meta.get("resourceKey") or meta.get("resource_key") or "",
+        page_number=_to_int(meta.get("page_number")),
+        heading_path=meta.get("heading_path") or "",
+        text_start_offset=_to_int(meta.get("text_start_offset")),
+        text_end_offset=_to_int(meta.get("text_end_offset")),
+    )
+    return EvidenceRecord(
+        evidence_id=_evidence_id(chunk_id),
+        chunk_id=chunk_id,
+        doc_id=doc_id,
+        source=source_type if source_type in {"gmail", "drive"} else "unknown",
+        title=title,
+        snippet=snippet,
+        content_snapshot=content,
+        date=meta.get("date") or "",
+        sender=meta.get("sender") or meta.get("from") or "",
+        mime_type=meta.get("mime_type") or "",
+        source_location=location,
+        scores=EvidenceScores(
+            vector_distance=chunk.get("distance"),
+            rrf_score=chunk.get("rrf_score"),
+            rank=rank,
+        ),
+        metadata=meta,
+    )
 
 def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """Vector (ChromaDB) + Keyword (BM25) 하이브리드 검색을 수행하고 RRF로 병합합니다."""
@@ -139,6 +199,16 @@ def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         hybrid_results = vector_pool
         
     return hybrid_results[:top_k]
+
+def search_evidence(query: str, top_k: int = 8) -> Dict[str, Any]:
+    chunks = retrieve_chunks(query, top_k=top_k)
+    evidence = [chunk_to_evidence_record(chunk, idx + 1).model_dump() for idx, chunk in enumerate(chunks)]
+    return {
+        "status": "success",
+        "query": query,
+        "evidence": evidence,
+        "sources": evidence,
+    }
 
 def search_and_summarize(query: str, top_k: int = 5) -> Dict[str, Any]:
     """검색한 컨텍스트를 활용하여 LLM 요약 및 답변을 생성합니다."""

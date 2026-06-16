@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Dict, List, Optional
 import uvicorn
 from src.gws.gmail import list_messages
 from src.gws.drive import list_drive_files
@@ -369,10 +369,103 @@ class RagSearchRequest(BaseModel):
 
 @app.post("/api/rag/search")
 def rag_search(req: RagSearchRequest):
-    """ChromaDB 벡터 검색 후 LLM 요약 응답을 반환합니다."""
+    """동기화된 데이터에서 citation-ready 근거 레코드를 검색합니다."""
     try:
-        from src.rag.retriever import search_and_summarize
-        return search_and_summarize(req.query, req.top_k)
+        from src.rag.retriever import search_evidence
+        return search_evidence(req.query, req.top_k)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+class EvidenceSetCreateRequest(BaseModel):
+    title: str
+    original_query: str = ""
+    evidence_items: List[Dict[str, Any]] = []
+    notes: str = ""
+    tags: List[str] = []
+
+class EvidenceSetUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+    evidence_items: Optional[List[Dict[str, Any]]] = None
+
+class ArtifactCreateRequest(BaseModel):
+    artifact_type: str = "summary"
+    instruction: str = ""
+
+@app.get("/api/evidence-sets")
+def evidence_sets_list():
+    try:
+        from src.evidence import list_evidence_sets
+        return {"status": "success", "evidence_sets": list_evidence_sets()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/evidence-sets")
+def evidence_sets_create(req: EvidenceSetCreateRequest):
+    try:
+        from src.evidence import create_evidence_set
+        evidence_set = create_evidence_set(
+            title=req.title,
+            original_query=req.original_query,
+            evidence_items=req.evidence_items,
+            notes=req.notes,
+            tags=req.tags,
+        )
+        return {"status": "success", "evidence_set": evidence_set.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/evidence-sets/{evidence_set_id}")
+def evidence_sets_get(evidence_set_id: str):
+    try:
+        from src.evidence import get_evidence_set, list_artifacts
+        evidence_set = get_evidence_set(evidence_set_id)
+        if evidence_set is None:
+            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+        return {
+            "status": "success",
+            "evidence_set": evidence_set.model_dump(),
+            "artifacts": list_artifacts(evidence_set_id),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.patch("/api/evidence-sets/{evidence_set_id}")
+def evidence_sets_update(evidence_set_id: str, req: EvidenceSetUpdateRequest):
+    try:
+        from src.evidence import update_evidence_set
+        evidence_set = update_evidence_set(
+            evidence_set_id=evidence_set_id,
+            title=req.title,
+            notes=req.notes,
+            tags=req.tags,
+            evidence_items=req.evidence_items,
+        )
+        if evidence_set is None:
+            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+        return {"status": "success", "evidence_set": evidence_set.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/api/evidence-sets/{evidence_set_id}")
+def evidence_sets_delete(evidence_set_id: str):
+    try:
+        from src.evidence import delete_evidence_set
+        if not delete_evidence_set(evidence_set_id):
+            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/evidence-sets/{evidence_set_id}/artifacts")
+def evidence_sets_create_artifact(evidence_set_id: str, req: ArtifactCreateRequest):
+    try:
+        from src.evidence import create_artifact
+        artifact = create_artifact(evidence_set_id, req.artifact_type, req.instruction)
+        if artifact is None:
+            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+        return {"status": "success", "artifact": artifact.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
