@@ -6,6 +6,15 @@ export interface GmailItem {
   from: string;
   snippet: string;
   date?: string;
+  labelIds?: string[];
+}
+
+export interface GmailLabel {
+  id: string;
+  name: string;
+  type: "system" | "user";
+  messagesTotal?: number;
+  messagesUnread?: number;
 }
 
 export interface DriveItem {
@@ -42,6 +51,8 @@ interface AppContextType {
   isGwsAuthenticated: boolean;
   authChecking: boolean;
   gmailItems: GmailItem[];
+  gmailLabels: GmailLabel[];
+  gmailLabelsLoading: boolean;
   driveItems: DriveItem[];
   workspaceItems: WorkspaceItem[];
   activeTab: "gmail" | "drive";
@@ -63,7 +74,8 @@ interface AppContextType {
   setSyncLog: React.Dispatch<React.SetStateAction<string[]>>;
   checkBackend: () => Promise<void>;
   checkGwsAuth: () => Promise<void>;
-  handleGmailSync: (query?: string, maxEmails?: number | null) => Promise<void>;
+  loadGmailLabels: () => Promise<void>;
+  handleGmailSync: (query?: string, maxEmails?: number | null, labelIds?: string[]) => Promise<void>;
   handleDriveSync: (query?: string) => Promise<void>;
   handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
   addLog: (msg: string) => void;
@@ -102,6 +114,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   
   // 동기화된 데이터 상태
   const [gmailItems, setGmailItems] = useState<GmailItem[]>([]);
+  const [gmailLabels, setGmailLabels] = useState<GmailLabel[]>([]);
+  const [gmailLabelsLoading, setGmailLabelsLoading] = useState(false);
   const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
   const [activeTab, setActiveTab] = useState<"gmail" | "drive">("gmail");
   
@@ -114,7 +128,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [detectedServers, setDetectedServers] = useState<any[]>([]);
   const [isDetecting, setIsDetecting] = useState<boolean>(false);
   
-  // 동기화 상태 시뮬레이션
+  // 동기화 상태
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncLog, setSyncLog] = useState<string[]>([]);
@@ -174,6 +188,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loadGmailLabels = async () => {
+    if (backendStatus !== "online" || !isGwsAuthenticated) return;
+    setGmailLabelsLoading(true);
+    try {
+      const response = await fetch("http://localhost:18000/api/gmail/labels");
+      const data = await response.json();
+      if (data.status === "success" && Array.isArray(data.labels)) {
+        setGmailLabels(data.labels);
+      } else {
+        addLog(`Gmail 라벨 목록 로드 실패: ${data.message || "알 수 없는 오류"}`);
+      }
+    } catch (error) {
+      addLog(`Gmail 라벨 목록 로드 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+    } finally {
+      setGmailLabelsLoading(false);
+    }
+  };
+
   // Google 로그인 트리거
   const triggerGoogleLogin = async () => {
     addLog("Google OAuth 로그인 창을 엽니다...");
@@ -219,20 +251,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Gmail 동기화 실행 및 API 호출
-  const handleGmailSync = async (query?: string, maxEmails?: number | null) => {
+  const handleGmailSync = async (query?: string, maxEmails?: number | null, labelIds: string[] = []) => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
       return;
     }
     setSyncStatus("syncing");
-    setSyncProgress(20);
-    addLog(query ? `Gmail 동기화 프로세스 시작 (검색어: "${query}")...` : "Gmail 동기화 프로세스 시작...");
+    setSyncProgress(0);
+    const labelLog = labelIds.length ? `, 라벨 ${labelIds.length}개` : "";
+    addLog(query ? `Gmail 동기화 프로세스 시작 (검색어: "${query}"${labelLog})...` : `Gmail 동기화 프로세스 시작${labelLog}...`);
     
     try {
       const response = await fetch("http://localhost:18000/api/sync/gmail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ max_emails: maxEmails === null ? undefined : maxEmails ?? 500, query: query || undefined })
+        body: JSON.stringify({
+          max_emails: maxEmails === null ? undefined : maxEmails ?? 500,
+          query: query || undefined,
+          label_ids: labelIds.length ? labelIds : undefined,
+        })
       });
       const data = await response.json();
       
@@ -258,7 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setSyncStatus("syncing");
-    setSyncProgress(20);
+    setSyncProgress(0);
     addLog(query ? `Google Drive 동기화 시작 (검색어: "${query}")...` : "Google Drive 동기화 시작 (Docs, Sheets, PDFs 필터링)...");
     
     try {
@@ -658,6 +695,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [backendStatus]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 인증 상태 전환에만 반응해야 합니다.
+  useEffect(() => {
+    if (backendStatus === "online" && isGwsAuthenticated) {
+      loadGmailLabels();
+    }
+  }, [backendStatus, isGwsAuthenticated]);
+
   return (
     <AppContext.Provider
       value={{
@@ -665,6 +709,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isGwsAuthenticated,
         authChecking,
         gmailItems,
+        gmailLabels,
+        gmailLabelsLoading,
         driveItems,
         workspaceItems,
         activeTab,
@@ -686,6 +732,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSyncLog,
         checkBackend,
         checkGwsAuth,
+        loadGmailLabels,
         handleGmailSync,
         handleDriveSync,
         handleLlmTest,
