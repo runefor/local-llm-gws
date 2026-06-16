@@ -1,5 +1,5 @@
 import SyncPanel from "./SyncPanel";
-import DataListPanel from "./DataListPanel";
+import MultiViewWorkspace from "./MultiViewWorkspace";
 import LlmConfigPanel from "./LlmConfigPanel";
 import ServiceConfigPanel from "./ServiceConfigPanel";
 import RagSearchPanel from "./RagSearchPanel";
@@ -13,7 +13,7 @@ export default function Dashboard() {
       <section className="lg:col-span-2 space-y-6">
         <SyncPanel />
         <KnowledgePipelinePanel />
-        <DataListPanel />
+        <MultiViewWorkspace />
         <AgentPanel />
         
         {/* 로컬 폴더 정책 안내 */}

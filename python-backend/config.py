@@ -63,7 +63,7 @@ class Config:
     # -------------------------------------------------------------------
     NOTION_CLIENT_ID: str = os.getenv("NOTION_CLIENT_ID", "")
     NOTION_CLIENT_SECRET: str = os.getenv("NOTION_CLIENT_SECRET", "")
-    NOTION_REDIRECT_URI: str = os.getenv("NOTION_REDIRECT_URI", "http://localhost:8000/api/auth/notion/callback")
+    NOTION_REDIRECT_URI: str = os.getenv("NOTION_REDIRECT_URI", "http://localhost:18000/api/auth/notion/callback")
 
 
 config = Config()

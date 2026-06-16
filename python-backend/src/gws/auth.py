@@ -44,11 +44,11 @@ def get_auth_url_and_start_server():
         if not os.path.exists(config.CREDENTIALS_PATH):
             raise FileNotFoundError(f"OAuth 자격증명 파일이 없습니다: {config.CREDENTIALS_PATH}")
             
-        # 백엔드 자체 포트(8000)를 콜백 엔드포인트로 설정
+        # 백엔드 자체 포트(18000)를 콜백 엔드포인트로 설정
         flow = Flow.from_client_secrets_file(
             config.CREDENTIALS_PATH, 
             scopes=SCOPES,
-            redirect_uri="http://localhost:8000/api/auth/callback"
+            redirect_uri="http://localhost:18000/api/auth/callback"
         )
         
         # 브라우저 대기 전 인증 URL 획득

@@ -49,7 +49,7 @@ export default function LlmConfigPanel() {
   // 내장 서버 실행 상태 조회
   const fetchServerStatus = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/llm/server/status");
+      const res = await fetch("http://localhost:18000/api/llm/server/status");
       if (res.ok) {
         const data = await res.json();
         setServerStatus(data);
@@ -62,13 +62,13 @@ export default function LlmConfigPanel() {
   const fetchModels = async () => {
     setIsLoading(true);
     try {
-      const pRes = await fetch("http://localhost:8000/api/llm/presets");
+      const pRes = await fetch("http://localhost:18000/api/llm/presets");
       if (!pRes.ok) throw new Error("presets API 응답 불량");
       const pData = await pRes.json();
       setPresets(pData.presets || []);
       setRecommendedId(pData.recommended || "");
       
-      const mRes = await fetch("http://localhost:8000/api/llm/local_models");
+      const mRes = await fetch("http://localhost:18000/api/llm/local_models");
       if (!mRes.ok) throw new Error("local_models API 응답 불량");
       const mData = await mRes.json();
       setLocalModels(mData.models || []);
@@ -95,7 +95,7 @@ export default function LlmConfigPanel() {
     setServerActionLoading(true);
     addLog(`내장 서버 기동 요청: ${llmModel}`);
     try {
-      const res = await fetch("http://localhost:8000/api/llm/server/start", {
+      const res = await fetch("http://localhost:18000/api/llm/server/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model_filename: llmModel })
@@ -120,7 +120,7 @@ export default function LlmConfigPanel() {
     setServerActionLoading(true);
     addLog("내장 서버 종료 요청");
     try {
-      const res = await fetch("http://localhost:8000/api/llm/server/stop", { method: "POST" });
+      const res = await fetch("http://localhost:18000/api/llm/server/stop", { method: "POST" });
       const data = await res.json();
       if (data.status === "stopped") {
         addLog("내장 서버가 종료되었습니다.");
@@ -202,7 +202,7 @@ export default function LlmConfigPanel() {
     if (downloading) {
       interval = setInterval(async () => {
         try {
-          const res = await fetch(`http://localhost:8000/api/llm/download/progress/${downloading}`);
+          const res = await fetch(`http://localhost:18000/api/llm/download/progress/${downloading}`);
           if (!res.ok) throw new Error("Progress API 응답 불량");
           const data = await res.json();
           
@@ -231,7 +231,7 @@ export default function LlmConfigPanel() {
       setDownloading(presetId);
       setProgress(0);
       addLog(`모델 다운로드 시작: ${presetId}`);
-      await fetch("http://localhost:8000/api/llm/download", {
+      await fetch("http://localhost:18000/api/llm/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preset_id: presetId })
@@ -245,7 +245,7 @@ export default function LlmConfigPanel() {
   const handleDelete = async (filename: string) => {
     if (!window.confirm("이 모델을 삭제하시겠습니까?")) return;
     try {
-      await fetch("http://localhost:8000/api/llm/delete", {
+      await fetch("http://localhost:18000/api/llm/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename })
@@ -267,7 +267,7 @@ export default function LlmConfigPanel() {
         <div className="text-sm text-text-secondary leading-relaxed space-y-3">
           <p>파이썬 백엔드 서버에 연결할 수 없습니다. 백엔드 프로그램이 구동 중인지 확인해 주세요.</p>
           <div className="bg-gray-100 dark:bg-black/30 p-3 rounded border border-surface-variant text-xs font-mono text-text-primary">
-            대상 API: http://localhost:8000/api/llm/presets
+            대상 API: http://localhost:18000/api/llm/presets
           </div>
           <button 
             onClick={fetchModels}

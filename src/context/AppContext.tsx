@@ -5,6 +5,7 @@ export interface GmailItem {
   subject: string;
   from: string;
   snippet: string;
+  date?: string;
 }
 
 export interface DriveItem {
@@ -12,6 +13,15 @@ export interface DriveItem {
   name: string;
   mimeType: string;
   modifiedTime: string;
+}
+
+export interface WorkspaceItem {
+  id: string;
+  type: "gmail" | "drive";
+  title: string;
+  subtitle: string;
+  snippet?: string;
+  timestamp: string;
 }
 
 export interface AgentTurnLog {
@@ -33,6 +43,7 @@ interface AppContextType {
   authChecking: boolean;
   gmailItems: GmailItem[];
   driveItems: DriveItem[];
+  workspaceItems: WorkspaceItem[];
   activeTab: "gmail" | "drive";
   setActiveTab: (tab: "gmail" | "drive") => void;
   llmEndpoint: string;
@@ -52,8 +63,8 @@ interface AppContextType {
   setSyncLog: React.Dispatch<React.SetStateAction<string[]>>;
   checkBackend: () => Promise<void>;
   checkGwsAuth: () => Promise<void>;
-  handleGmailSync: () => Promise<void>;
-  handleDriveSync: () => Promise<void>;
+  handleGmailSync: (query?: string, maxEmails?: number | null) => Promise<void>;
+  handleDriveSync: (query?: string) => Promise<void>;
   handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
   addLog: (msg: string) => void;
   triggerGoogleLogin: () => Promise<void>;
@@ -129,7 +140,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const checkBackend = async () => {
     setBackendStatus("connecting");
     try {
-      const response = await fetch("http://localhost:8000/");
+      const response = await fetch("http://localhost:18000/");
       const data = await response.json();
       if (data.status === "ok") {
         setBackendStatus("online");
@@ -148,7 +159,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const checkGwsAuth = async () => {
     setAuthChecking(true);
     try {
-      const response = await fetch("http://localhost:8000/api/auth/status");
+      const response = await fetch("http://localhost:18000/api/auth/status");
       const data = await response.json();
       setIsGwsAuthenticated(!!data.authenticated);
       if (data.authenticated) {
@@ -167,7 +178,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const triggerGoogleLogin = async () => {
     addLog("Google OAuth 로그인 창을 엽니다...");
     try {
-      const response = await fetch("http://localhost:8000/api/auth/login", { method: "POST" });
+      const response = await fetch("http://localhost:18000/api/auth/login", { method: "POST" });
       const data = await response.json();
       if (data.status === "pending" && data.url) {
         addLog("Google OAuth 로그인 링크를 엽니다...");
@@ -184,7 +195,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const interval = setInterval(async () => {
           attempts++;
           try {
-            const res = await fetch("http://localhost:8000/api/auth/status");
+            const res = await fetch("http://localhost:18000/api/auth/status");
             const statusData = await res.json();
             if (statusData.authenticated) {
               setIsGwsAuthenticated(true);
@@ -208,20 +219,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Gmail 동기화 실행 및 API 호출
-  const handleGmailSync = async () => {
+  const handleGmailSync = async (query?: string, maxEmails?: number | null) => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
       return;
     }
     setSyncStatus("syncing");
     setSyncProgress(20);
-    addLog("Gmail 동기화 프로세스 시작...");
+    addLog(query ? `Gmail 동기화 프로세스 시작 (검색어: "${query}")...` : "Gmail 동기화 프로세스 시작...");
     
     try {
-      const response = await fetch("http://localhost:8000/api/sync/gmail", {
+      const response = await fetch("http://localhost:18000/api/sync/gmail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ max_emails: 30 })
+        body: JSON.stringify({ max_emails: maxEmails === null ? undefined : maxEmails ?? 500, query: query || undefined })
       });
       const data = await response.json();
       
@@ -241,20 +252,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Google Drive 동기화 실행 및 API 호출
-  const handleDriveSync = async () => {
+  const handleDriveSync = async (query?: string) => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
       return;
     }
     setSyncStatus("syncing");
     setSyncProgress(20);
-    addLog("Google Drive 동기화 시작 (Docs, Sheets, PDFs 필터링)...");
+    addLog(query ? `Google Drive 동기화 시작 (검색어: "${query}")...` : "Google Drive 동기화 시작 (Docs, Sheets, PDFs 필터링)...");
     
     try {
-      const response = await fetch("http://localhost:8000/api/sync/drive", {
+      const response = await fetch("http://localhost:18000/api/sync/drive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ max_emails: 30 })
+        body: JSON.stringify({ max_emails: 30, query: query || undefined })
       });
       const data = await response.json();
       
@@ -276,7 +287,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 백엔드로부터 LLM 설정 로드
   const fetchLlmConfig = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/llm/config");
+      const response = await fetch("http://localhost:18000/api/llm/config");
       if (response.ok) {
         const data = await response.json();
         setLlmEndpoint(data.endpoint);
@@ -297,7 +308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saveLlmConfig = async (endpoint: string, model: string, mode: "llamacpp" | "ollama" | "external") => {
     try {
       addLog(`백엔드 LLM 설정 동기화 시도... (${mode} 모드)`);
-      const response = await fetch("http://localhost:8000/api/llm/config", {
+      const response = await fetch("http://localhost:18000/api/llm/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint, model, mode })
@@ -328,7 +339,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const targetModel = overrideModel || llmModel;
     addLog(`로컬 LLM 서버에 연결 테스트 중: ${targetEndpoint} (모델: ${targetModel})`);
     try {
-      const response = await fetch("http://localhost:8000/api/llm/test", {
+      const response = await fetch("http://localhost:18000/api/llm/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint: targetEndpoint, model: targetModel })
@@ -351,7 +362,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const scanLocalServers = async () => {
     setIsDetecting(true);
     try {
-      const response = await fetch("http://localhost:8000/api/llm/detect");
+      const response = await fetch("http://localhost:18000/api/llm/detect");
       const data = await response.json();
       if (data.status === "success") {
         setDetectedServers(data.servers || []);
@@ -385,7 +396,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addLog(`하네스 에이전트 루프 실행 시작: "${query}"`);
 
     try {
-      const url = `http://localhost:8000/api/agent/run/stream?query=${encodeURIComponent(query)}&max_turns=${maxTurns}`;
+      const url = `http://localhost:18000/api/agent/run/stream?query=${encodeURIComponent(query)}&max_turns=${maxTurns}`;
       const response = await fetch(url, {
         signal: controller.signal
       });
@@ -456,7 +467,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 지식 파이프라인 연동 설정 불러오기
   const loadPipelineSettings = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/settings");
+      const response = await fetch("http://localhost:18000/api/settings");
       if (response.ok) {
         const data = await response.json();
         setObsidianVaultPath(data.obsidian_vault_path || "");
@@ -472,7 +483,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const savePipelineSettings = async (vaultPath: string, apiKey: string, pageId: string) => {
     try {
       addLog("지식 파이프라인 설정 저장 중...");
-      const response = await fetch("http://localhost:8000/api/settings", {
+      const response = await fetch("http://localhost:18000/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -502,7 +513,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const exportToObsidian = async (title: string, content: string, tags?: string[]) => {
     try {
       addLog(`Obsidian으로 내보내는 중... 제목: "${title}"`);
-      const response = await fetch("http://localhost:8000/api/export/obsidian", {
+      const response = await fetch("http://localhost:18000/api/export/obsidian", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, tags: tags || ["workspace"] })
@@ -525,7 +536,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const exportToNotion = async (title: string, content: string) => {
     try {
       addLog(`Notion으로 내보내는 중... 제목: "${title}"`);
-      const response = await fetch("http://localhost:8000/api/export/notion", {
+      const response = await fetch("http://localhost:18000/api/export/notion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content })
@@ -548,7 +559,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const triggerNotionLogin = async () => {
     addLog("Notion OAuth 로그인 창을 엽니다...");
     try {
-      const response = await fetch("http://localhost:8000/api/auth/notion/url");
+      const response = await fetch("http://localhost:18000/api/auth/notion/url");
       const data = await response.json();
       if (data.status === "success" && data.url) {
         addLog("Notion 로그인 링크를 브라우저에 엽니다...");
@@ -563,7 +574,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const interval = setInterval(async () => {
           attempts++;
           try {
-            const res = await fetch("http://localhost:8000/api/settings");
+            const res = await fetch("http://localhost:18000/api/settings");
             const settingsData = await res.json();
             if (settingsData.notion_api_key) {
               setNotionApiKey(settingsData.notion_api_key);
@@ -590,7 +601,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Notion 페이지 목록 가져오기
   const fetchNotionPages = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/notion/pages");
+      const response = await fetch("http://localhost:18000/api/notion/pages");
       const data = await response.json();
       if (data.status === "success") {
         return data.pages || [];
@@ -602,12 +613,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Gmail과 Drive 아이템 혼합 및 시간순 정렬 파생 상태
+  const workspaceItems = React.useMemo(() => {
+    const items: WorkspaceItem[] = [];
+    
+    gmailItems.forEach((item) => {
+      items.push({
+        id: item.id,
+        type: "gmail",
+        title: item.subject || "(제목 없음)",
+        subtitle: item.from || "알 수 없음",
+        snippet: item.snippet,
+        timestamp: item.date || new Date().toISOString(),
+      });
+    });
+    
+    driveItems.forEach((item) => {
+      items.push({
+        id: item.id,
+        type: "drive",
+        title: item.name || "이름 없는 파일",
+        subtitle: item.mimeType || "알 수 없는 유형",
+        timestamp: item.modifiedTime || new Date().toISOString(),
+      });
+    });
+    
+    // 내림차순 정렬 (최신순)
+    return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [gmailItems, driveItems]);
+
   // 초기 로드 시 백엔드 체크
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 앱 시작 시 한 번만 실행하는 초기화 효과입니다.
   useEffect(() => {
     checkBackend();
   }, []);
 
   // 백엔드 온라인 연결 시 설정 로드
+  // biome-ignore lint/correctness/useExhaustiveDependencies: backendStatus 전환에만 반응해야 합니다.
   useEffect(() => {
     if (backendStatus === "online") {
       checkGwsAuth();
@@ -624,6 +666,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         authChecking,
         gmailItems,
         driveItems,
+        workspaceItems,
         activeTab,
         setActiveTab,
         llmEndpoint,

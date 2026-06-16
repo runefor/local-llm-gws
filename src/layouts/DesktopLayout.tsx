@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import Titlebar from "../components/Titlebar";
 import SyncPanel from "../components/SyncPanel";
-import DataListPanel from "../components/DataListPanel";
+import MultiViewWorkspace from "../components/MultiViewWorkspace";
 import LlmConfigPanel from "../components/LlmConfigPanel";
 import ServiceConfigPanel from "../components/ServiceConfigPanel";
 import RagSearchPanel from "../components/RagSearchPanel";
@@ -19,7 +19,7 @@ export default function DesktopLayout() {
     checkGwsAuth
   } = useApp();
 
-  const [activeMenu, setActiveMenu] = useState<"sync" | "rag" | "pipeline" | "settings" | "logs">("sync");
+  const [activeMenu, setActiveMenu] = useState<"sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs">("sync");
 
   return (
     <div className="h-screen w-screen bg-background text-text-primary flex flex-col overflow-hidden select-none selection:bg-primary-container selection:text-primary">
@@ -57,6 +57,18 @@ export default function DesktopLayout() {
               >
                 <span className="material-symbols-rounded text-lg">sync</span>
                 <span>지식 동기화</span>
+              </button>
+
+              <button
+                onClick={() => setActiveMenu("workspace")}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeMenu === "workspace"
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-secondary hover:bg-[#e9eef6]/50 hover:text-text-primary"
+                }`}
+              >
+                <span className="material-symbols-rounded text-lg">hub</span>
+                <span>통합 데이터 탐색</span>
               </button>
 
               <button
@@ -175,13 +187,14 @@ export default function DesktopLayout() {
         <main className="flex-1 bg-background flex flex-col overflow-hidden p-6 relative">
           
           {activeMenu === "sync" && (
-            <div className="h-full flex flex-col space-y-6 overflow-hidden">
-              <div className="flex-shrink-0">
-                <SyncPanel />
-              </div>
-              <div className="flex-1 min-h-0">
-                <DataListPanel isDesktop={true} />
-              </div>
+            <div className="h-full space-y-6 overflow-y-auto pr-1">
+              <SyncPanel />
+            </div>
+          )}
+
+          {activeMenu === "workspace" && (
+            <div className="h-full min-h-0 overflow-hidden">
+              <MultiViewWorkspace isDesktop={true} />
             </div>
           )}
 

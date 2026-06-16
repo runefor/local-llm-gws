@@ -32,7 +32,7 @@ export default function RagSearchPanel() {
   // 인덱스 상태 조회
   const fetchIndexStatus = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/rag/status");
+      const response = await fetch("http://localhost:18000/api/rag/status");
       const data = await response.json();
       if (data.status === "success") {
         setIndexStatus({
@@ -51,7 +51,7 @@ export default function RagSearchPanel() {
     setIndexing(true);
     addLog("ChromaDB 지식베이스 인덱싱 작업 실행 중...");
     try {
-      const response = await fetch("http://localhost:8000/api/rag/index", { method: "POST" });
+      const response = await fetch("http://localhost:18000/api/rag/index", { method: "POST" });
       const data = await response.json();
       if (data.status === "success") {
         addLog(`인덱싱 완료! Gmail ${data.gmail_indexed}개, Drive ${data.drive_indexed}개 동기화 처리.`);
@@ -76,7 +76,7 @@ export default function RagSearchPanel() {
     addLog(`RAG 검색 요청 전송: "${query}"`);
 
     try {
-      const response = await fetch("http://localhost:8000/api/rag/search", {
+      const response = await fetch("http://localhost:18000/api/rag/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, top_k: 5 }),

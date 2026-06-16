@@ -49,7 +49,7 @@ export default function ServiceConfigPanel() {
     if (backendStatus !== "online") return;
     setSelectingFolder(true);
     try {
-      const response = await fetch("http://localhost:8000/api/utils/select_directory", {
+      const response = await fetch("http://localhost:18000/api/utils/select_directory", {
         method: "POST"
       });
       const data = await response.json();

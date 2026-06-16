@@ -2,7 +2,9 @@ from googleapiclient.discovery import build
 from .auth import get_credentials
 import os
 
-def list_drive_files(mime_types=None, page_token=None, max_results=100):
+import datetime
+
+def list_drive_files(query=None, mime_types=None, page_token=None, max_results=100):
     """
     지정된 mime_type(Docs, Sheets, PDF 등)의 파일 목록을 가져옵니다.
     """
@@ -18,10 +20,28 @@ def list_drive_files(mime_types=None, page_token=None, max_results=100):
             "text/plain"
         ]
         
-    query = " or ".join([f"mimeType='{t}'" for t in mime_types])
+    clauses = ["(" + " or ".join([f"mimeType='{t}'" for t in mime_types]) + ")"]
+    
+    # 2. Date 쿼리 구성 (modifiedTime > '...')
+    has_custom_date = False
+    if query and "modifiedTime" in query:
+        has_custom_date = True
+        
+    if not has_custom_date:
+        seven_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).isoformat().replace("+00:00", "Z")
+        clauses.append(f"modifiedTime > '{seven_days_ago}'")
+        
+    # 3. User Query 쿼리 구성
+    if query:
+        if any(op in query for op in ["contains", "=", ">", "<"]):
+            clauses.append(f"({query})")
+        else:
+            clauses.append(f"(name contains '{query}' or fullText contains '{query}')")
+            
+    drive_q = " and ".join(clauses)
     
     results = service.files().list(
-        q=query,
+        q=drive_q,
         pageSize=max_results,
         fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
         pageToken=page_token

@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import uvicorn
 from src.gws.gmail import list_messages
 from src.gws.drive import list_drive_files
@@ -17,7 +18,8 @@ app.add_middleware(
 )
 
 class SyncRequest(BaseModel):
-    max_emails: int = 100
+    max_emails: Optional[int] = None
+    query: Optional[str] = None
 
 class LLMTestRequest(BaseModel):
     endpoint: str
@@ -132,9 +134,10 @@ def auth_callback(request: Request):
 def sync_gmail(req: SyncRequest):
     """Gmail 목록을 가져오고 본문 요약을 동기화합니다."""
     try:
-        raw_messages, next_token = list_messages(max_results=min(req.max_emails, 10))
+        raw_messages, next_token = list_messages(max_results=req.max_emails, query=req.query)
 
         from src.gws.gmail import get_message
+        import datetime
         detailed_messages = []
         for msg in raw_messages:
             try:
@@ -143,11 +146,19 @@ def sync_gmail(req: SyncRequest):
                 subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '(제목 없음)')
                 sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), '알 수 없음')
                 snippet = m_details.get('snippet', '')
+                
+                internal_date_ms = int(m_details.get('internalDate', 0))
+                if internal_date_ms:
+                    date_iso = datetime.datetime.fromtimestamp(internal_date_ms / 1000.0, tz=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+                else:
+                    date_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+                
                 detailed_messages.append({
                     "id": msg['id'],
                     "subject": subject,
                     "from": sender,
-                    "snippet": snippet
+                    "snippet": snippet,
+                    "date": date_iso
                 })
             except Exception as e:
                 print(f"[Gmail] 개별 메일 상세 로드 에러: {e}")
@@ -165,7 +176,7 @@ def sync_gmail(req: SyncRequest):
 def sync_drive(req: SyncRequest):
     """Google Drive 파일 목록을 가져옵니다."""
     try:
-        files, next_token = list_drive_files(max_results=min(req.max_emails, 15))
+        files, next_token = list_drive_files(max_results=req.max_emails or 100, query=req.query)
         return {
             "status": "success",
             "count": len(files),
@@ -486,7 +497,7 @@ def get_notion_auth_url():
     return {"status": "success", "url": url}
 
 @app.get("/api/auth/notion/callback", response_class=HTMLResponse)
-def notion_auth_callback(code: str = None, error: str = None):
+def notion_auth_callback(code: Optional[str] = None, error: Optional[str] = None):
     """노션 OAuth 인증 완료 후 호출되는 콜백입니다."""
     if error:
         return HTMLResponse(
@@ -634,5 +645,5 @@ def list_notion_pages():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=18000)
 
