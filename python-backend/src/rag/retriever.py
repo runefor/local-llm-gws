@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 import chromadb
 from config import config
 from src.llm.inference import chat_completion
-from src.rag.indexer import get_embedding_model, get_chroma_client
+from src.rag.indexer import get_embedding_model, get_chroma_client, normalize_sources
 from src.evidence import EvidenceRecord, EvidenceScores, SourceLocation
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,16 @@ def reciprocal_rank_fusion(vector_results: List[Dict[str, Any]], bm25_results: L
         doc["rank"] = rank
         merged.append(doc)
     return merged
+
+def _is_low_signal_drive_fallback(chunk: Dict[str, Any]) -> bool:
+    source_type = chunk.get("source") or (chunk.get("metadata") or {}).get("source")
+    if source_type != "drive":
+        return False
+    content = (chunk.get("content") or "").strip()
+    return content.startswith("파일명:") and "\n파일 형식:" in content
+
+def _filter_low_signal_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [chunk for chunk in chunks if not _is_low_signal_drive_fallback(chunk)]
 
 def _evidence_id(chunk_id: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9_]+", "_", chunk_id).strip("_")
@@ -113,8 +123,9 @@ def chunk_to_evidence_record(chunk: Dict[str, Any], rank: int) -> EvidenceRecord
         metadata=meta,
     )
 
-def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Vector (ChromaDB) + Keyword (BM25) 하이브리드 검색을 수행하고 RRF로 병합합니다."""
+    selected_sources = set(normalize_sources(sources))
     client = get_chroma_client()
     model = get_embedding_model()
     
@@ -122,51 +133,52 @@ def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     prefixed_query = f"query: {query}"
     query_vector = model.encode(prefixed_query).tolist()
     
-    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
-    drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
-    
     vector_results = []
     pool_size = top_k * 3  # RRF 병합을 위해 충분한 후보군 확보
     
     # Gmail 벡터 검색
-    try:
-        gmail_res = gmail_col.query(
-            query_embeddings=[query_vector],
-            n_results=pool_size
-        )
-        if gmail_res and gmail_res["documents"] and gmail_res["documents"][0]:
-            for i in range(len(gmail_res["documents"][0])):
-                vector_results.append({
-                    "id": gmail_res["ids"][0][i],
-                    "content": gmail_res["documents"][0][i],
-                    "metadata": gmail_res["metadatas"][0][i],
-                    "distance": gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0,
-                    "source": "gmail"
-                })
-    except Exception as e:
-        logger.error(f"Gmail ChromaDB 검색 중 오류: {e}")
+    if "gmail" in selected_sources:
+        try:
+            gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+            gmail_res = gmail_col.query(
+                query_embeddings=[query_vector],
+                n_results=pool_size
+            )
+            if gmail_res and gmail_res["documents"] and gmail_res["documents"][0]:
+                for i in range(len(gmail_res["documents"][0])):
+                    vector_results.append({
+                        "id": gmail_res["ids"][0][i],
+                        "content": gmail_res["documents"][0][i],
+                        "metadata": gmail_res["metadatas"][0][i],
+                        "distance": gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0,
+                        "source": "gmail"
+                    })
+        except Exception as e:
+            logger.error(f"Gmail ChromaDB 검색 중 오류: {e}")
         
     # Drive 벡터 검색
-    try:
-        drive_res = drive_col.query(
-            query_embeddings=[query_vector],
-            n_results=pool_size
-        )
-        if drive_res and drive_res["documents"] and drive_res["documents"][0]:
-            for i in range(len(drive_res["documents"][0])):
-                vector_results.append({
-                    "id": drive_res["ids"][0][i],
-                    "content": drive_res["documents"][0][i],
-                    "metadata": drive_res["metadatas"][0][i],
-                    "distance": drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0,
-                    "source": "drive"
-                })
-    except Exception as e:
-        logger.error(f"Drive ChromaDB 검색 중 오류: {e}")
+    if "drive" in selected_sources:
+        try:
+            drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+            drive_res = drive_col.query(
+                query_embeddings=[query_vector],
+                n_results=pool_size
+            )
+            if drive_res and drive_res["documents"] and drive_res["documents"][0]:
+                for i in range(len(drive_res["documents"][0])):
+                    vector_results.append({
+                        "id": drive_res["ids"][0][i],
+                        "content": drive_res["documents"][0][i],
+                        "metadata": drive_res["metadatas"][0][i],
+                        "distance": drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0,
+                        "source": "drive"
+                    })
+        except Exception as e:
+            logger.error(f"Drive ChromaDB 검색 중 오류: {e}")
         
     # 거리 순 정렬 후 후보군 풀 크기로 제한
     vector_results.sort(key=lambda x: x["distance"])
-    vector_pool = vector_results[:pool_size]
+    vector_pool = _filter_low_signal_chunks(vector_results)[:pool_size]
     
     # 2. BM25 키워드 검색 수행
     bm25_pool = []
@@ -184,11 +196,11 @@ def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
                 # 매칭 점수가 0보다 큰 인덱스만 매칭 청크로 추출
                 valid_res = []
                 for idx, score in enumerate(scores):
-                    if score > 0.0:
+                    if score > 0.0 and chunks[idx].get("source") in selected_sources:
                         valid_res.append((score, chunks[idx]))
                 # 점수 역순 정렬
                 valid_res.sort(key=lambda x: x[0], reverse=True)
-                bm25_pool = [item[1] for item in valid_res[:pool_size]]
+                bm25_pool = _filter_low_signal_chunks([item[1] for item in valid_res])[:pool_size]
         except Exception as e:
             logger.error(f"BM25 키워드 검색 중 오류: {e}")
             
@@ -200,31 +212,35 @@ def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         
     return hybrid_results[:top_k]
 
-def search_evidence(query: str, top_k: int = 8) -> Dict[str, Any]:
-    chunks = retrieve_chunks(query, top_k=top_k)
+def search_evidence(query: str, top_k: int = 8, sources: Optional[List[str]] = None) -> Dict[str, Any]:
+    selected_sources = normalize_sources(sources)
+    chunks = retrieve_chunks(query, top_k=top_k, sources=selected_sources)
     evidence = [chunk_to_evidence_record(chunk, idx + 1).model_dump() for idx, chunk in enumerate(chunks)]
     return {
         "status": "success",
         "query": query,
+        "sources_used": selected_sources,
         "evidence": evidence,
         "sources": evidence,
     }
 
-def search_and_summarize(query: str, top_k: int = 5) -> Dict[str, Any]:
+def search_and_summarize(query: str, top_k: int = 5, sources: Optional[List[str]] = None) -> Dict[str, Any]:
     """검색한 컨텍스트를 활용하여 LLM 요약 및 답변을 생성합니다."""
-    chunks = retrieve_chunks(query, top_k=top_k)
+    selected_sources = normalize_sources(sources)
+    chunks = retrieve_chunks(query, top_k=top_k, sources=selected_sources)
     
     if not chunks:
         return {
             "status": "success",
             "query": query,
+            "sources_used": selected_sources,
             "answer": "검색 결과가 없습니다.",
             "sources": []
         }
         
     # 컨텍스트 마크다운 포맷팅
     context_parts = []
-    sources = []
+    source_cards = []
     
     for idx, chunk in enumerate(chunks):
         meta = chunk["metadata"]
@@ -233,8 +249,8 @@ def search_and_summarize(query: str, top_k: int = 5) -> Dict[str, Any]:
         
         # 출처 리스트 중복 제거하며 추가
         doc_id = meta.get("doc_id")
-        if not any(s["doc_id"] == doc_id for s in sources):
-            sources.append({
+        if not any(s["doc_id"] == doc_id for s in source_cards):
+            source_cards.append({
                 "doc_id": doc_id,
                 "title": title,
                 "source": source_type,
@@ -274,13 +290,14 @@ def search_and_summarize(query: str, top_k: int = 5) -> Dict[str, Any]:
         return {
             "status": "error",
             "message": f"LLM 요약 생성 중 오류: {llm_resp['error']}",
-            "sources": sources
+            "sources": source_cards
         }
         
     return {
         "status": "success",
         "query": query,
+        "sources_used": selected_sources,
         "answer": llm_resp.get("content", ""),
         "thought": llm_resp.get("thought"),
-        "sources": sources
+        "sources": source_cards
     }

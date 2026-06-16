@@ -1,13 +1,13 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from src.rag.retriever import retrieve_chunks
 from src.llm.inference import chat_completion
 
-def run_pipeline(query: str, top_k: int = 8) -> Dict[str, Any]:
+def run_pipeline(query: str, top_k: int = 8, sources: Optional[List[str]] = None) -> Dict[str, Any]:
     """사용자의 쿼리를 받아서 RAG 검색을 통해 관련 문서 및 이메일을 탐색한 후,
     로컬 LLM을 이용하여 정보를 가공/요약하고 원본 카드 표시용 소스 텍스트를 포함해 반환합니다.
     """
     # 충분한 정보를 얻기 위해 top_k를 기본 8개로 확대해 검색
-    chunks = retrieve_chunks(query, top_k=top_k)
+    chunks = retrieve_chunks(query, top_k=top_k, sources=sources)
     
     if not chunks:
         return {
@@ -18,7 +18,7 @@ def run_pipeline(query: str, top_k: int = 8) -> Dict[str, Any]:
         }
         
     context_parts = []
-    sources = []
+    source_cards = []
     
     for idx, chunk in enumerate(chunks):
         meta = chunk["metadata"]
@@ -28,12 +28,12 @@ def run_pipeline(query: str, top_k: int = 8) -> Dict[str, Any]:
         date_str = meta.get("date") or meta.get("modifiedTime") or ""
         
         # 중복된 문서의 경우 하나의 소스 카드 객체로 병합하고 내용은 덧붙임
-        existing_src = next((s for s in sources if s["doc_id"] == doc_id), None)
+        existing_src = next((s for s in source_cards if s["doc_id"] == doc_id), None)
         if existing_src:
             existing_src["content"] += f"\n\n[추가 청크 내용]\n{chunk['content']}"
             existing_src["snippet"] = existing_src["content"][:160] + "..."
         else:
-            sources.append({
+            source_cards.append({
                 "doc_id": doc_id,
                 "title": title,
                 "source": source_type,
@@ -78,12 +78,12 @@ def run_pipeline(query: str, top_k: int = 8) -> Dict[str, Any]:
         return {
             "status": "error",
             "message": f"로컬 LLM 지식 정리 생성 중 실패: {llm_resp['error']}",
-            "sources": sources
+            "sources": source_cards
         }
         
     return {
         "status": "success",
         "answer": llm_resp.get("content", ""),
         "thought": llm_resp.get("thought"),
-        "sources": sources
+        "sources": source_cards
     }

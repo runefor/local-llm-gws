@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import uvicorn
-from src.gws.gmail import list_messages
+from src.gws.gmail import list_labels, list_messages
 from src.gws.drive import list_drive_files
 
 app = FastAPI(title="Local LLM GWS API", description="Python Backend API for Tauri")
@@ -20,6 +20,7 @@ app.add_middleware(
 class SyncRequest(BaseModel):
     max_emails: Optional[int] = None
     query: Optional[str] = None
+    label_ids: Optional[List[str]] = None
 
 class LLMTestRequest(BaseModel):
     endpoint: str
@@ -44,6 +45,15 @@ def auth_status():
         return {"authenticated": authenticated}
     except Exception as e:
         return {"authenticated": False, "error": str(e)}
+
+@app.get("/api/gmail/labels")
+def gmail_labels():
+    """Gmail 라벨(태그) 목록을 반환합니다."""
+    try:
+        labels = list_labels()
+        return {"status": "success", "labels": labels}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "labels": []}
 
 @app.post("/api/auth/login")
 def auth_login():
@@ -134,7 +144,7 @@ def auth_callback(request: Request):
 def sync_gmail(req: SyncRequest):
     """Gmail 목록을 가져오고 본문 요약을 동기화하며, ChromaDB에 자동으로 인덱싱합니다."""
     try:
-        raw_messages, next_token = list_messages(max_results=req.max_emails, query=req.query)
+        raw_messages, next_token = list_messages(max_results=req.max_emails, query=req.query, label_ids=req.label_ids)
 
         from src.gws.gmail import get_message
         import datetime
@@ -161,7 +171,8 @@ def sync_gmail(req: SyncRequest):
                     "subject": subject,
                     "from": sender,
                     "snippet": snippet,
-                    "date": date_iso
+                    "date": date_iso,
+                    "labelIds": m_details.get("labelIds", [])
                 })
             except Exception as e:
                 print(f"[Gmail] 개별 메일 상세 로드 에러: {e}")
@@ -344,12 +355,15 @@ def update_llm_config_route(req: LLMConfigRequest):
 # RAG 파이프라인 API (Phase 2에서 구현체 채워짐)
 # -----------------------------------------------------------------------
 
+class RagIndexRequest(BaseModel):
+    sources: Optional[List[str]] = None
+
 @app.post("/api/rag/index")
-def rag_index():
+def rag_index(req: Optional[RagIndexRequest] = None):
     """동기화된 Gmail/Drive 데이터를 ChromaDB에 인덱싱합니다."""
     try:
         from src.rag.indexer import index_all
-        result = index_all()
+        result = index_all(req.sources if req else None)
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -366,13 +380,14 @@ def rag_status():
 class RagSearchRequest(BaseModel):
     query: str
     top_k: int = 5
+    sources: Optional[List[str]] = None
 
 @app.post("/api/rag/search")
 def rag_search(req: RagSearchRequest):
     """동기화된 데이터에서 citation-ready 근거 레코드를 검색합니다."""
     try:
         from src.rag.retriever import search_evidence
-        return search_evidence(req.query, req.top_k)
+        return search_evidence(req.query, req.top_k, req.sources)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -512,6 +527,7 @@ class SettingsUpdateRequest(BaseModel):
 class PipelineRunRequest(BaseModel):
     query: str
     top_k: int = 8
+    sources: Optional[List[str]] = None
 
 class ObsidianExportRequest(BaseModel):
     title: str
@@ -548,7 +564,7 @@ def pipeline_run(req: PipelineRunRequest):
     """RAG와 로컬 LLM을 엮은 지식 수집 및 요약 파이프라인을 실행합니다."""
     try:
         from src.processor.pipeline import run_pipeline
-        return run_pipeline(req.query, req.top_k)
+        return run_pipeline(req.query, req.top_k, req.sources)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

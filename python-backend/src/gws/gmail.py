@@ -1,3 +1,5 @@
+from typing import List, Optional
+
 from googleapiclient.discovery import build
 from .auth import get_credentials
 
@@ -7,7 +9,16 @@ from .auth import get_credentials
 # 3. 일일 할당량: 1,000,000,000점으로 매우 넉넉하지만, 한 번에 수만 통의 get 요청을 보내면 초당 할당량 제한(Rate Limit)에 걸릴 수 있습니다.
 # 결론: 목록을 들고 오는 것(list)은 한계가 없지만, 내용을 모두 가져오는 것(get)은 트래픽 조절이 필요합니다.
 
-def list_messages(max_results=None, page_token=None, query=None):
+def list_labels():
+    """Gmail 라벨(태그) 목록을 가져옵니다."""
+    creds = get_credentials()
+    service = build('gmail', 'v1', credentials=creds)
+
+    results = service.users().labels().list(userId='me').execute()
+    return results.get('labels', [])
+
+
+def list_messages(max_results=None, page_token=None, query=None, label_ids: Optional[List[str]] = None):
     """
     Gmail 목록을 가져옵니다. 페이징을 지원합니다.
     """
@@ -37,12 +48,16 @@ def list_messages(max_results=None, page_token=None, query=None):
             break
 
         page_size = 500 if remaining is None else min(500, remaining)
-        results = service.users().messages().list(
-            userId='me',
-            maxResults=page_size,
-            pageToken=next_page_token,
-            q=actual_query
-        ).execute()
+        request_params = {
+            'userId': 'me',
+            'maxResults': page_size,
+            'pageToken': next_page_token,
+            'q': actual_query,
+        }
+        if label_ids:
+            request_params['labelIds'] = label_ids
+
+        results = service.users().messages().list(**request_params).execute()
 
         messages.extend(results.get('messages', []))
         next_page_token = results.get('nextPageToken', None)

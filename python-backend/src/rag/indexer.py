@@ -2,7 +2,7 @@ import base64
 import hashlib
 import logging
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import chromadb
 from sentence_transformers import SentenceTransformer
 from markdownify import markdownify as md
@@ -18,6 +18,20 @@ from src.gws.gmail import list_messages, get_message
 from src.gws.drive import list_drive_files
 
 logger = logging.getLogger(__name__)
+
+VALID_RAG_SOURCES = {"gmail", "drive"}
+
+def normalize_sources(sources: Optional[List[str]] = None) -> List[str]:
+    if sources is None:
+        return ["gmail", "drive"]
+    normalized = []
+    for source in sources:
+        value = str(source).strip().lower()
+        if value in VALID_RAG_SOURCES and value not in normalized:
+            normalized.append(value)
+    if not normalized:
+        raise ValueError("최소 하나 이상의 검색 재료를 선택해 주세요. 사용 가능: gmail, drive")
+    return normalized
 
 # 임베딩 모델 캐싱
 _embedding_model = None
@@ -68,6 +82,11 @@ def _replace_doc_chunks(collection, doc_id: str, ids: List[str], embeddings: Lis
     if existing_ids:
         collection.delete(ids=existing_ids)
     collection.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+
+def _delete_doc_chunks(collection, doc_id: str) -> None:
+    existing_ids = _existing_ids_for_doc(collection, doc_id)
+    if existing_ids:
+        collection.delete(ids=existing_ids)
 
 def parse_gmail_body(message_detail: Dict[str, Any]) -> str:
     """Gmail API 상세 응답에서 본문 텍스트를 추출합니다."""
@@ -303,8 +322,9 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
         
         content = fetch_drive_file_content(file_id, mime_type)
         if not content:
-            # 텍스트 추출이 불가능한 경우 파일명으로 대체
-            content = f"파일명: {name}\n파일 형식: {mime_type}"
+            _delete_doc_chunks(drive_col, file_id)
+            logger.warning("Drive 파일 텍스트 추출 실패로 RAG 인덱싱 제외: %s (%s)", name, mime_type)
+            continue
             
         chunks = chunk_text(content)
         if chunks:
@@ -336,31 +356,34 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
             
     return drive_indexed
 
-def index_all() -> Dict[str, Any]:
+def index_all(sources: Optional[List[str]] = None) -> Dict[str, Any]:
     """Gmail 및 Google Drive 최신 데이터를 동기화하여 ChromaDB에 인덱싱합니다."""
     if not is_authenticated():
         return {"status": "error", "message": "Google Workspace 인증이 필요합니다."}
+    selected_sources = normalize_sources(sources)
         
     logger.info("ChromaDB 인덱싱 시작...")
     
     # 1. Gmail 인덱싱 (최근 50개 대상)
     gmail_indexed = 0
-    try:
-        messages, _ = list_messages(max_results=50)
-        msg_details = []
-        for msg in messages:
-            msg_details.append(get_message(msg["id"]))
-        gmail_indexed = index_gmail_raw(msg_details)
-    except Exception as e:
-        logger.error(f"Gmail 인덱싱 중 오류 발생: {e}")
+    if "gmail" in selected_sources:
+        try:
+            messages, _ = list_messages(max_results=50)
+            msg_details = []
+            for msg in messages:
+                msg_details.append(get_message(msg["id"]))
+            gmail_indexed = index_gmail_raw(msg_details)
+        except Exception as e:
+            logger.error(f"Gmail 인덱싱 중 오류 발생: {e}")
         
     # 2. Drive 인덱싱 (최근 30개 대상)
     drive_indexed = 0
-    try:
-        files, _ = list_drive_files(max_results=30)
-        drive_indexed = index_drive_raw(files)
-    except Exception as e:
-        logger.error(f"Drive 인덱싱 중 오류 발생: {e}")
+    if "drive" in selected_sources:
+        try:
+            files, _ = list_drive_files(max_results=30)
+            drive_indexed = index_drive_raw(files)
+        except Exception as e:
+            logger.error(f"Drive 인덱싱 중 오류 발생: {e}")
         
     # BM25 인덱스 자동 갱신
     try:
@@ -372,6 +395,7 @@ def index_all() -> Dict[str, Any]:
         "status": "success",
         "gmail_indexed": gmail_indexed,
         "drive_indexed": drive_indexed,
+        "sources": selected_sources,
         "timestamp": datetime.now().isoformat()
     }
 
