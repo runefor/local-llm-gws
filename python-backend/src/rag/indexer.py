@@ -10,6 +10,7 @@ import os
 import re
 import pickle
 from rank_bm25 import BM25Okapi
+from urllib.parse import quote
 
 from config import config
 from src.gws.auth import is_authenticated
@@ -46,6 +47,27 @@ def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> Lis
         chunks.append(text[start:end])
         start += chunk_size - chunk_overlap
     return chunks
+
+def _gmail_search_url(message_id_header: str) -> str:
+    if not message_id_header:
+        return ""
+    normalized = message_id_header.strip().strip("<>")
+    return f"https://mail.google.com/mail/u/0/#search/rfc822msgid%3A{quote(normalized)}"
+
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+def _existing_ids_for_doc(collection, doc_id: str) -> List[str]:
+    existing = collection.get(where={"doc_id": doc_id}, include=[])
+    if not existing:
+        return []
+    return list(existing.get("ids") or [])
+
+def _replace_doc_chunks(collection, doc_id: str, ids: List[str], embeddings: List[Any], documents: List[str], metadatas: List[Dict[str, Any]]) -> None:
+    existing_ids = _existing_ids_for_doc(collection, doc_id)
+    if existing_ids:
+        collection.delete(ids=existing_ids)
+    collection.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
 
 def parse_gmail_body(message_detail: Dict[str, Any]) -> str:
     """Gmail API 상세 응답에서 본문 텍스트를 추출합니다."""
@@ -219,14 +241,16 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
     for msg_detail in msg_details:
         msg_id = msg_detail["id"]
         
-        # 이미 인덱싱되었는지 확인 (메타데이터 중복 조회 방지용)
-        existing = gmail_col.get(ids=[f"gmail_{msg_id}_0"])
-        if existing and existing["ids"]:
-            continue
-            
         headers = msg_detail.get("payload", {}).get("headers", [])
         subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "(제목 없음)")
         sender = next((h["value"] for h in headers if h["name"].lower() == "from"), "알 수 없음")
+        message_id_header = next((h["value"] for h in headers if h["name"].lower() == "message-id"), "")
+        rfc822msgid = message_id_header.strip().strip("<>")
+        internal_date_ms = int(msg_detail.get("internalDate", 0) or 0)
+        if internal_date_ms:
+            date_iso = datetime.fromtimestamp(internal_date_ms / 1000.0).isoformat()
+        else:
+            date_iso = datetime.now().isoformat()
         body = parse_gmail_body(msg_detail)
         
         if not body:
@@ -236,6 +260,7 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
         chunks = chunk_text(full_text)
         
         if chunks:
+            document_hash = _content_hash(full_text)
             # E5 모델 접두사 추가
             prefixed_chunks = [f"passage: {c}" for c in chunks]
             embeddings = model.encode(prefixed_chunks).tolist()
@@ -243,13 +268,23 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
             documents = chunks
             metadatas = [{
                 "doc_id": msg_id,
+                "provider_item_id": msg_id,
+                "thread_id": msg_detail.get("threadId", ""),
                 "source": "gmail",
                 "title": subject,
                 "sender": sender,
-                "date": datetime.now().isoformat()
-            } for _ in range(len(chunks))]
+                "date": date_iso,
+                "internal_date": date_iso,
+                "message_id": msg_id,
+                "rfc822msgid": rfc822msgid,
+                "original_url": _gmail_search_url(message_id_header),
+                "location_label": f"Gmail: {subject}",
+                "chunk_index": i,
+                "content_hash": _content_hash(chunks[i]),
+                "document_hash": document_hash,
+            } for i in range(len(chunks))]
             
-            gmail_col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+            _replace_doc_chunks(gmail_col, msg_id, ids, embeddings, documents, metadatas)
             gmail_indexed += 1
             
     return gmail_indexed
@@ -266,10 +301,6 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
         name = f["name"]
         mime_type = f["mimeType"]
         
-        existing = drive_col.get(ids=[f"drive_{file_id}_0"])
-        if existing and existing["ids"]:
-            continue
-            
         content = fetch_drive_file_content(file_id, mime_type)
         if not content:
             # 텍스트 추출이 불가능한 경우 파일명으로 대체
@@ -277,6 +308,7 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
             
         chunks = chunk_text(content)
         if chunks:
+            document_hash = _content_hash(content)
             # E5 모델 접두사 추가
             prefixed_chunks = [f"passage: {c}" for c in chunks]
             embeddings = model.encode(prefixed_chunks).tolist()
@@ -284,13 +316,22 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
             documents = chunks
             metadatas = [{
                 "doc_id": file_id,
+                "provider_item_id": file_id,
                 "source": "drive",
                 "title": name,
                 "mime_type": mime_type,
-                "date": f.get("modifiedTime", datetime.now().isoformat())
-            } for _ in range(len(chunks))]
+                "date": f.get("modifiedTime", datetime.now().isoformat()),
+                "webViewLink": f.get("webViewLink", ""),
+                "resourceKey": f.get("resourceKey", ""),
+                "original_url": f.get("webViewLink", ""),
+                "file_id": file_id,
+                "location_label": f"Drive: {name} · chunk {i + 1}",
+                "chunk_index": i,
+                "content_hash": _content_hash(chunks[i]),
+                "document_hash": document_hash,
+            } for i in range(len(chunks))]
             
-            drive_col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+            _replace_doc_chunks(drive_col, file_id, ids, embeddings, documents, metadatas)
             drive_indexed += 1
             
     return drive_indexed

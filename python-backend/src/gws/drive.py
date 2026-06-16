@@ -43,7 +43,7 @@ def list_drive_files(query=None, mime_types=None, page_token=None, max_results=1
     results = service.files().list(
         q=drive_q,
         pageSize=max_results,
-        fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+        fields="nextPageToken, files(id, name, mimeType, modifiedTime, webViewLink, resourceKey)",
         pageToken=page_token
     ).execute()
     
