@@ -132,16 +132,19 @@ def auth_callback(request: Request):
 
 @app.post("/api/sync/gmail")
 def sync_gmail(req: SyncRequest):
-    """Gmail 목록을 가져오고 본문 요약을 동기화합니다."""
+    """Gmail 목록을 가져오고 본문 요약을 동기화하며, ChromaDB에 자동으로 인덱싱합니다."""
     try:
         raw_messages, next_token = list_messages(max_results=req.max_emails, query=req.query)
 
         from src.gws.gmail import get_message
         import datetime
         detailed_messages = []
+        raw_msg_details = []
         for msg in raw_messages:
             try:
                 m_details = get_message(msg['id'])
+                raw_msg_details.append(m_details)
+                
                 headers = m_details.get('payload', {}).get('headers', [])
                 subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '(제목 없음)')
                 sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), '알 수 없음')
@@ -163,6 +166,15 @@ def sync_gmail(req: SyncRequest):
             except Exception as e:
                 print(f"[Gmail] 개별 메일 상세 로드 에러: {e}")
 
+        # RAG 자동 인덱싱 및 BM25 빌드 (선택적 동기화)
+        if raw_msg_details:
+            try:
+                from src.rag.indexer import index_gmail_raw, rebuild_bm25_index
+                index_gmail_raw(raw_msg_details)
+                rebuild_bm25_index()
+            except Exception as idx_err:
+                print(f"[Gmail] RAG 자동 인덱싱 오류: {idx_err}")
+
         return {
             "status": "success",
             "count": len(detailed_messages),
@@ -174,9 +186,19 @@ def sync_gmail(req: SyncRequest):
 
 @app.post("/api/sync/drive")
 def sync_drive(req: SyncRequest):
-    """Google Drive 파일 목록을 가져옵니다."""
+    """Google Drive 파일 목록을 가져오며, ChromaDB에 자동으로 인덱싱합니다."""
     try:
         files, next_token = list_drive_files(max_results=req.max_emails or 100, query=req.query)
+        
+        # RAG 자동 인덱싱 및 BM25 빌드 (선택적 동기화)
+        if files:
+            try:
+                from src.rag.indexer import index_drive_raw, rebuild_bm25_index
+                index_drive_raw(files)
+                rebuild_bm25_index()
+            except Exception as idx_err:
+                print(f"[Drive] RAG 자동 인덱싱 오류: {idx_err}")
+                
         return {
             "status": "success",
             "count": len(files),
@@ -297,17 +319,23 @@ def get_llm_config_route():
 
 @app.post("/api/llm/config")
 def update_llm_config_route(req: LLMConfigRequest):
-    """백엔드의 로컬 LLM 환경 설정을 실시간으로 갱신합니다."""
+    """백엔드의 로컬 LLM 환경 설정을 실시간으로 갱신하고 config.json에 저장합니다."""
     try:
         from config import config
-        config.LLM_SERVE_MODE = req.mode
-        config.LLM_MODEL = req.model
-        config.LLM_API_BASE = req.endpoint
         
+        # config.json 저장 데이터 구성
+        updates = {
+            "LLM_SERVE_MODE": req.mode,
+            "LLM_MODEL": req.model
+        }
         if req.mode == "ollama":
-            config.OLLAMA_BASE = req.endpoint
+            updates["OLLAMA_BASE"] = req.endpoint
+        elif req.mode == "external":
+            updates["LLM_API_BASE"] = req.endpoint
             
-        return {"status": "success", "message": "LLM 설정이 정상적으로 업데이트되었습니다."}
+        config.save_user_config(updates)
+        
+        return {"status": "success", "message": "LLM 설정이 정상적으로 업데이트 및 저장되었습니다."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

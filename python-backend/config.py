@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -22,6 +23,49 @@ class Config:
     CREDENTIALS_PATH = DATA_DIR / "client_secrets.json"
     TOKEN_PATH = DATA_DIR / "token.json"
     MODELS_DIR = DATA_DIR / "models"
+    USER_CONFIG_PATH = DATA_DIR / "config.json"
+
+    def __init__(self):
+        # JSON 기반 사용자 설정 파일 우선 로드 및 오버라이드
+        self.load_user_config()
+
+    def load_user_config(self):
+        if self.USER_CONFIG_PATH.exists():
+            try:
+                with open(self.USER_CONFIG_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if "LLM_SERVE_MODE" in data:
+                    self.LLM_SERVE_MODE = data["LLM_SERVE_MODE"]
+                if "LLM_MODEL" in data:
+                    self.LLM_MODEL = data["LLM_MODEL"]
+                if "OLLAMA_BASE" in data:
+                    self.OLLAMA_BASE = data["OLLAMA_BASE"]
+                if "LLM_API_BASE" in data:
+                    self.LLM_API_BASE = data["LLM_API_BASE"]
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"사용자 설정 로드 중 오류: {e}")
+
+    def save_user_config(self, updates: dict):
+        try:
+            data = {}
+            if self.USER_CONFIG_PATH.exists():
+                try:
+                    with open(self.USER_CONFIG_PATH, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    pass
+            data.update(updates)
+            # 인스턴스 변수 실시간 동기화
+            for key, val in updates.items():
+                if hasattr(self, key):
+                    setattr(self, key, val)
+                    
+            with open(self.USER_CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"사용자 설정 저장 중 오류: {e}")
 
     # -------------------------------------------------------------------
     # LLM 추론 서버 설정

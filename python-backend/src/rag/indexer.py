@@ -6,6 +6,10 @@ from typing import Dict, List, Any
 import chromadb
 from sentence_transformers import SentenceTransformer
 from markdownify import markdownify as md
+import os
+import re
+import pickle
+from rank_bm25 import BM25Okapi
 
 from config import config
 from src.gws.auth import is_authenticated
@@ -21,7 +25,7 @@ def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         logger.info("SentenceTransformer 모델 로드 중...")
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        _embedding_model = SentenceTransformer("intfloat/multilingual-e5-small")
     return _embedding_model
 
 def get_chroma_client():
@@ -118,56 +122,194 @@ def fetch_drive_file_content(file_id: str, mime_type: str) -> str:
         
     return ""
 
+def tokenize_text(text: str) -> List[str]:
+    """한국어, 일본어, 영어 혼합 환경을 지원하는 CJK 대응 토큰화기"""
+    if not text:
+        return []
+    text = text.lower()
+    # 단어 단위 토큰 추출 (영어, 숫자, 한글, 일어, 한자 등)
+    words = re.findall(r'[a-zA-Z0-9가-힣ぁ-んァ-ヶ亜-熙\u4e00-\u9fff]+', text)
+    tokens = list(words)
+    for w in words:
+        is_cjk = False
+        for c in w:
+            o = ord(c)
+            if (0xac00 <= o <= 0xd7a3) or (0x3040 <= o <= 0x30ff) or (0x4e00 <= o <= 0x9fff):
+                is_cjk = True
+                break
+        if is_cjk:
+            # Bi-gram 생성
+            for i in range(len(w) - 1):
+                tokens.append(w[i:i+2])
+            # Uni-gram 생성
+            for c in w:
+                tokens.append(c)
+    return tokens
+
+def rebuild_bm25_index() -> Dict[str, Any]:
+    """ChromaDB의 전체 문서를 읽어 BM25 인덱스를 생성하고 파일로 저장합니다."""
+    logger.info("BM25 인덱스 생성 시작...")
+    client = get_chroma_client()
+    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+    drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+    
+    # ChromaDB에서 모든 문서 가져오기 (충분히 큰 한계값 설정)
+    gmail_data = gmail_col.get(limit=10000, include=["documents", "metadatas"])
+    drive_data = drive_col.get(limit=10000, include=["documents", "metadatas"])
+    
+    corpus_chunks = []
+    
+    # Gmail 데이터 파싱
+    if gmail_data and gmail_data["ids"]:
+        for i in range(len(gmail_data["ids"])):
+            corpus_chunks.append({
+                "id": gmail_data["ids"][i],
+                "content": gmail_data["documents"][i],
+                "metadata": gmail_data["metadatas"][i],
+                "source": "gmail"
+            })
+            
+    # Drive 데이터 파싱
+    if drive_data and drive_data["ids"]:
+        for i in range(len(drive_data["ids"])):
+            corpus_chunks.append({
+                "id": drive_data["ids"][i],
+                "content": drive_data["documents"][i],
+                "metadata": drive_data["metadatas"][i],
+                "source": "drive"
+            })
+            
+    if not corpus_chunks:
+        logger.warning("BM25 인덱싱할 문서가 없습니다.")
+        bm25_path = config.DATA_DIR / "bm25_index.pkl"
+        if bm25_path.exists():
+            try:
+                os.remove(bm25_path)
+            except Exception:
+                pass
+        return {"status": "success", "message": "No documents to index"}
+        
+    # 토큰화 진행
+    tokenized_corpus = [tokenize_text(chunk["content"]) for chunk in corpus_chunks]
+    
+    # BM25 모델 학습
+    bm25 = BM25Okapi(tokenized_corpus)
+    
+    # 저장 데이터 패킹
+    index_data = {
+        "bm25": bm25,
+        "chunks": corpus_chunks,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    bm25_path = config.DATA_DIR / "bm25_index.pkl"
+    with open(bm25_path, "wb") as f:
+        pickle.dump(index_data, f)
+        
+    logger.info(f"BM25 인덱스 생성 완료 및 저장 성공: {bm25_path} (총 {len(corpus_chunks)}개 청크)")
+    return {"status": "success", "chunks_count": len(corpus_chunks)}
+
+def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
+    """주어진 Gmail 상세 메시지 리스트를 ChromaDB에 인덱싱합니다."""
+    client = get_chroma_client()
+    model = get_embedding_model()
+    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+    
+    gmail_indexed = 0
+    for msg_detail in msg_details:
+        msg_id = msg_detail["id"]
+        
+        # 이미 인덱싱되었는지 확인 (메타데이터 중복 조회 방지용)
+        existing = gmail_col.get(ids=[f"gmail_{msg_id}_0"])
+        if existing and existing["ids"]:
+            continue
+            
+        headers = msg_detail.get("payload", {}).get("headers", [])
+        subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "(제목 없음)")
+        sender = next((h["value"] for h in headers if h["name"].lower() == "from"), "알 수 없음")
+        body = parse_gmail_body(msg_detail)
+        
+        if not body:
+            body = msg_detail.get("snippet", "")
+            
+        full_text = f"Subject: {subject}\nFrom: {sender}\n\n{body}"
+        chunks = chunk_text(full_text)
+        
+        if chunks:
+            # E5 모델 접두사 추가
+            prefixed_chunks = [f"passage: {c}" for c in chunks]
+            embeddings = model.encode(prefixed_chunks).tolist()
+            ids = [f"gmail_{msg_id}_{i}" for i in range(len(chunks))]
+            documents = chunks
+            metadatas = [{
+                "doc_id": msg_id,
+                "source": "gmail",
+                "title": subject,
+                "sender": sender,
+                "date": datetime.now().isoformat()
+            } for _ in range(len(chunks))]
+            
+            gmail_col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+            gmail_indexed += 1
+            
+    return gmail_indexed
+
+def index_drive_raw(files: List[Dict[str, Any]]) -> int:
+    """주어진 Google Drive 파일 리스트를 다운로드 및 ChromaDB에 인덱싱합니다."""
+    client = get_chroma_client()
+    model = get_embedding_model()
+    drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+    
+    drive_indexed = 0
+    for f in files:
+        file_id = f["id"]
+        name = f["name"]
+        mime_type = f["mimeType"]
+        
+        existing = drive_col.get(ids=[f"drive_{file_id}_0"])
+        if existing and existing["ids"]:
+            continue
+            
+        content = fetch_drive_file_content(file_id, mime_type)
+        if not content:
+            # 텍스트 추출이 불가능한 경우 파일명으로 대체
+            content = f"파일명: {name}\n파일 형식: {mime_type}"
+            
+        chunks = chunk_text(content)
+        if chunks:
+            # E5 모델 접두사 추가
+            prefixed_chunks = [f"passage: {c}" for c in chunks]
+            embeddings = model.encode(prefixed_chunks).tolist()
+            ids = [f"drive_{file_id}_{i}" for i in range(len(chunks))]
+            documents = chunks
+            metadatas = [{
+                "doc_id": file_id,
+                "source": "drive",
+                "title": name,
+                "mime_type": mime_type,
+                "date": f.get("modifiedTime", datetime.now().isoformat())
+            } for _ in range(len(chunks))]
+            
+            drive_col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+            drive_indexed += 1
+            
+    return drive_indexed
+
 def index_all() -> Dict[str, Any]:
     """Gmail 및 Google Drive 최신 데이터를 동기화하여 ChromaDB에 인덱싱합니다."""
     if not is_authenticated():
         return {"status": "error", "message": "Google Workspace 인증이 필요합니다."}
         
     logger.info("ChromaDB 인덱싱 시작...")
-    client = get_chroma_client()
-    model = get_embedding_model()
-    
-    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
-    drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
     
     # 1. Gmail 인덱싱 (최근 50개 대상)
     gmail_indexed = 0
     try:
         messages, _ = list_messages(max_results=50)
+        msg_details = []
         for msg in messages:
-            msg_id = msg["id"]
-            
-            # 이미 인덱싱되었는지 확인 (메타데이터 중복 조회 방지용)
-            existing = gmail_col.get(ids=[f"gmail_{msg_id}_0"])
-            if existing and existing["ids"]:
-                continue
-                
-            msg_detail = get_message(msg_id)
-            headers = msg_detail.get("payload", {}).get("headers", [])
-            subject = next((h["value"] for h in headers if h["name"].lower() == "subject"), "(제목 없음)")
-            sender = next((h["value"] for h in headers if h["name"].lower() == "from"), "알 수 없음")
-            body = parse_gmail_body(msg_detail)
-            
-            if not body:
-                body = msg_detail.get("snippet", "")
-                
-            full_text = f"Subject: {subject}\nFrom: {sender}\n\n{body}"
-            chunks = chunk_text(full_text)
-            
-            if chunks:
-                embeddings = model.encode(chunks).tolist()
-                ids = [f"gmail_{msg_id}_{i}" for i in range(len(chunks))]
-                documents = chunks
-                metadatas = [{
-                    "doc_id": msg_id,
-                    "source": "gmail",
-                    "title": subject,
-                    "sender": sender,
-                    "date": datetime.now().isoformat()
-                } for _ in range(len(chunks))]
-                
-                gmail_col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
-                gmail_indexed += 1
+            msg_details.append(get_message(msg["id"]))
+        gmail_indexed = index_gmail_raw(msg_details)
     except Exception as e:
         logger.error(f"Gmail 인덱싱 중 오류 발생: {e}")
         
@@ -175,37 +317,15 @@ def index_all() -> Dict[str, Any]:
     drive_indexed = 0
     try:
         files, _ = list_drive_files(max_results=30)
-        for f in files:
-            file_id = f["id"]
-            name = f["name"]
-            mime_type = f["mimeType"]
-            
-            existing = drive_col.get(ids=[f"drive_{file_id}_0"])
-            if existing and existing["ids"]:
-                continue
-                
-            content = fetch_drive_file_content(file_id, mime_type)
-            if not content:
-                # 텍스트 추출이 불가능한 경우 파일명으로 대체
-                content = f"파일명: {name}\n파일 형식: {mime_type}"
-                
-            chunks = chunk_text(content)
-            if chunks:
-                embeddings = model.encode(chunks).tolist()
-                ids = [f"drive_{file_id}_{i}" for i in range(len(chunks))]
-                documents = chunks
-                metadatas = [{
-                    "doc_id": file_id,
-                    "source": "drive",
-                    "title": name,
-                    "mime_type": mime_type,
-                    "date": f.get("modifiedTime", datetime.now().isoformat())
-                } for _ in range(len(chunks))]
-                
-                drive_col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
-                drive_indexed += 1
+        drive_indexed = index_drive_raw(files)
     except Exception as e:
         logger.error(f"Drive 인덱싱 중 오류 발생: {e}")
+        
+    # BM25 인덱스 자동 갱신
+    try:
+        rebuild_bm25_index()
+    except Exception as e:
+        logger.error(f"BM25 인덱스 자동 재생성 오류: {e}")
         
     return {
         "status": "success",

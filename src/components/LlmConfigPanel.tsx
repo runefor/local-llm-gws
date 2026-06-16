@@ -22,7 +22,8 @@ export default function LlmConfigPanel() {
     llmMode, setLlmMode,
     handleLlmDisconnect,
     handleLlmTest, addLog, backendStatus,
-    detectedServers, isDetecting, scanLocalServers
+    detectedServers, isDetecting, scanLocalServers,
+    saveLlmConfig
   } = useApp();
   
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -292,7 +293,10 @@ export default function LlmConfigPanel() {
           <input 
             type="radio" 
             checked={llmMode === "internal"} 
-            onChange={() => setLlmMode("internal")}
+            onChange={() => {
+              setLlmMode("internal");
+              saveLlmConfig("http://localhost:8080/v1", llmModel, "llamacpp");
+            }}
             className="text-primary focus:ring-primary"
           />
           <span>내장 로컬 모델 (추천)</span>
@@ -301,7 +305,11 @@ export default function LlmConfigPanel() {
           <input 
             type="radio" 
             checked={llmMode === "external"} 
-            onChange={() => setLlmMode("external")}
+            onChange={() => {
+              setLlmMode("external");
+              const mode = llmEndpoint.includes("11434") ? "ollama" : "external";
+              saveLlmConfig(llmEndpoint, llmModel, mode);
+            }}
             className="text-primary focus:ring-primary"
           />
           <span>외부 API (Ollama 등)</span>
@@ -332,7 +340,10 @@ export default function LlmConfigPanel() {
               <div className="space-y-3">
                 <select 
                   value={localModels.find(m => m.filename === llmModel) ? llmModel : (localModels[0]?.filename || "")}
-                  onChange={(e) => setLlmModel(e.target.value)}
+                  onChange={(e) => {
+                    setLlmModel(e.target.value);
+                    saveLlmConfig("http://localhost:8080/v1", e.target.value, "llamacpp");
+                  }}
                   disabled={serverStatus.running}
                   className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded px-2.5 py-2 text-sm text-text-primary focus:outline-none focus:border-primary disabled:opacity-60"
                 >

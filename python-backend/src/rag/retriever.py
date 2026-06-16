@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, Any, List
+import pickle
+from typing import Dict, Any, List, Optional
 import chromadb
 from config import config
 from src.llm.inference import chat_completion
@@ -7,62 +8,137 @@ from src.rag.indexer import get_embedding_model, get_chroma_client
 
 logger = logging.getLogger(__name__)
 
+def load_bm25_index() -> Optional[Dict[str, Any]]:
+    """로컬 파일에서 직렬화된 BM25 인덱스를 로드합니다."""
+    bm25_path = config.DATA_DIR / "bm25_index.pkl"
+    if not bm25_path.exists():
+        logger.warning(f"BM25 인덱스 파일이 존재하지 않습니다: {bm25_path}")
+        return None
+    try:
+        with open(bm25_path, "rb") as f:
+            return pickle.load(f)
+    except Exception as e:
+        logger.error(f"BM25 인덱스 파일 로드 중 오류: {e}")
+        return None
+
+def reciprocal_rank_fusion(vector_results: List[Dict[str, Any]], bm25_results: List[Dict[str, Any]], k: int = 60) -> List[Dict[str, Any]]:
+    """RRF (Reciprocal Rank Fusion) 알고리즘을 사용해 벡터 결과와 키워드 결과를 융합합니다."""
+    rrf_scores = {}
+    doc_map = {}
+    
+    # 1. 벡터 검색 결과 점수 계산 (순위 1부터 시작)
+    for rank, doc in enumerate(vector_results, 1):
+        doc_id = doc["id"]
+        doc_map[doc_id] = doc
+        rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+        
+    # 2. BM25 검색 결과 점수 계산
+    for rank, doc in enumerate(bm25_results, 1):
+        doc_id = doc["id"]
+        if doc_id not in doc_map:
+            doc_map[doc_id] = {
+                "id": doc_id,
+                "content": doc["content"],
+                "metadata": doc["metadata"],
+                "distance": 999.0,  # BM25 단독 매칭된 문서용 높은 디스턴스 설정
+                "source": doc["source"]
+            }
+        rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+        
+    # RRF 점수가 높은 순으로 정렬
+    sorted_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+    
+    merged = []
+    for doc_id in sorted_ids:
+        merged.append(doc_map[doc_id])
+    return merged
+
 def retrieve_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-    """ChromaDB에서 쿼리와 가장 유사한 청크들을 검색합니다."""
+    """Vector (ChromaDB) + Keyword (BM25) 하이브리드 검색을 수행하고 RRF로 병합합니다."""
     client = get_chroma_client()
     model = get_embedding_model()
     
-    # 쿼리 임베딩 생성
-    query_vector = model.encode(query).tolist()
+    # 1. 벡터 검색 수행용 쿼리 임베딩 생성 (multilingual-e5 모델 요구사항인 'query: ' 접두사 추가)
+    prefixed_query = f"query: {query}"
+    query_vector = model.encode(prefixed_query).tolist()
     
     gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
     drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
     
-    results = []
+    vector_results = []
+    pool_size = top_k * 3  # RRF 병합을 위해 충분한 후보군 확보
     
-    # Gmail 검색
+    # Gmail 벡터 검색
     try:
         gmail_res = gmail_col.query(
             query_embeddings=[query_vector],
-            n_results=top_k
+            n_results=pool_size
         )
         if gmail_res and gmail_res["documents"] and gmail_res["documents"][0]:
             for i in range(len(gmail_res["documents"][0])):
-                doc = gmail_res["documents"][0][i]
-                meta = gmail_res["metadatas"][0][i]
-                dist = gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0
-                results.append({
-                    "content": doc,
-                    "metadata": meta,
-                    "distance": dist,
+                vector_results.append({
+                    "id": gmail_res["ids"][0][i],
+                    "content": gmail_res["documents"][0][i],
+                    "metadata": gmail_res["metadatas"][0][i],
+                    "distance": gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0,
                     "source": "gmail"
                 })
     except Exception as e:
         logger.error(f"Gmail ChromaDB 검색 중 오류: {e}")
         
-    # Drive 검색
+    # Drive 벡터 검색
     try:
         drive_res = drive_col.query(
             query_embeddings=[query_vector],
-            n_results=top_k
+            n_results=pool_size
         )
         if drive_res and drive_res["documents"] and drive_res["documents"][0]:
             for i in range(len(drive_res["documents"][0])):
-                doc = drive_res["documents"][0][i]
-                meta = drive_res["metadatas"][0][i]
-                dist = drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0
-                results.append({
-                    "content": doc,
-                    "metadata": meta,
-                    "distance": dist,
+                vector_results.append({
+                    "id": drive_res["ids"][0][i],
+                    "content": drive_res["documents"][0][i],
+                    "metadata": drive_res["metadatas"][0][i],
+                    "distance": drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0,
                     "source": "drive"
                 })
     except Exception as e:
         logger.error(f"Drive ChromaDB 검색 중 오류: {e}")
         
-    # 유사도(distance) 기준으로 정렬하여 상위 top_k개 리턴
-    results.sort(key=lambda x: x["distance"])
-    return results[:top_k]
+    # 거리 순 정렬 후 후보군 풀 크기로 제한
+    vector_results.sort(key=lambda x: x["distance"])
+    vector_pool = vector_results[:pool_size]
+    
+    # 2. BM25 키워드 검색 수행
+    bm25_pool = []
+    bm25_data = load_bm25_index()
+    if bm25_data:
+        try:
+            from src.rag.indexer import tokenize_text
+            bm25 = bm25_data["bm25"]
+            chunks = bm25_data["chunks"]
+            
+            tokenized_query = tokenize_text(query)
+            if tokenized_query:
+                # 검색 쿼리에 대해 모든 청크의 점수 획득
+                scores = bm25.get_scores(tokenized_query)
+                # 매칭 점수가 0보다 큰 인덱스만 매칭 청크로 추출
+                valid_res = []
+                for idx, score in enumerate(scores):
+                    if score > 0.0:
+                        valid_res.append((score, chunks[idx]))
+                # 점수 역순 정렬
+                valid_res.sort(key=lambda x: x[0], reverse=True)
+                bm25_pool = [item[1] for item in valid_res[:pool_size]]
+        except Exception as e:
+            logger.error(f"BM25 키워드 검색 중 오류: {e}")
+            
+    # 3. RRF 결과 융합
+    if bm25_pool:
+        hybrid_results = reciprocal_rank_fusion(vector_pool, bm25_pool)
+    else:
+        hybrid_results = vector_pool
+        
+    return hybrid_results[:top_k]
 
 def search_and_summarize(query: str, top_k: int = 5) -> Dict[str, Any]:
     """검색한 컨텍스트를 활용하여 LLM 요약 및 답변을 생성합니다."""
