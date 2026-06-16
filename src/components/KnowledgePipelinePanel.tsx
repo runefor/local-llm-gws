@@ -11,6 +11,13 @@ interface SourceDoc {
   snippet: string;
 }
 
+type RagSource = "gmail" | "drive";
+
+const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
+  { id: "gmail", label: "Gmail", description: "메일 본문과 스레드 중심으로 취합", icon: "mail" },
+  { id: "drive", label: "Drive", description: "문서와 시트 중심으로 취합", icon: "description" },
+];
+
 export default function KnowledgePipelinePanel() {
   const {
     backendStatus,
@@ -27,6 +34,7 @@ export default function KnowledgePipelinePanel() {
   const [answer, setAnswer] = useState("");
   const [thought, setThought] = useState<string | null>(null);
   const [sources, setSources] = useState<SourceDoc[]>([]);
+  const [selectedSources, setSelectedSources] = useState<RagSource[]>(["gmail", "drive"]);
 
   // 내보내기용 상태
   const [exportTitle, setExportTitle] = useState("");
@@ -36,6 +44,16 @@ export default function KnowledgePipelinePanel() {
 
   // 원본 문서 미리보기 모달 상태
   const [selectedDoc, setSelectedDoc] = useState<SourceDoc | null>(null);
+  const selectedSourceLabel = selectedSources.map((source) => source === "gmail" ? "Gmail" : "Drive").join(" + ");
+
+  const toggleSource = (source: RagSource) => {
+    setSelectedSources((prev) => {
+      if (prev.includes(source)) {
+        return prev.length === 1 ? prev : prev.filter((item) => item !== source);
+      }
+      return [...prev, source];
+    });
+  };
 
   // 마크다운 파서 및 렌더러
   const renderMarkdown = (text: string) => {
@@ -116,13 +134,13 @@ export default function KnowledgePipelinePanel() {
     setAnswer("");
     setThought(null);
     setSources([]);
-    addLog(`지식 취합 파이프라인 시작: "${query}"`);
+    addLog(`지식 취합 파이프라인 시작(${selectedSourceLabel}): "${query}"`);
 
     try {
       const response = await fetch("http://localhost:18000/api/pipeline/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, top_k: 8 }),
+        body: JSON.stringify({ query, top_k: 8, sources: selectedSources }),
       });
       const data = await response.json();
 
@@ -191,6 +209,49 @@ export default function KnowledgePipelinePanel() {
         <p className="text-xs text-text-secondary leading-relaxed mt-1">
           구글 워크스페이스(메일, 드라이브)에서 원하는 주제의 정보를 안전하게 수집한 뒤, 로컬 LLM을 통해 정돈된 노트를 생성하고 Obsidian이나 Notion으로 내보냅니다.
         </p>
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl border border-surface-variant space-y-3 shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+              <span className="material-symbols-rounded text-sm text-primary">filter_alt</span>
+              취합 재료 선택
+            </h3>
+            <p className="text-[11px] text-text-secondary leading-relaxed mt-1">
+              선택한 소스만 검색해 요약합니다. 데이터가 많을 때 Gmail 또는 Drive만 골라 처리할 수 있습니다.
+            </p>
+          </div>
+          <span className="text-[10px] font-bold text-primary bg-primary-container border border-primary/10 rounded-full px-3 py-1">
+            현재: {selectedSourceLabel}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {sourceOptions.map((option) => {
+            const selected = selectedSources.includes(option.id);
+            const isLastSelected = selected && selectedSources.length === 1;
+            return (
+              <label
+                key={option.id}
+                className={`flex items-start gap-3 rounded-2xl border p-3 transition-all ${selected ? "bg-primary-container/40 border-primary/30" : "bg-[#f8fafd] border-surface-variant/80 hover:border-primary/20"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={isLastSelected || loading || backendStatus !== "online"}
+                  onChange={() => toggleSource(option.id)}
+                  className="mt-0.5 h-4 w-4 rounded border-surface-variant accent-primary disabled:opacity-60"
+                  aria-label={`${option.label} 취합 재료 선택`}
+                />
+                <span className="material-symbols-rounded text-primary text-lg mt-[-1px]">{option.icon}</span>
+                <span className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-text-primary">{option.label}</span>
+                  <span className="text-[11px] text-text-secondary leading-relaxed">{option.description}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       {/* 입력 폼 */}

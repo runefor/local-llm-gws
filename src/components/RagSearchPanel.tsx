@@ -70,8 +70,13 @@ interface IndexStatus {
 }
 
 type NotificationType = "success" | "error" | "info" | "warning";
+type RagSource = "gmail" | "drive";
 
 const defaultArtifactInstruction = "선택한 근거만 사용해 핵심 요약과 출처 기반 인사이트를 Markdown으로 정리해 주세요.";
+const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
+  { id: "gmail", label: "Gmail", description: "메일 본문과 스레드에서 근거 검색", icon: "mail" },
+  { id: "drive", label: "Drive", description: "문서와 시트에서 근거 검색", icon: "description" },
+];
 
 const toRecord = (value: unknown): Record<string, unknown> => {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
@@ -236,12 +241,14 @@ export default function RagSearchPanel() {
 
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
+  const [selectedSources, setSelectedSources] = useState<RagSource[]>(["gmail", "drive"]);
 
   const reviewRef = useRef<HTMLDivElement>(null);
 
   const selectedEvidence = evidence.filter((item) => selectedEvidenceIds.includes(item.id));
   const selectedCount = selectedEvidence.length;
   const allEvidenceSelected = evidence.length > 0 && selectedCount === evidence.length;
+  const selectedSourceLabel = selectedSources.map((source) => source === "gmail" ? "Gmail" : "Drive").join(" + ");
 
   useEffect(() => {
     if (notification) {
@@ -272,15 +279,28 @@ export default function RagSearchPanel() {
     setNotification({ type, text });
   };
 
+  const toggleSource = (source: RagSource) => {
+    setSelectedSources((prev) => {
+      if (prev.includes(source)) {
+        return prev.length === 1 ? prev : prev.filter((item) => item !== source);
+      }
+      return [...prev, source];
+    });
+  };
+
   const handleIndexing = async () => {
     setIndexing(true);
     addLog("ChromaDB 지식베이스 인덱싱 작업 실행 중...");
     showNotification("info", "지식베이스 인덱싱을 갱신하는 중입니다...");
     try {
-      const response = await fetch("http://localhost:18000/api/rag/index", { method: "POST" });
+        const response = await fetch("http://localhost:18000/api/rag/index", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sources: selectedSources }),
+        });
       const data = toRecord(await response.json());
       if (data.status === "success") {
-        addLog(`인덱싱 완료! Gmail ${toNumberValue(data.gmail_indexed) ?? 0}개, Drive ${toNumberValue(data.drive_indexed) ?? 0}개 동기화 처리.`);
+        addLog(`인덱싱 완료! ${selectedSourceLabel} 기준으로 Gmail ${toNumberValue(data.gmail_indexed) ?? 0}개, Drive ${toNumberValue(data.drive_indexed) ?? 0}개 처리.`);
         showNotification("success", "지식베이스 인덱싱 갱신이 완료되었습니다.");
         fetchIndexStatus();
       } else {
@@ -343,13 +363,13 @@ export default function RagSearchPanel() {
     setLastQuery(trimmedQuery);
     setNotification(null);
     resetArtifactDraft();
-    addLog(`RAG 근거 검색 요청: "${trimmedQuery}"`);
+    addLog(`RAG 근거 검색 요청(${selectedSourceLabel}): "${trimmedQuery}"`);
 
     try {
       const response = await fetch("http://localhost:18000/api/rag/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: trimmedQuery, top_k: 5 }),
+          body: JSON.stringify({ query: trimmedQuery, top_k: 5, sources: selectedSources }),
       });
       const data = toRecord(await response.json());
 
@@ -598,18 +618,61 @@ export default function RagSearchPanel() {
         <div className="flex flex-wrap gap-4 text-xs bg-[#f8fafd] border border-[#e1e3e1] p-3.5 rounded-2xl text-[#444746] font-medium">
           <div className="flex items-center gap-1.5">
             <span className="material-symbols-rounded text-[#0b57d0] text-sm">mail</span>
-            <span>Gmail: <strong>{indexStatus.gmail_chunks} chunks</strong></span>
+            <span>Gmail 근거: <strong>{indexStatus.gmail_chunks}개</strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="material-symbols-rounded text-[#0b57d0] text-sm">description</span>
-            <span>Drive: <strong>{indexStatus.drive_chunks} chunks</strong></span>
+            <span>Drive 근거: <strong>{indexStatus.drive_chunks}개</strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="material-symbols-rounded text-[#0b57d0] text-sm">database</span>
-            <span>전체 지식: <strong>{indexStatus.total_chunks} chunks</strong></span>
+            <span>전체 인덱싱된 근거: <strong>{indexStatus.total_chunks}개</strong></span>
           </div>
         </div>
       )}
+
+      <div className="bg-[#f8fafd] border border-[#e1e3e1] rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-xs font-bold text-[#1f1f1f] flex items-center gap-1.5">
+              <span className="material-symbols-rounded text-sm text-[#0b57d0]">filter_alt</span>
+              검색 재료 선택
+            </h3>
+            <p className="text-[11px] text-[#444746] leading-relaxed mt-1">
+              선택한 소스만 인덱싱하고 검색합니다. 데이터가 많을 때 Gmail 또는 Drive만 골라 처리할 수 있습니다.
+            </p>
+          </div>
+          <span className="text-[10px] font-bold text-[#0b57d0] bg-white border border-[#d3e3fd] rounded-full px-3 py-1">
+            현재: {selectedSourceLabel}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {sourceOptions.map((option) => {
+            const selected = selectedSources.includes(option.id);
+            const isLastSelected = selected && selectedSources.length === 1;
+            return (
+              <label
+                key={option.id}
+                className={`flex items-start gap-3 rounded-2xl border p-3 transition-all ${selected ? "bg-white border-[#0b57d0]/30 shadow-[0_4px_16px_rgba(11,87,208,0.06)]" : "bg-white/60 border-[#e1e3e1] hover:border-[#0b57d0]/20"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={isLastSelected || indexing || loading || backendStatus !== "online"}
+                  onChange={() => toggleSource(option.id)}
+                  className="mt-0.5 h-4 w-4 rounded border-[#e1e3e1] accent-[#0b57d0] disabled:opacity-60"
+                  aria-label={`${option.label} 검색 재료 선택`}
+                />
+                <span className="material-symbols-rounded text-[#0b57d0] text-lg mt-[-1px]">{option.icon}</span>
+                <span className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-[#1f1f1f]">{option.label}</span>
+                  <span className="text-[11px] text-[#444746] leading-relaxed">{option.description}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
 
       <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2.5">
         <div className="relative flex-1 min-w-0">
