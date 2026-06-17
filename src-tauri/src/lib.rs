@@ -1,4 +1,5 @@
-use std::process::{Command, Child};
+use std::path::PathBuf;
+use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::{Manager, RunEvent};
 
@@ -7,6 +8,16 @@ use std::os::windows::process::CommandExt;
 
 struct BackendState {
     child: Mutex<Option<Child>>,
+}
+
+fn resolve_backend_dir() -> Option<PathBuf> {
+    let current_dir = std::env::current_dir().ok()?;
+    [
+        current_dir.join("python-backend"),
+        current_dir.join("../python-backend"),
+    ]
+    .into_iter()
+    .find(|path| path.join("main.py").exists())
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -29,15 +40,20 @@ pub fn run() {
             
             if is_debug {
                 // 개발 단계: 가상환경 파이썬 사용
-                let (python_exe, script_path, work_dir) = if cfg!(target_os = "windows") {
-                    ("../python-backend/.venv/Scripts/python.exe", "../python-backend/main.py", "../python-backend")
-                } else {
-                    ("../python-backend/.venv/bin/python", "../python-backend/main.py", "../python-backend")
+                let Some(work_dir) = resolve_backend_dir() else {
+                    eprintln!("Failed to find python-backend directory from current working directory.");
+                    return Ok(());
                 };
+                let python_exe = if cfg!(target_os = "windows") {
+                    work_dir.join(".venv/Scripts/python.exe")
+                } else {
+                    work_dir.join(".venv/bin/python")
+                };
+                let script_path = work_dir.join("main.py");
 
-                let mut cmd = Command::new(python_exe);
-                cmd.arg(script_path);
-                cmd.current_dir(work_dir);
+                let mut cmd = Command::new(&python_exe);
+                cmd.arg(&script_path);
+                cmd.current_dir(&work_dir);
 
                 // Windows에서 새 콘솔창이 뜨지 않도록 처리
                 #[cfg(target_os = "windows")]
