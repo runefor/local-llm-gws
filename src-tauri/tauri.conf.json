@@ -5,7 +5,7 @@
   "identifier": "com.fkjy1.tauri-app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:18732",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -14,8 +14,10 @@
       {
         "label": "main",
         "title": "tauri-app",
-        "width": 1000,
-        "height": 700,
+        "width": 1280,
+        "height": 860,
+        "minWidth": 1180,
+        "minHeight": 760,
         "decorations": false,
         "visible": false
       }
