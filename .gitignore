@@ -43,3 +43,4 @@ src-tauri/bin/
 
 # oh my codex
 .omo
+.omx/
