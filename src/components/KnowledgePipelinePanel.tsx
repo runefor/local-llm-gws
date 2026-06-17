@@ -137,7 +137,7 @@ export default function KnowledgePipelinePanel() {
     addLog(`지식 취합 파이프라인 시작(${selectedSourceLabel}): "${query}"`);
 
     try {
-      const response = await fetch("http://localhost:18000/api/pipeline/run", {
+      const response = await fetch("http://localhost:18731/api/pipeline/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, top_k: 8, sources: selectedSources }),

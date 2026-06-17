@@ -261,7 +261,7 @@ export default function RagSearchPanel() {
 
   const fetchIndexStatus = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:18000/api/rag/status");
+      const response = await fetch("http://localhost:18731/api/rag/status");
       const data = toRecord(await response.json());
       if (data.status === "success") {
         setIndexStatus({
@@ -293,7 +293,7 @@ export default function RagSearchPanel() {
     addLog("ChromaDB 지식베이스 인덱싱 작업 실행 중...");
     showNotification("info", "지식베이스 인덱싱을 갱신하는 중입니다...");
     try {
-        const response = await fetch("http://localhost:18000/api/rag/index", {
+        const response = await fetch("http://localhost:18731/api/rag/index", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sources: selectedSources }),
@@ -366,7 +366,7 @@ export default function RagSearchPanel() {
     addLog(`RAG 근거 검색 요청(${selectedSourceLabel}): "${trimmedQuery}"`);
 
     try {
-      const response = await fetch("http://localhost:18000/api/rag/search", {
+      const response = await fetch("http://localhost:18731/api/rag/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: trimmedQuery, top_k: 5, sources: selectedSources }),
@@ -435,7 +435,7 @@ export default function RagSearchPanel() {
     addLog(`Evidence Set 저장 요청: ${selectedCount}개 근거 선택.`);
 
     try {
-      const response = await fetch("http://localhost:18000/api/evidence-sets", {
+      const response = await fetch("http://localhost:18731/api/evidence-sets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -482,7 +482,7 @@ export default function RagSearchPanel() {
     addLog(`Artifact 생성 요청: Evidence Set ${savedEvidenceSet.id}, type=${artifactType}`);
 
     try {
-      const response = await fetch(`http://localhost:18000/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
+      const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
