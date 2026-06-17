@@ -224,6 +224,45 @@ def search_evidence(query: str, top_k: int = 8, sources: Optional[List[str]] = N
         "sources": evidence,
     }
 
+
+def get_gmail_chunks_by_message_ids(message_ids: List[str]) -> List[Dict[str, Any]]:
+    """이미 벡터화된 선택 Gmail 메시지의 청크만 ChromaDB에서 읽습니다."""
+    normalized_ids = [str(message_id).strip() for message_id in message_ids if str(message_id).strip()]
+    if not normalized_ids:
+        raise ValueError("처리할 Gmail 메시지를 선택해 주세요.")
+
+    selected = set(normalized_ids)
+    client = get_chroma_client()
+    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+    data = gmail_col.get(limit=10000, include=["documents", "metadatas"])
+    chunks = []
+    if not data or not data.get("ids"):
+        return chunks
+
+    def _message_id_for(metadata: Dict[str, Any]) -> str:
+        return metadata.get("doc_id") or metadata.get("message_id") or metadata.get("provider_item_id") or ""
+
+    for idx, chunk_id in enumerate(data["ids"]):
+        metadata = data["metadatas"][idx] or {}
+        doc_id = _message_id_for(metadata)
+        if doc_id in selected:
+            chunks.append({
+                "id": chunk_id,
+                "content": data["documents"][idx],
+                "metadata": metadata,
+                "source": "gmail",
+            })
+
+    chunks.sort(
+        key=lambda chunk: (
+            normalized_ids.index(_message_id_for(chunk["metadata"]))
+            if _message_id_for(chunk["metadata"]) in normalized_ids
+            else len(normalized_ids),
+            chunk["metadata"].get("chunk_index", 0),
+        )
+    )
+    return chunks
+
 def search_and_summarize(query: str, top_k: int = 5, sources: Optional[List[str]] = None) -> Dict[str, Any]:
     """검색한 컨텍스트를 활용하여 LLM 요약 및 답변을 생성합니다."""
     selected_sources = normalize_sources(sources)

@@ -23,7 +23,7 @@ VALID_RAG_SOURCES = {"gmail", "drive"}
 
 def normalize_sources(sources: Optional[List[str]] = None) -> List[str]:
     if sources is None:
-        return ["gmail", "drive"]
+        return ["drive"]
     normalized = []
     for source in sources:
         value = str(source).strip().lower()
@@ -308,6 +308,16 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
             
     return gmail_indexed
 
+
+def index_gmail_message_ids(message_ids: List[str]) -> int:
+    """선택된 Gmail 메시지 ID만 본문 조회 후 ChromaDB에 인덱싱합니다."""
+    normalized_ids = [str(message_id).strip() for message_id in message_ids if str(message_id).strip()]
+    if not normalized_ids:
+        raise ValueError("벡터화할 Gmail 메시지를 선택해 주세요.")
+
+    msg_details = [get_message(message_id, format='full') for message_id in normalized_ids]
+    return index_gmail_raw(msg_details)
+
 def index_drive_raw(files: List[Dict[str, Any]]) -> int:
     """주어진 Google Drive 파일 리스트를 다운로드 및 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
@@ -357,24 +367,28 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
     return drive_indexed
 
 def index_all(sources: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Gmail 및 Google Drive 최신 데이터를 동기화하여 ChromaDB에 인덱싱합니다."""
+    """Google Drive 최신 데이터를 ChromaDB에 인덱싱합니다.
+
+    Gmail 본문 인덱싱은 선택 메일 JIT 벡터화 API에서만 수행합니다.
+    """
     if not is_authenticated():
         return {"status": "error", "message": "Google Workspace 인증이 필요합니다."}
     selected_sources = normalize_sources(sources)
         
     logger.info("ChromaDB 인덱싱 시작...")
     
-    # 1. Gmail 인덱싱 (최근 50개 대상)
     gmail_indexed = 0
     if "gmail" in selected_sources:
-        try:
-            messages, _ = list_messages(max_results=50)
-            msg_details = []
-            for msg in messages:
-                msg_details.append(get_message(msg["id"]))
-            gmail_indexed = index_gmail_raw(msg_details)
-        except Exception as e:
-            logger.error(f"Gmail 인덱싱 중 오류 발생: {e}")
+        selected_sources = [source for source in selected_sources if source != "gmail"]
+        if not selected_sources:
+            return {
+                "status": "error",
+                "message": "Gmail 본문 인덱싱은 선택 메일 벡터화에서만 실행할 수 있습니다.",
+                "gmail_indexed": 0,
+                "drive_indexed": 0,
+                "sources": ["gmail"],
+                "timestamp": datetime.now().isoformat(),
+            }
         
     # 2. Drive 인덱싱 (최근 30개 대상)
     drive_indexed = 0
@@ -396,6 +410,7 @@ def index_all(sources: Optional[List[str]] = None) -> Dict[str, Any]:
         "gmail_indexed": gmail_indexed,
         "drive_indexed": drive_indexed,
         "sources": selected_sources,
+        "message": "Gmail 본문은 선택 메일 벡터화 API에서만 인덱싱됩니다.",
         "timestamp": datetime.now().isoformat()
     }
 

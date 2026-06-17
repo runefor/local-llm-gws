@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Optional
-from src.rag.retriever import retrieve_chunks
+from src.rag.retriever import get_gmail_chunks_by_message_ids, retrieve_chunks
 from src.llm.inference import chat_completion
 
 def run_pipeline(query: str, top_k: int = 8, sources: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -86,4 +86,65 @@ def run_pipeline(query: str, top_k: int = 8, sources: Optional[List[str]] = None
         "answer": llm_resp.get("content", ""),
         "thought": llm_resp.get("thought"),
         "sources": source_cards
+    }
+
+
+def process_gmail_chunks(message_ids: List[str], instruction: str) -> Dict[str, Any]:
+    """이미 벡터화된 선택 Gmail 청크를 Gmail API 호출 없이 마크다운으로 가공합니다."""
+    chunks = get_gmail_chunks_by_message_ids(message_ids)
+    if not chunks:
+        return {
+            "status": "error",
+            "message": "선택한 Gmail 메시지의 벡터화된 청크를 찾지 못했습니다. 먼저 벡터화를 실행해 주세요.",
+            "sources": [],
+        }
+
+    context_parts = []
+    source_cards = []
+    for idx, chunk in enumerate(chunks):
+        meta = chunk["metadata"]
+        title = meta.get("title") or "(제목 없음)"
+        doc_id = meta.get("doc_id") or meta.get("message_id") or ""
+        existing_src = next((source for source in source_cards if source["doc_id"] == doc_id), None)
+        if existing_src:
+            existing_src["chunk_count"] += 1
+        else:
+            source_cards.append({
+                "doc_id": doc_id,
+                "title": title,
+                "source": "gmail",
+                "date": meta.get("date") or "",
+                "sender": meta.get("sender") or meta.get("from") or "",
+                "chunk_count": 1,
+                "snippet": chunk["content"][:160] + "..." if len(chunk["content"]) > 160 else chunk["content"],
+            })
+
+        context_parts.append(
+            f"[{idx+1}] 출처: GMAIL | 제목: {title} | 일시: {meta.get('date') or ''}\n"
+            f"내용: {chunk['content']}"
+        )
+
+    system_prompt = (
+        "당신은 사용자의 Gmail 원문 청크를 바탕으로 Obsidian에 저장할 마크다운 문서를 작성하는 지식 관리 비서입니다.\n"
+        "반드시 제공된 Gmail 청크만 근거로 사용하고, 소제목과 불릿을 활용해 읽기 쉬운 Markdown으로 작성해 주세요.\n\n"
+        f"--- 선택된 Gmail 청크 ---\n{chr(10).join(context_parts)}"
+    )
+    llm_resp = chat_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": instruction},
+        ],
+        max_tokens=2048,
+        temperature=0.3,
+    )
+
+    if "error" in llm_resp:
+        return {"status": "error", "message": f"Gmail 마크다운 생성 중 실패: {llm_resp['error']}", "sources": source_cards}
+
+    return {
+        "status": "success",
+        "answer": llm_resp.get("content", ""),
+        "markdown": llm_resp.get("content", ""),
+        "thought": llm_resp.get("thought"),
+        "sources": source_cards,
     }

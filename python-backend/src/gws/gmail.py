@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from googleapiclient.discovery import build
@@ -67,17 +68,64 @@ def list_messages(max_results=None, page_token=None, query=None, label_ids: Opti
 
     return messages, next_page_token
 
-def get_message(msg_id):
+def get_message(msg_id, format='full', metadata_headers: Optional[List[str]] = None):
     """
     특정 메시지의 상세 내용을 가져옵니다.
     """
     creds = get_credentials()
     service = build('gmail', 'v1', credentials=creds)
-    
-    message = service.users().messages().get(
-        userId='me', 
-        id=msg_id,
-        format='full'  # 본문을 가져오기 위해 full 포맷 사용
-    ).execute()
+
+    request_params = {
+        'userId': 'me',
+        'id': msg_id,
+        'format': format,
+    }
+    if metadata_headers:
+        request_params['metadataHeaders'] = metadata_headers
+
+    message = service.users().messages().get(**request_params).execute()
     
     return message
+
+
+def _header_value(headers, name: str, default: str = "") -> str:
+    return next((h.get('value', default) for h in headers if h.get('name', '').lower() == name.lower()), default)
+
+
+def format_message_metadata(message_detail):
+    headers = message_detail.get('payload', {}).get('headers', [])
+    internal_date_ms = int(message_detail.get('internalDate', 0) or 0)
+    if internal_date_ms:
+        date_iso = datetime.fromtimestamp(internal_date_ms / 1000.0, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    else:
+        date_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    return {
+        "id": message_detail.get('id', ''),
+        "threadId": message_detail.get('threadId', ''),
+        "subject": _header_value(headers, 'subject', '(제목 없음)'),
+        "from": _header_value(headers, 'from', '알 수 없음'),
+        "snippet": message_detail.get('snippet', ''),
+        "date": date_iso,
+        "labelIds": message_detail.get('labelIds', []),
+    }
+
+
+def list_message_metadata(max_results=None, page_token=None, query=None, label_ids: Optional[List[str]] = None):
+    """Gmail 검색 결과를 본문 없이 메타데이터만 조회합니다."""
+    messages, next_token = list_messages(
+        max_results=max_results,
+        page_token=page_token,
+        query=query,
+        label_ids=label_ids,
+    )
+    metadata_messages = []
+    for message in messages:
+        detail = get_message(
+            message['id'],
+            format='metadata',
+            metadata_headers=['Subject', 'From', 'Date', 'Message-ID'],
+        )
+        metadata_messages.append(format_message_metadata(detail))
+
+    return metadata_messages, next_token

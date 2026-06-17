@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 def sanitize_filename(filename: str) -> str:
     """파일명으로 사용할 수 없는 특수문자를 제거하거나 언더스코어로 대체합니다."""
@@ -10,7 +11,7 @@ def sanitize_filename(filename: str) -> str:
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned if cleaned else "untitled_note"
 
-def export_to_obsidian(vault_path: str, title: str, content: str, tags: list = None) -> dict:
+def export_to_obsidian(vault_path: str, title: str, content: str, tags: Optional[List[str]] = None) -> Dict[str, Any]:
     """주어진 Obsidian Vault 경로에 Markdown 노트를 생성합니다.
     
     Args:

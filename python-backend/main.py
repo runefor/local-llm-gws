@@ -1,26 +1,60 @@
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 import uvicorn
-from src.gws.gmail import list_labels, list_messages
+from src.gws.gmail import list_labels, list_message_metadata
 from src.gws.drive import list_drive_files
 
 app = FastAPI(title="Local LLM GWS API", description="Python Backend API for Tauri")
 
+ALLOWED_ORIGINS = {
+    "http://localhost:18732",
+    "http://127.0.0.1:18732",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+    "tauri://localhost",
+}
+ALLOWED_HOSTS = {"localhost:18731", "127.0.0.1:18731", "localhost", "127.0.0.1"}
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=sorted(ALLOWED_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def enforce_local_app_boundary(request: Request, call_next):
+    """Reject browser requests that do not originate from the local app shell."""
+    host = request.headers.get("host", "")
+    origin = request.headers.get("origin")
+
+    if host not in ALLOWED_HOSTS:
+        return JSONResponse({"status": "error", "message": "허용되지 않은 Host입니다."}, status_code=403)
+
+    if origin and origin not in ALLOWED_ORIGINS:
+        return JSONResponse({"status": "error", "message": "허용되지 않은 Origin입니다."}, status_code=403)
+
+    return await call_next(request)
+
 class SyncRequest(BaseModel):
-    max_emails: Optional[int] = None
-    query: Optional[str] = None
-    label_ids: Optional[List[str]] = None
+    max_emails: Optional[int] = Field(default=50, ge=1, le=200)
+    query: Optional[str] = Field(default=None, max_length=500)
+    label_ids: Optional[List[str]] = Field(default=None, max_length=50)
+
+class GmailVectorizeRequest(BaseModel):
+    message_ids: List[str] = Field(default_factory=list, max_length=200)
+
+class GmailProcessRequest(BaseModel):
+    message_ids: List[str] = Field(default_factory=list, max_length=200)
+    instruction: str = Field(max_length=8000)
+    title: Optional[str] = Field(default=None, max_length=200)
+    export_to_obsidian: bool = False
+    tags: List[str] = Field(default_factory=list, max_length=20)
 
 class LLMTestRequest(BaseModel):
     endpoint: str
@@ -142,49 +176,9 @@ def auth_callback(request: Request):
 
 @app.post("/api/sync/gmail")
 def sync_gmail(req: SyncRequest):
-    """Gmail 목록을 가져오고 본문 요약을 동기화하며, ChromaDB에 자동으로 인덱싱합니다."""
+    """Gmail 목록을 본문 없이 메타데이터만 동기화합니다."""
     try:
-        raw_messages, next_token = list_messages(max_results=req.max_emails, query=req.query, label_ids=req.label_ids)
-
-        from src.gws.gmail import get_message
-        import datetime
-        detailed_messages = []
-        raw_msg_details = []
-        for msg in raw_messages:
-            try:
-                m_details = get_message(msg['id'])
-                raw_msg_details.append(m_details)
-                
-                headers = m_details.get('payload', {}).get('headers', [])
-                subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '(제목 없음)')
-                sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), '알 수 없음')
-                snippet = m_details.get('snippet', '')
-                
-                internal_date_ms = int(m_details.get('internalDate', 0))
-                if internal_date_ms:
-                    date_iso = datetime.datetime.fromtimestamp(internal_date_ms / 1000.0, tz=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-                else:
-                    date_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-                
-                detailed_messages.append({
-                    "id": msg['id'],
-                    "subject": subject,
-                    "from": sender,
-                    "snippet": snippet,
-                    "date": date_iso,
-                    "labelIds": m_details.get("labelIds", [])
-                })
-            except Exception as e:
-                print(f"[Gmail] 개별 메일 상세 로드 에러: {e}")
-
-        # RAG 자동 인덱싱 및 BM25 빌드 (선택적 동기화)
-        if raw_msg_details:
-            try:
-                from src.rag.indexer import index_gmail_raw, rebuild_bm25_index
-                index_gmail_raw(raw_msg_details)
-                rebuild_bm25_index()
-            except Exception as idx_err:
-                print(f"[Gmail] RAG 자동 인덱싱 오류: {idx_err}")
+        detailed_messages, next_token = list_message_metadata(max_results=req.max_emails, query=req.query, label_ids=req.label_ids)
 
         return {
             "status": "success",
@@ -391,6 +385,53 @@ def rag_search(req: RagSearchRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
+@app.post("/api/gmail/search")
+def gmail_search(req: SyncRequest):
+    """Gmail API 쿼리로 본문 없이 메타데이터 검색 결과만 반환합니다."""
+    return sync_gmail(req)
+
+
+@app.post("/api/gmail/vectorize")
+def gmail_vectorize(req: GmailVectorizeRequest):
+    """선택된 Gmail 메시지만 본문 조회 후 벡터화합니다."""
+    message_ids = [message_id.strip() for message_id in req.message_ids if message_id.strip()]
+    if not message_ids:
+        return {"status": "error", "message": "벡터화할 Gmail 메시지를 선택해 주세요.", "indexed": 0}
+    try:
+        from src.rag.indexer import index_gmail_message_ids, rebuild_bm25_index
+        indexed = index_gmail_message_ids(message_ids)
+        rebuild_bm25_index()
+        return {"status": "success", "indexed": indexed, "message_ids": message_ids}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "indexed": 0}
+
+
+@app.post("/api/gmail/process")
+def gmail_process(req: GmailProcessRequest):
+    """이미 벡터화된 선택 Gmail 청크로 마크다운을 생성하고 선택적으로 Obsidian에 저장합니다."""
+    message_ids = [message_id.strip() for message_id in req.message_ids if message_id.strip()]
+    if not message_ids:
+        return {"status": "error", "message": "처리할 Gmail 메시지를 선택해 주세요."}
+    try:
+        from src.processor.pipeline import process_gmail_chunks
+        result = process_gmail_chunks(message_ids, req.instruction)
+        if result.get("status") != "success" or not req.export_to_obsidian:
+            return result
+
+        from src.settings import load_settings
+        from src.sink.obsidian import export_to_obsidian
+        settings = load_settings()
+        vault_path = settings.get("obsidian_vault_path", "")
+        if not vault_path:
+            result["obsidian"] = {"status": "error", "message": "Obsidian Vault 경로가 설정되지 않았습니다. 설정 탭에서 입력해 주세요."}
+            return result
+        export_title = req.title or "Gmail Knowledge Note"
+        result["obsidian"] = export_to_obsidian(vault_path, export_title, result.get("markdown") or result.get("answer", ""), req.tags)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 class EvidenceSetCreateRequest(BaseModel):
     title: str
     original_query: str = ""
@@ -532,7 +573,7 @@ class PipelineRunRequest(BaseModel):
 class ObsidianExportRequest(BaseModel):
     title: str
     content: str
-    tags: list = []
+    tags: List[str] = Field(default_factory=list)
 
 class NotionExportRequest(BaseModel):
     title: str
@@ -782,5 +823,5 @@ def list_notion_pages():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=18000)
+    uvicorn.run(app, host="127.0.0.1", port=18731)
 
