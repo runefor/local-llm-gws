@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import Titlebar from "../components/Titlebar";
 import SyncPanel from "../components/SyncPanel";
+import HybridMailWorkspace from "../components/HybridMailWorkspace";
 import MultiViewWorkspace from "../components/MultiViewWorkspace";
 import LlmConfigPanel from "../components/LlmConfigPanel";
 import ServiceConfigPanel from "../components/ServiceConfigPanel";
@@ -19,7 +20,7 @@ export default function DesktopLayout() {
     checkGwsAuth
   } = useApp();
 
-  const [activeMenu, setActiveMenu] = useState<"sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs">("sync");
+  const [activeMenu, setActiveMenu] = useState<"hybrid" | "sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs">("hybrid");
 
   return (
     <div className="h-screen w-screen bg-background text-text-primary flex flex-col overflow-hidden select-none selection:bg-primary-container selection:text-primary">
@@ -48,6 +49,19 @@ export default function DesktopLayout() {
             {/* 네비게이션 메뉴 */}
             <nav className="space-y-1">
               <button
+                type="button"
+                onClick={() => setActiveMenu("hybrid")}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeMenu === "hybrid"
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-secondary hover:bg-[#e9eef6]/50 hover:text-text-primary"
+                }`}
+              >
+                <span className="material-symbols-rounded text-lg">view_sidebar</span>
+                <span>Gmail Hybrid</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveMenu("sync")}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === "sync"
@@ -60,6 +74,7 @@ export default function DesktopLayout() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setActiveMenu("workspace")}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === "workspace"
@@ -72,6 +87,7 @@ export default function DesktopLayout() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setActiveMenu("rag")}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === "rag"
@@ -84,6 +100,7 @@ export default function DesktopLayout() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setActiveMenu("pipeline")}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === "pipeline"
@@ -96,6 +113,7 @@ export default function DesktopLayout() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setActiveMenu("settings")}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === "settings"
@@ -108,6 +126,7 @@ export default function DesktopLayout() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setActiveMenu("logs")}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeMenu === "logs"
@@ -143,6 +162,7 @@ export default function DesktopLayout() {
                   </span>
                 )}
                 <button 
+                  type="button"
                   onClick={checkBackend} 
                   className="text-primary hover:text-primary/80 transition-colors flex items-center cursor-pointer"
                   title="새로고침"
@@ -165,6 +185,7 @@ export default function DesktopLayout() {
                   </span>
                 ) : (
                   <button 
+                    type="button"
                     onClick={triggerGoogleLogin}
                     className="bg-primary text-white hover:bg-primary/95 px-2 py-0.5 rounded-full font-bold text-[9px] transition-colors cursor-pointer"
                   >
@@ -172,6 +193,7 @@ export default function DesktopLayout() {
                   </button>
                 )}
                 <button 
+                  type="button"
                   onClick={checkGwsAuth} 
                   className="text-primary hover:text-primary/80 transition-colors flex items-center cursor-pointer"
                   title="구글 상태 갱신"
@@ -186,8 +208,14 @@ export default function DesktopLayout() {
         {/* 데스크탑 메인 콘텐츠 패널 (스크롤 제어) */}
         <main className="flex-1 bg-background flex flex-col overflow-hidden p-6 relative">
           
+          {activeMenu === "hybrid" && (
+            <div className="h-full min-h-0 overflow-hidden">
+              <HybridMailWorkspace isDesktop={true} />
+            </div>
+          )}
+
           {activeMenu === "sync" && (
-            <div className="h-full space-y-6 overflow-y-auto pr-1">
+            <div className="h-full min-h-0 space-y-6 overflow-y-auto pr-1">
               <SyncPanel />
             </div>
           )}
@@ -199,7 +227,7 @@ export default function DesktopLayout() {
           )}
 
           {activeMenu === "rag" && (
-            <div className="h-full space-y-6 overflow-y-auto pr-1">
+            <div className="h-full min-h-0 space-y-6 overflow-y-auto pr-1">
               <RagSearchPanel />
               <div className="bg-primary-container/20 rounded-2xl p-6 border border-primary-container/30 text-xs text-text-secondary">
                 <h3 className="font-semibold text-text-primary mb-2 flex items-center">
@@ -215,13 +243,13 @@ export default function DesktopLayout() {
           )}
 
           {activeMenu === "pipeline" && (
-            <div className="h-full space-y-6 overflow-y-auto pr-1">
+            <div className="h-full min-h-0 space-y-6 overflow-y-auto pr-1">
               <KnowledgePipelinePanel />
             </div>
           )}
 
           {activeMenu === "settings" && (
-            <div className="h-full space-y-6 overflow-y-auto pr-1">
+            <div className="h-full min-h-0 space-y-6 overflow-y-auto pr-1">
               <LlmConfigPanel />
               <ServiceConfigPanel />
             </div>

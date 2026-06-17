@@ -1,4 +1,5 @@
 import SyncPanel from "./SyncPanel";
+import HybridMailWorkspace from "./HybridMailWorkspace";
 import MultiViewWorkspace from "./MultiViewWorkspace";
 import LlmConfigPanel from "./LlmConfigPanel";
 import ServiceConfigPanel from "./ServiceConfigPanel";
@@ -9,6 +10,10 @@ import KnowledgePipelinePanel from "./KnowledgePipelinePanel";
 export default function Dashboard() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <section className="lg:col-span-3">
+        <HybridMailWorkspace />
+      </section>
+
       {/* 좌측 패널: 동기화 컨트롤 및 데이터 목록 */}
       <section className="lg:col-span-2 space-y-6">
         <SyncPanel />
