@@ -1,318 +1,466 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createWikiCondition,
+  listWikiConditions,
+  runWikiCondition,
+  type ConditionRecord,
+  type WikiCondition,
+  type WikiConditionDraft,
+  type WikiConditionPeriod,
+  type WikiConditionRunResult,
+} from "../api/wikiConditions";
 import { useApp } from "../context/AppContext";
 
+const periodLabels: Record<WikiConditionPeriod, string> = {
+  "1w": "최근 1주일",
+  "1m": "최근 1개월",
+  "3m": "최근 3개월",
+  "all": "전체 기간",
+};
+
+const emptyDraft: WikiConditionDraft = {
+  name: "",
+  gmailLabelIds: [],
+  driveFolderIds: [],
+  keyword: "",
+  period: "1m",
+  autoWikiEnabled: true,
+};
+
+const recordMatches = (record: ConditionRecord, searchTerm: string): boolean => {
+  if (!searchTerm) return true;
+  const haystack = [
+    record.title,
+    record.subject ?? "",
+    record.from ?? "",
+    record.snippet ?? "",
+    record.name ?? "",
+    record.mimeType ?? "",
+    record.locationStatus ?? "",
+    ...(record.labelIds ?? []),
+  ].join(" ").toLowerCase();
+  return haystack.includes(searchTerm);
+};
+
 export default function SyncPanel() {
-  const { 
-    syncStatus, 
+  const {
+    syncStatus,
     backendStatus,
     gmailLabels,
     gmailLabelsLoading,
     loadGmailLabels,
     isGwsAuthenticated,
-    handleGmailSync, 
-    handleDriveSync 
+    handleGmailSync,
+    handleDriveSync,
   } = useApp();
 
-  const [keyword, setKeyword] = useState("");
-  const [period, setPeriod] = useState<"1w" | "1m" | "3m" | "all">("1w");
-  const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
+  const [draft, setDraft] = useState<WikiConditionDraft>(emptyDraft);
+  const [conditions, setConditions] = useState<WikiCondition[]>([]);
+  const [selectedConditionId, setSelectedConditionId] = useState("");
   const [labelSearch, setLabelSearch] = useState("");
+  const [driveFolderInput, setDriveFolderInput] = useState("");
+  const [resultSearch, setResultSearch] = useState("");
+  const [runResult, setRunResult] = useState<WikiConditionRunResult | null>(null);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const controlsDisabled = syncStatus === "syncing" || backendStatus !== "online";
+  const controlsDisabled = loading || syncStatus === "syncing" || backendStatus !== "online";
   const labelControlsDisabled = controlsDisabled || !isGwsAuthenticated;
+  const selectedCondition = conditions.find((condition) => condition.id === selectedConditionId) ?? null;
+
   const filteredGmailLabels = useMemo(() => {
     const searchTerm = labelSearch.trim().toLowerCase();
     if (!searchTerm) return gmailLabels;
     return gmailLabels.filter((label) => label.name.toLowerCase().includes(searchTerm));
   }, [gmailLabels, labelSearch]);
 
-  const toggleLabel = (labelId: string) => {
-    setSelectedLabelIds((prev) => (
-      prev.includes(labelId)
-        ? prev.filter((id) => id !== labelId)
-        : [...prev, labelId]
-    ));
-  };
+  const filteredRecords = useMemo(() => {
+    const records = runResult?.records ?? [];
+    return records.filter((record) => recordMatches(record, resultSearch.trim().toLowerCase()));
+  }, [resultSearch, runResult]);
 
-  // 플랫폼별 쿼리 조립 로직
-  const assembleQuery = (target: "gmail" | "drive") => {
-    let q = keyword.trim();
-    if (target === "gmail") {
-      if (period !== "all") {
-        let days = 7;
-        if (period === "1m") days = 30;
-        else if (period === "3m") days = 90;
-        
-        const targetDate = new Date();
-        targetDate.setDate(targetDate.getDate() - days);
-        const yyyy = targetDate.getFullYear();
-        const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(targetDate.getDate()).padStart(2, '0');
-        const dateQuery = `after:${yyyy}/${mm}/${dd}`;
-        
-        q += (q ? " " : "") + dateQuery;
-      }
-    } else { // drive
-      if (period !== "all") {
-        let days = 7;
-        if (period === "1m") days = 30;
-        else if (period === "3m") days = 90;
-        const targetDate = new Date();
-        targetDate.setDate(targetDate.getDate() - days);
-        const isoDate = targetDate.toISOString();
-        const dateQuery = `modifiedTime > '${isoDate}'`;
-        
-        if (q) {
-          q = `${dateQuery} and (name contains '${q}' or fullText contains '${q}')`;
-        } else {
-          q = dateQuery;
-        }
+  const labelNameById = useMemo(() => {
+    return new Map(gmailLabels.map((label) => [label.id, label.name]));
+  }, [gmailLabels]);
+
+  const loadConditions = async () => {
+    setLoading(true);
+    try {
+      const response = await listWikiConditions();
+      if (response.status === "success") {
+        setConditions(response.conditions);
+        setSelectedConditionId((current) => current || response.conditions[0]?.id || "");
+        setMessage("");
       } else {
-        if (q) {
-          q = `name contains '${q}' or fullText contains '${q}'`;
-        }
+        setMessage(response.message ?? "조건 목록을 불러오지 못했습니다.");
       }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "조건 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
     }
-    return q;
   };
 
-  const onGmailSync = () => {
-    const query = assembleQuery("gmail");
-    handleGmailSync(query, period === "all" ? 500 : null, selectedLabelIds);
+  useEffect(() => {
+    void loadConditions();
+  }, []);
+
+  const toggleLabel = (labelId: string) => {
+    setDraft((current) => ({
+      ...current,
+      gmailLabelIds: current.gmailLabelIds.includes(labelId)
+        ? current.gmailLabelIds.filter((id) => id !== labelId)
+        : [...current.gmailLabelIds, labelId],
+    }));
   };
 
-  const onDriveSync = () => {
-    const query = assembleQuery("drive");
-    handleDriveSync(query);
+  const addDriveFolder = () => {
+    const value = driveFolderInput.trim();
+    if (!value) return;
+    setDraft((current) => ({ ...current, driveFolderIds: [...current.driveFolderIds, value] }));
+    setDriveFolderInput("");
   };
 
-  // 1w, 1m, 3m, all 레이블 한글 매핑
-  const periodLabels = {
-    "1w": "최근 1주일",
-    "1m": "최근 1개월",
-    "3m": "최근 3개월",
-    "all": "전체 기간"
+  const removeDriveFolder = (folderId: string) => {
+    setDraft((current) => ({
+      ...current,
+      driveFolderIds: current.driveFolderIds.filter((id) => id !== folderId),
+    }));
+  };
+
+  const saveCondition = async () => {
+    setLoading(true);
+    try {
+      const response = await createWikiCondition(draft);
+      if (response.status !== "success" || !response.condition) {
+        setMessage(response.message ?? "조건을 저장하지 못했습니다.");
+        return;
+      }
+      setConditions((current) => [response.condition as WikiCondition, ...current]);
+      setSelectedConditionId(response.condition.id);
+      setDraft(emptyDraft);
+      setRunResult(null);
+      setMessage("조건을 저장했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "조건을 저장하지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runSelectedCondition = async (confirmExternalLlm = false) => {
+    if (!selectedCondition) {
+      setMessage("실행할 조건을 선택하세요.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await runWikiCondition(selectedCondition.id, confirmExternalLlm);
+      setRunResult(response);
+      setMessage(response.status === "success" ? "조건 실행이 끝났습니다." : response.message ?? "조건 실행에 실패했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "조건 실행에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onLegacySync = () => {
+    void handleGmailSync(draft.keyword, null, draft.gmailLabelIds);
+    void handleDriveSync(draft.keyword);
   };
 
   return (
-    <div className="bg-surface rounded-2xl p-6 border border-surface-variant/80 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] relative overflow-hidden space-y-6">
-      <div>
-        <h2 className="text-base font-semibold mb-1 flex items-center text-text-primary">
-          <span className="material-symbols-rounded mr-2 text-primary">sync</span>
-          Google Workspace 지식 동기화
-        </h2>
-        <p className="text-xs text-text-secondary leading-relaxed">
-          필터(기간, 검색어)를 적용해 원하는 조건의 메일 및 문서를 로컬 마크다운 파일로 추출 및 동기화합니다.
-        </p>
-      </div>
+    <section className="bg-surface rounded-2xl p-6 border border-surface-variant/80 shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] space-y-6">
+      <header className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-[1.125rem] font-medium leading-snug text-text-primary flex items-center gap-2">
+            <span className="material-symbols-rounded text-primary">inventory_2</span>
+            Gmail · Drive 가져오기
+          </h2>
+          <p className="text-sm text-text-secondary leading-relaxed mt-1">
+            조건을 만들어 필요한 자료만 가져오고, 조건 범위에서 Wiki 초안을 만듭니다.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={loadConditions}
+          disabled={controlsDisabled}
+          className="rounded-full border border-surface-variant bg-white px-4 py-2 text-sm font-medium text-text-primary hover:border-primary/30 hover:bg-primary-container/20 disabled:opacity-50"
+        >
+          조건 새로고침
+        </button>
+      </header>
 
-      {/* 1. 동기화 세부 옵션 설정 */}
-      <div className="bg-white p-5 rounded-2xl border border-surface-variant space-y-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
-        <h3 className="text-xs font-bold text-text-primary flex items-center">
-          <span className="material-symbols-rounded text-sm mr-1.5 text-primary font-bold">tune</span>
-          동기화 조건 필터 설정
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* 기간 필터 칩 버튼 */}
+      {message && (
+        <div className="rounded-2xl border border-primary/20 bg-primary-container/40 px-4 py-3 text-sm text-text-primary">
+          {message}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)] gap-6">
+        <div className="bg-white rounded-2xl border border-surface-variant p-5 space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">새 조건 만들기</h3>
+              <p className="text-xs text-text-secondary mt-1">전체 계정이 아니라 라벨, 폴더, 검색어, 기간 중 하나 이상으로 범위를 좁힙니다.</p>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+              <input
+                type="checkbox"
+                checked={draft.autoWikiEnabled}
+                onChange={(event) => setDraft((current) => ({ ...current, autoWikiEnabled: event.target.checked }))}
+                className="h-4 w-4 accent-primary"
+              />
+              자동 Wiki
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold text-text-secondary">조건 이름</span>
+              <input
+                value={draft.name}
+                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                placeholder="예: 취업 자료, 논문 읽기"
+                className="w-full rounded-full border border-surface-variant bg-surface px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-semibold text-text-secondary">검색어</span>
+              <input
+                value={draft.keyword}
+                onChange={(event) => setDraft((current) => ({ ...current, keyword: event.target.value }))}
+                placeholder="예: resume, paper, 계약서"
+                className="w-full rounded-full border border-surface-variant bg-surface px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+            </label>
+          </div>
+
           <div className="space-y-2">
-            <span className="text-[11px] font-semibold text-text-secondary block">동기화 기간</span>
+            <span className="text-xs font-semibold text-text-secondary">기간</span>
             <div className="flex flex-wrap gap-2">
-              {(["1w", "1m", "3m", "all"] as const).map((p) => (
+              {(["1w", "1m", "3m", "all"] as const).map((period) => (
                 <button
-                  key={p}
+                  key={period}
                   type="button"
-                  onClick={() => setPeriod(p)}
-                  disabled={syncStatus === "syncing"}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all border ${
-                    period === p
-                      ? "bg-primary-container text-primary border-primary/20 shadow-sm"
-                      : "bg-[#f8fafd] text-text-secondary border-surface-variant/80 hover:bg-[#e9eef6]/50 hover:text-text-primary"
-                  } disabled:opacity-50`}
+                  onClick={() => setDraft((current) => ({ ...current, period }))}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${draft.period === period ? "border-primary/20 bg-primary-container text-primary" : "border-surface-variant bg-surface text-text-secondary hover:text-text-primary"}`}
                 >
-                  {periodLabels[p]}
+                  {periodLabels[period]}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 검색어 필터 입력 */}
-          <div className="space-y-2">
-            <label htmlFor="sync-keyword" className="text-[11px] font-semibold text-text-secondary block">특정 검색어 필터 (선택)</label>
-            <div className="relative">
-              <span className="material-symbols-rounded absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-base">filter_list</span>
-              <input
-                id="sync-keyword"
-                type="text"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder="예: 보고서, from:홍길동 (비워둘 시 전체 추출)"
-                disabled={syncStatus === "syncing"}
-                className="w-full bg-[#f8fafd] pl-9 pr-4 py-2 rounded-full border border-surface-variant/80 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/50"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3 border-t border-surface-variant/70 pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span className="text-[11px] font-semibold text-text-secondary block">Gmail 라벨 필터 (선택)</span>
-              <p className="text-[10px] text-text-secondary/70 mt-0.5">
-                선택하지 않으면 기존처럼 기간과 검색어만 적용합니다.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-primary bg-primary-container/60 border border-primary/10 rounded-full px-2.5 py-1">
-                {selectedLabelIds.length > 0 ? `${selectedLabelIds.length}개 선택` : "전체 라벨"}
-              </span>
+          <div className="space-y-3 border-t border-surface-variant/70 pt-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-text-secondary">Gmail 라벨</span>
               <button
                 type="button"
                 onClick={loadGmailLabels}
                 disabled={labelControlsDisabled || gmailLabelsLoading}
-                className="flex items-center gap-1 rounded-full border border-surface-variant bg-white px-3 py-1.5 text-[11px] font-semibold text-text-primary transition-all hover:border-primary/30 hover:bg-primary-container/20 disabled:cursor-default disabled:opacity-50"
+                className="rounded-full border border-surface-variant bg-white px-3 py-1.5 text-xs font-semibold text-text-primary hover:border-primary/30 hover:bg-primary-container/20 disabled:opacity-50"
               >
-                <span className={`material-symbols-rounded text-sm ${gmailLabelsLoading ? "animate-spin" : ""}`}>refresh</span>
                 {gmailLabelsLoading ? "불러오는 중" : "라벨 새로고침"}
               </button>
             </div>
-          </div>
-
-          <div className="relative">
-            <span className="material-symbols-rounded absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-base">sell</span>
             <input
-              type="text"
               value={labelSearch}
-              onChange={(e) => setLabelSearch(e.target.value)}
+              onChange={(event) => setLabelSearch(event.target.value)}
               placeholder="라벨 이름 검색"
-              disabled={labelControlsDisabled || gmailLabelsLoading || gmailLabels.length === 0}
-              className="w-full bg-surface pl-9 pr-4 py-2 rounded-full border border-surface-variant/80 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/50"
+              disabled={labelControlsDisabled || gmailLabels.length === 0}
+              className="w-full rounded-full border border-surface-variant bg-surface px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
             />
-          </div>
-
-          <div className="max-h-28 overflow-y-auto pr-1 scrollbar-none hover:scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
-            {!isGwsAuthenticated ? (
-              <div className="rounded-2xl border border-surface-variant/80 bg-surface px-4 py-3 text-[11px] text-text-secondary">
-                Google Workspace 인증 후 Gmail 라벨을 불러올 수 있습니다.
-              </div>
-            ) : gmailLabelsLoading ? (
-              <div className="rounded-2xl border border-surface-variant/80 bg-surface px-4 py-3 text-[11px] text-text-secondary animate-pulse">
-                Gmail 라벨 목록을 불러오는 중입니다.
-              </div>
-            ) : gmailLabels.length === 0 ? (
-              <div className="rounded-2xl border border-surface-variant/80 bg-surface px-4 py-3 text-[11px] text-text-secondary">
-                가져온 라벨이 없습니다. 라벨 새로고침을 눌러 다시 시도하세요.
-              </div>
-            ) : filteredGmailLabels.length === 0 ? (
-              <div className="rounded-2xl border border-surface-variant/80 bg-surface px-4 py-3 text-[11px] text-text-secondary">
-                검색어와 일치하는 라벨이 없습니다.
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {filteredGmailLabels.map((label) => {
-                  const selected = selectedLabelIds.includes(label.id);
-                  const totalCount = typeof label.messagesTotal === "number" ? label.messagesTotal : null;
-                  const unreadCount = typeof label.messagesUnread === "number" ? label.messagesUnread : null;
+            <div className="max-h-28 overflow-y-auto flex flex-wrap gap-2">
+              {!isGwsAuthenticated ? (
+                <p className="text-xs text-text-secondary">Google Workspace 인증 후 라벨을 불러올 수 있습니다.</p>
+              ) : filteredGmailLabels.length === 0 ? (
+                <p className="text-xs text-text-secondary">표시할 라벨이 없습니다.</p>
+              ) : (
+                filteredGmailLabels.map((label) => {
+                  const selected = draft.gmailLabelIds.includes(label.id);
                   return (
-                    <label
+                    <button
                       key={label.id}
-                      className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${selected ? "border-primary/30 bg-primary-container/70 text-primary shadow-sm" : "border-surface-variant/80 bg-surface text-text-secondary hover:border-primary/20 hover:text-text-primary"} ${labelControlsDisabled ? "cursor-default opacity-50" : ""}`}
+                      type="button"
+                      onClick={() => toggleLabel(label.id)}
+                      disabled={labelControlsDisabled}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${selected ? "border-primary/30 bg-primary-container text-primary" : "border-surface-variant bg-surface text-text-secondary hover:text-text-primary"} disabled:opacity-50`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleLabel(label.id)}
-                        disabled={labelControlsDisabled}
-                        className="sr-only"
-                      />
-                      <span className="material-symbols-rounded text-sm">
-                        {selected ? "check_circle" : label.type === "system" ? "label_important" : "label"}
-                      </span>
-                      <span>{label.name}</span>
-                      {(totalCount !== null || unreadCount !== null) && (
-                        <span className="rounded-full bg-white/80 border border-surface-variant/70 px-1.5 py-0.5 text-[10px] text-text-secondary">
-                          {totalCount !== null ? totalCount : 0}{unreadCount !== null ? ` / 안읽음 ${unreadCount}` : ""}
-                        </span>
-                      )}
-                    </label>
+                      {selected ? "✓ " : ""}{label.name}
+                    </button>
                   );
-                })}
-              </div>
-            )}
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-surface-variant/70 pt-4">
+            <span className="text-xs font-semibold text-text-secondary">Drive 폴더 ID 또는 링크</span>
+            <div className="flex gap-2">
+              <input
+                value={driveFolderInput}
+                onChange={(event) => setDriveFolderInput(event.target.value)}
+                placeholder="https://drive.google.com/drive/folders/..."
+                className="min-w-0 flex-1 rounded-full border border-surface-variant bg-surface px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={addDriveFolder}
+                className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-[#094cb3]"
+              >
+                추가
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {draft.driveFolderIds.map((folderId) => (
+                <button
+                  key={folderId}
+                  type="button"
+                  onClick={() => removeDriveFolder(folderId)}
+                  className="rounded-full border border-surface-variant bg-surface px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary"
+                >
+                  {folderId} ×
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={saveCondition}
+              disabled={controlsDisabled}
+              className="rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-on-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/60"
+            >
+              조건 저장
+            </button>
+            <button
+              type="button"
+              onClick={onLegacySync}
+              disabled={controlsDisabled}
+              className="rounded-full border border-surface-variant bg-white px-5 py-2.5 text-sm font-medium text-text-primary hover:border-primary/30 hover:bg-primary-container/20 disabled:opacity-50"
+            >
+              기존 동기화로 실행
+            </button>
           </div>
         </div>
+
+        <aside className="bg-white rounded-2xl border border-surface-variant p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-text-primary">저장된 조건</h3>
+          {conditions.length === 0 ? (
+            <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-text-secondary">아직 저장된 조건이 없습니다.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {conditions.map((condition) => (
+                <button
+                  key={condition.id}
+                  type="button"
+                  onClick={() => setSelectedConditionId(condition.id)}
+                  className={`w-full rounded-2xl border p-4 text-left transition-all ${selectedConditionId === condition.id ? "border-primary/30 bg-primary-container/50" : "border-surface-variant bg-surface hover:border-primary/20"}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-text-primary">{condition.name}</span>
+                    <span className="rounded-full bg-white/80 px-2 py-1 text-[11px] font-semibold text-text-secondary">{condition.autoWikiEnabled ? "Wiki ON" : "Wiki OFF"}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-text-secondary leading-relaxed">
+                    {periodLabels[condition.period]} · {condition.keyword || "검색어 없음"} · Gmail {condition.gmailLabelIds.length} · Drive {condition.driveFolderIds.length}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => runSelectedCondition(false)}
+            disabled={controlsDisabled || !selectedCondition}
+            className="w-full rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-on-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/60"
+          >
+            {loading ? "실행 중" : "선택 조건 실행"}
+          </button>
+        </aside>
       </div>
 
-      {/* 2. 동기화 실행 영역 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Gmail Sync Card */}
-        <div className="bg-white p-5 rounded-2xl border border-surface-variant hover:border-primary/20 transition-all flex flex-col justify-between group shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="p-2 rounded-xl bg-primary-container text-primary flex items-center justify-center w-9 h-9">
-                <span className="material-symbols-rounded text-primary">mail</span>
-              </span>
-              <span className="text-[10px] uppercase font-semibold text-text-secondary bg-surface px-2.5 py-0.5 rounded-full border border-surface-variant/60">API Quota: Free</span>
-            </div>
-            <h4 className="font-semibold text-text-primary mb-1 text-xs">Gmail 요약 데이터 추출</h4>
-            <p className="text-[11px] text-text-secondary leading-relaxed mb-4">
-              설정 조건의 이메일을 읽고 본문을 로컬 지식베이스에 저장합니다.
-            </p>
-          </div>
-          <button 
+      {runResult?.wiki?.status === "warning_required" && (
+        <div className="rounded-2xl border border-[#fbbc04]/40 bg-[#fff7d6] p-5 text-sm text-text-primary">
+          <h3 className="font-semibold">{runResult.wiki.warning?.title ?? "외부 LLM 전송 확인"}</h3>
+          <p className="mt-2 text-text-secondary">{runResult.wiki.warning?.message}</p>
+          <button
             type="button"
-            onClick={onGmailSync}
-            disabled={syncStatus === "syncing" || backendStatus !== "online"}
-            className="w-full bg-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/50 text-on-primary font-medium py-2.5 px-4 rounded-full text-xs transition-all active:scale-95 cursor-pointer disabled:cursor-default"
+            onClick={() => runSelectedCondition(true)}
+            disabled={controlsDisabled}
+            className="mt-4 rounded-full bg-primary px-5 py-2 text-sm font-medium text-on-primary hover:bg-[#094cb3] disabled:opacity-50"
           >
-            {syncStatus === "syncing" ? "동기화 중..." : "Gmail 동기화 실행"}
+            확인 후 Wiki 만들기
           </button>
-        </div>
-
-        {/* Google Drive Sync Card */}
-        <div className="bg-white p-5 rounded-2xl border border-surface-variant hover:border-primary/20 transition-all flex flex-col justify-between group shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="p-2 rounded-xl bg-primary-container text-primary flex items-center justify-center w-9 h-9">
-                <span className="material-symbols-rounded text-primary">folder_shared</span>
-              </span>
-              <span className="text-[10px] uppercase font-semibold text-text-secondary bg-surface px-2.5 py-0.5 rounded-full border border-surface-variant/60">Markdownify</span>
-            </div>
-            <h4 className="font-semibold text-text-primary mb-1 text-xs">Google Drive 문서 추출</h4>
-            <p className="text-[11px] text-text-secondary leading-relaxed mb-4">
-              설정 조건의 Docs, Sheets, 텍스트 파일을 마크다운 포맷으로 저장합니다.
-            </p>
-          </div>
-          <button 
-            type="button"
-            onClick={onDriveSync}
-            disabled={syncStatus === "syncing" || backendStatus !== "online"}
-            className="w-full bg-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/50 text-on-primary font-medium py-2.5 px-4 rounded-full text-xs transition-all active:scale-95 cursor-pointer disabled:cursor-default"
-          >
-            {syncStatus === "syncing" ? "동기화 중..." : "Drive 동기화 실행"}
-          </button>
-        </div>
-      </div>
-
-      {/* 3. 진행 표시 */}
-      {syncStatus === "syncing" && (
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs text-text-secondary">
-            <span className="font-medium">동기화 진행 상황</span>
-            <span className="font-bold text-primary">처리 중</span>
-          </div>
-          <div className="w-full bg-surface-variant h-2 rounded-full overflow-hidden">
-            <div 
-              className="bg-primary h-full w-full rounded-full animate-pulse"
-            ></div>
-          </div>
-          <p className="text-[11px] text-text-secondary leading-relaxed">
-            Gmail/Drive API 호출과 로컬 RAG 인덱싱은 단계별 진행률을 아직 제공하지 않아 완료 전까지 처리 중 상태로 표시합니다.
-          </p>
         </div>
       )}
 
+      {runResult?.status === "success" && (
+        <div className="bg-white rounded-2xl border border-surface-variant p-5 space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">가져온 결과</h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Gmail {runResult.gmail?.count ?? 0}개 · Drive {runResult.drive?.count ?? 0}개 · Wiki 상태: {runResult.wiki?.status ?? "unknown"}
+              </p>
+            </div>
+            <input
+              value={resultSearch}
+              onChange={(event) => setResultSearch(event.target.value)}
+              placeholder="가져온 결과 안에서 검색"
+              className="w-full md:w-72 rounded-full border border-surface-variant bg-surface px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+          </div>
 
-    </div>
+          <p className="rounded-2xl bg-surface px-4 py-3 text-xs text-text-secondary">
+            Gmail은 V1에서 제목, 보낸 사람, 날짜, 라벨, 스니펫 기준으로 Wiki 초안을 만듭니다. 본문 전체 Wiki화는 후속 고도화 범위입니다.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {filteredRecords.length === 0 ? (
+              <p className="text-sm text-text-secondary">표시할 결과가 없습니다.</p>
+            ) : (
+              filteredRecords.map((record) => (
+                <article key={`${record.source}-${record.id}`} className="rounded-2xl border border-surface-variant bg-surface p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <h4 className="text-sm font-semibold text-text-primary leading-snug">{record.title}</h4>
+                    <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-primary uppercase">{record.source}</span>
+                  </div>
+                  {record.source === "gmail" ? (
+                    <div className="mt-3 space-y-2 text-xs text-text-secondary">
+                      <p>보낸 사람: {record.from || "알 수 없음"}</p>
+                      <p>날짜: {record.date || "날짜 없음"}</p>
+                      <p>라벨: {(record.labelIds ?? []).map((id) => labelNameById.get(id) ?? id).join(", ") || "라벨 없음"}</p>
+                      <p className="leading-relaxed">{record.snippet || "스니펫 없음"}</p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-2 text-xs text-text-secondary">
+                      <p>종류: {record.mimeType || "알 수 없음"}</p>
+                      <p>수정일: {record.modifiedTime || "수정일 없음"}</p>
+                      <p>위치: {record.locationStatus || "위치 정보 없음"}</p>
+                      {record.webViewLink && <a href={record.webViewLink} target="_blank" rel="noreferrer" className="text-primary font-semibold">Drive에서 열기</a>}
+                    </div>
+                  )}
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {syncStatus === "syncing" && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs text-text-secondary">
+            <span className="font-medium">처리 상황</span>
+            <span className="font-bold text-primary">처리 중</span>
+          </div>
+          <div className="w-full bg-surface-variant h-2 rounded-full overflow-hidden">
+            <div className="bg-primary h-full w-full rounded-full animate-pulse" />
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
