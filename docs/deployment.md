@@ -37,6 +37,12 @@ uv run pyinstaller --onefile --name gws-backend main.py
 ```
 * 결과물 파일: `python-backend/dist/gws-backend` (Windows: `gws-backend.exe`)
 
+Windows 개발 환경에서는 저장소 루트에서 아래 스크립트로 2~3단계를 한 번에 수행할 수 있습니다.
+```powershell
+npm run build:backend
+```
+이 스크립트는 `uv`로 PyInstaller를 준비하고, 현재 `rustc` host target triple에 맞춰 `src-tauri/bin/gws-backend-[target].exe`로 복사합니다.
+
 ### [3단계] Tauri Sidecar 규격으로 이름 변경 및 배치
 Tauri는 크로스 플랫폼 빌드를 위해, sidecar 바이너리 파일명 끝에 **[target triple]**(대상 플랫폼 식별자)이 붙는 것을 강제합니다.
 

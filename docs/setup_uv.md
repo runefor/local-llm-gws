@@ -65,6 +65,11 @@ uv run pyinstaller --onefile --name gws-backend main.py
 ```
 * 빌드가 완료되면 `python-backend/dist/` 디렉토리에 `gws-backend.exe`(Windows) 또는 `gws-backend`(macOS) 파일이 생성됩니다.
 
+저장소 루트의 자동화 스크립트를 사용하면 PyInstaller 설치, 백엔드 빌드, Tauri sidecar 파일명 복사를 한 번에 실행할 수 있습니다.
+```powershell
+npm run build:backend
+```
+
 ### 3-C. Tauri Sidecar 적용
 1. 생성된 바이너리를 `src-tauri/bin/` 디렉토리로 복사합니다.
 2. Tauri 사이드카 요구 사양에 맞게 파일명에 target triple(플랫폼 식별자)을 추가해야 합니다.

@@ -13,6 +13,16 @@
     "core:window:allow-start-dragging",
     "core:window:allow-show",
     "core:window:allow-hide",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "bin/gws-backend",
+          "sidecar": true,
+          "args": false
+        }
+      ]
+    }
   ]
 }

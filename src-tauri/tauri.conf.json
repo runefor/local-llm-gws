@@ -23,12 +23,15 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://localhost:18731 http://127.0.0.1:18731 http://localhost:18732 http://127.0.0.1:18732; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "bin/gws-backend"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
