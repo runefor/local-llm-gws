@@ -1,7 +1,7 @@
 import logging
 import pickle
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 import chromadb
 from config import config
 from src.llm.inference import chat_completion
@@ -9,6 +9,18 @@ from src.rag.indexer import get_embedding_model, get_chroma_client, normalize_so
 from src.evidence import EvidenceRecord, EvidenceScores, SourceLocation
 
 logger = logging.getLogger(__name__)
+
+MAX_VECTOR_QUERY_VARIANTS = 3
+MAX_MATCH_TERMS = 8
+QUERY_EXPANSION_HINTS = {
+    "계약": ["계약서", "협약", "contract", "agreement"],
+    "견적": ["제안서", "비용", "quote", "proposal"],
+    "회의": ["미팅", "회의록", "논의", "meeting"],
+    "일정": ["기한", "마감", "schedule", "deadline"],
+    "결제": ["영수증", "인보이스", "payment", "invoice"],
+    "보고": ["리포트", "보고서", "report"],
+    "채용": ["지원자", "면접", "recruiting", "interview"],
+}
 
 def load_bm25_index() -> Optional[Dict[str, Any]]:
     """로컬 파일에서 직렬화된 BM25 인덱스를 로드합니다."""
@@ -22,6 +34,114 @@ def load_bm25_index() -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"BM25 인덱스 파일 로드 중 오류: {e}")
         return None
+
+def _unique_strings(values: List[str]) -> List[str]:
+    unique = []
+    seen = set()
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+def _query_terms(query: str) -> List[str]:
+    terms = re.findall(r"[0-9A-Za-z가-힣_]{2,}", query.lower())
+    return _unique_strings(terms)
+
+def expand_query(query: str) -> List[str]:
+    """대충 말한 검색어의 회수율을 높이기 위한 보수적 쿼리 확장."""
+    normalized = " ".join(query.split())
+    terms = _query_terms(normalized)
+    hints: List[str] = []
+    for term in terms:
+        hints.extend(QUERY_EXPANSION_HINTS.get(term, []))
+
+    expansions = [normalized]
+    if hints:
+        expansions.append(f"{normalized} {' '.join(_unique_strings(hints)[:8])}")
+    if len(terms) >= 2:
+        expansions.append(" ".join(terms))
+
+    return _unique_strings(expansions)[:MAX_VECTOR_QUERY_VARIANTS]
+
+def _metadata_list(metadata: Dict[str, Any], key: str) -> List[str]:
+    value = metadata.get(key)
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in re.split(r"[,|]", value) if item.strip()]
+    return []
+
+def _merge_metadata_values(existing: Dict[str, Any], incoming: Dict[str, Any], key: str) -> None:
+    merged = _unique_strings(_metadata_list(existing, key) + _metadata_list(incoming, key))
+    if merged:
+        existing[key] = ", ".join(merged)
+
+def _merge_match_metadata(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(existing)
+    for key, value in incoming.items():
+        if key not in merged or merged[key] in (None, ""):
+            merged[key] = value
+    _merge_metadata_values(merged, incoming, "match_channels")
+    _merge_metadata_values(merged, incoming, "matched_terms")
+    _merge_metadata_values(merged, incoming, "query_expansions")
+    merged["match_reason"] = _build_match_reason(merged)
+    return merged
+
+def _matched_terms(content: str, metadata: Dict[str, Any], query_expansions: List[str]) -> List[str]:
+    haystack_parts = [
+        content,
+        str(metadata.get("title", "")),
+        str(metadata.get("name", "")),
+        str(metadata.get("sender", "")),
+        str(metadata.get("from", "")),
+        str(metadata.get("owners", "")),
+        str(metadata.get("creator", "")),
+    ]
+    haystack = " ".join(haystack_parts).lower()
+    terms: Set[str] = set()
+    for expanded_query in query_expansions:
+        terms.update(_query_terms(expanded_query))
+    return [term for term in sorted(terms, key=len, reverse=True) if term in haystack][:MAX_MATCH_TERMS]
+
+def _build_match_reason(metadata: Dict[str, Any]) -> str:
+    channels = _metadata_list(metadata, "match_channels")
+    terms = _metadata_list(metadata, "matched_terms")
+    channel_label = " + ".join(
+        "의미 검색" if channel == "semantic" else "키워드 검색" if channel == "keyword" else channel
+        for channel in channels
+    )
+    if channel_label and terms:
+        return f"{channel_label} 매칭: {', '.join(terms[:4])}"
+    if channel_label:
+        return f"{channel_label}으로 관련 자료를 찾았습니다."
+    if terms:
+        return f"검색어와 겹친 단서: {', '.join(terms[:4])}"
+    return ""
+
+def _with_match_metadata(chunk: Dict[str, Any], channel: str, query_expansions: List[str]) -> Dict[str, Any]:
+    metadata = dict(chunk.get("metadata") or {})
+    metadata["match_channels"] = ", ".join(_unique_strings(_metadata_list(metadata, "match_channels") + [channel]))
+    metadata["query_expansions"] = " | ".join(query_expansions)
+    terms = _matched_terms(chunk.get("content") or "", metadata, query_expansions)
+    if terms:
+        metadata["matched_terms"] = ", ".join(_unique_strings(_metadata_list(metadata, "matched_terms") + terms))
+    metadata["match_reason"] = _build_match_reason(metadata)
+    return {**chunk, "metadata": metadata}
+
+def _add_ranked_result(results: List[Dict[str, Any]], chunk: Dict[str, Any]) -> None:
+    chunk_id = chunk.get("id")
+    for idx, existing in enumerate(results):
+        if existing.get("id") != chunk_id:
+            continue
+        results[idx] = {
+            **existing,
+            "metadata": _merge_match_metadata(existing.get("metadata") or {}, chunk.get("metadata") or {}),
+        }
+        return
+    results.append(chunk)
 
 def reciprocal_rank_fusion(vector_results: List[Dict[str, Any]], bm25_results: List[Dict[str, Any]], k: int = 60) -> List[Dict[str, Any]]:
     """RRF (Reciprocal Rank Fusion) 알고리즘을 사용해 벡터 결과와 키워드 결과를 융합합니다."""
@@ -41,10 +161,12 @@ def reciprocal_rank_fusion(vector_results: List[Dict[str, Any]], bm25_results: L
             doc_map[doc_id] = {
                 "id": doc_id,
                 "content": doc["content"],
-                "metadata": doc["metadata"],
+                "metadata": _merge_match_metadata({}, doc.get("metadata") or {}),
                 "distance": 999.0,  # BM25 단독 매칭된 문서용 높은 디스턴스 설정
                 "source": doc["source"]
             }
+        else:
+            doc_map[doc_id]["metadata"] = _merge_match_metadata(doc_map[doc_id].get("metadata") or {}, doc.get("metadata") or {})
         rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
         
     # RRF 점수가 높은 순으로 정렬
@@ -128,53 +250,55 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
     selected_sources = set(normalize_sources(sources))
     client = get_chroma_client()
     model = get_embedding_model()
-    
-    # 1. 벡터 검색 수행용 쿼리 임베딩 생성 (multilingual-e5 모델 요구사항인 'query: ' 접두사 추가)
-    prefixed_query = f"query: {query}"
-    query_vector = model.encode(prefixed_query).tolist()
+    query_expansions = expand_query(query)
     
     vector_results = []
-    pool_size = top_k * 3  # RRF 병합을 위해 충분한 후보군 확보
+    pool_size = max(top_k * 4, 24)  # RRF 병합과 후속 UI 필터링을 위한 후보군 확보
     
-    # Gmail 벡터 검색
-    if "gmail" in selected_sources:
-        try:
-            gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
-            gmail_res = gmail_col.query(
-                query_embeddings=[query_vector],
-                n_results=pool_size
-            )
-            if gmail_res and gmail_res["documents"] and gmail_res["documents"][0]:
-                for i in range(len(gmail_res["documents"][0])):
-                    vector_results.append({
-                        "id": gmail_res["ids"][0][i],
-                        "content": gmail_res["documents"][0][i],
-                        "metadata": gmail_res["metadatas"][0][i],
-                        "distance": gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0,
-                        "source": "gmail"
-                    })
-        except Exception as e:
-            logger.error(f"Gmail ChromaDB 검색 중 오류: {e}")
-        
-    # Drive 벡터 검색
-    if "drive" in selected_sources:
-        try:
-            drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
-            drive_res = drive_col.query(
-                query_embeddings=[query_vector],
-                n_results=pool_size
-            )
-            if drive_res and drive_res["documents"] and drive_res["documents"][0]:
-                for i in range(len(drive_res["documents"][0])):
-                    vector_results.append({
-                        "id": drive_res["ids"][0][i],
-                        "content": drive_res["documents"][0][i],
-                        "metadata": drive_res["metadatas"][0][i],
-                        "distance": drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0,
-                        "source": "drive"
-                    })
-        except Exception as e:
-            logger.error(f"Drive ChromaDB 검색 중 오류: {e}")
+    for expanded_query in query_expansions:
+        # 1. 벡터 검색 수행용 쿼리 임베딩 생성 (multilingual-e5 모델 요구사항인 'query: ' 접두사 추가)
+        prefixed_query = f"query: {expanded_query}"
+        query_vector = model.encode(prefixed_query).tolist()
+
+        # Gmail 벡터 검색
+        if "gmail" in selected_sources:
+            try:
+                gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+                gmail_res = gmail_col.query(
+                    query_embeddings=[query_vector],
+                    n_results=pool_size
+                )
+                if gmail_res and gmail_res["documents"] and gmail_res["documents"][0]:
+                    for i in range(len(gmail_res["documents"][0])):
+                        _add_ranked_result(vector_results, _with_match_metadata({
+                            "id": gmail_res["ids"][0][i],
+                            "content": gmail_res["documents"][0][i],
+                            "metadata": gmail_res["metadatas"][0][i],
+                            "distance": gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0,
+                            "source": "gmail"
+                        }, "semantic", query_expansions))
+            except Exception as e:
+                logger.error(f"Gmail ChromaDB 검색 중 오류: {e}")
+
+        # Drive 벡터 검색
+        if "drive" in selected_sources:
+            try:
+                drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+                drive_res = drive_col.query(
+                    query_embeddings=[query_vector],
+                    n_results=pool_size
+                )
+                if drive_res and drive_res["documents"] and drive_res["documents"][0]:
+                    for i in range(len(drive_res["documents"][0])):
+                        _add_ranked_result(vector_results, _with_match_metadata({
+                            "id": drive_res["ids"][0][i],
+                            "content": drive_res["documents"][0][i],
+                            "metadata": drive_res["metadatas"][0][i],
+                            "distance": drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0,
+                            "source": "drive"
+                        }, "semantic", query_expansions))
+            except Exception as e:
+                logger.error(f"Drive ChromaDB 검색 중 오류: {e}")
         
     # 거리 순 정렬 후 후보군 풀 크기로 제한
     vector_results.sort(key=lambda x: x["distance"])
@@ -189,7 +313,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
             bm25 = bm25_data["bm25"]
             chunks = bm25_data["chunks"]
             
-            tokenized_query = tokenize_text(query)
+            tokenized_query = tokenize_text(" ".join(query_expansions))
             if tokenized_query:
                 # 검색 쿼리에 대해 모든 청크의 점수 획득
                 scores = bm25.get_scores(tokenized_query)
@@ -197,7 +321,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
                 valid_res = []
                 for idx, score in enumerate(scores):
                     if score > 0.0 and chunks[idx].get("source") in selected_sources:
-                        valid_res.append((score, chunks[idx]))
+                        valid_res.append((score, _with_match_metadata(chunks[idx], "keyword", query_expansions)))
                 # 점수 역순 정렬
                 valid_res.sort(key=lambda x: x[0], reverse=True)
                 bm25_pool = _filter_low_signal_chunks([item[1] for item in valid_res])[:pool_size]
@@ -214,11 +338,13 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
 
 def search_evidence(query: str, top_k: int = 8, sources: Optional[List[str]] = None) -> Dict[str, Any]:
     selected_sources = normalize_sources(sources)
+    query_expansions = expand_query(query)
     chunks = retrieve_chunks(query, top_k=top_k, sources=selected_sources)
     evidence = [chunk_to_evidence_record(chunk, idx + 1).model_dump() for idx, chunk in enumerate(chunks)]
     return {
         "status": "success",
         "query": query,
+        "query_expansions": query_expansions,
         "sources_used": selected_sources,
         "evidence": evidence,
         "sources": evidence,

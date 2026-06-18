@@ -66,6 +66,7 @@ _install_dependency_stubs()
 
 main = importlib.import_module("main")
 indexer = importlib.import_module("src.rag.indexer")
+retriever = importlib.import_module("src.rag.retriever")
 gmail = importlib.import_module("src.gws.gmail")
 settings = importlib.import_module("src.settings")
 
@@ -103,7 +104,252 @@ class _FakeClient:
         return self.collection
 
 
+class _FakeQueryEmbedding:
+    def tolist(self):
+        return [0.1, 0.2]
+
+
+class _FakeQueryModel:
+    def __init__(self):
+        self.queries: list[str] = []
+
+    def encode(self, query):
+        self.queries.append(query)
+        return _FakeQueryEmbedding()
+
+
+class _FakeSearchCollection:
+    def __init__(self, source: str):
+        self.source = source
+        self.calls: list[int] = []
+
+    def query(self, query_embeddings, n_results):
+        self.calls.append(n_results)
+        call_index = len(self.calls)
+        chunk_id = f"{self.source}_{call_index}_0"
+        return {
+            "ids": [[chunk_id]],
+            "documents": [[f"{self.source} 계약 일정 본문"]],
+            "metadatas": [[{
+                "doc_id": chunk_id,
+                "title": "계약 일정",
+                "source": self.source,
+                "original_url": f"https://example.invalid/{self.source}/{call_index}",
+            }]],
+            "distances": [[0.1 + (call_index / 100)]],
+        }
+
+
+class _FakeSearchClient:
+    def __init__(self):
+        self.collections = {
+            "gmail_chunks": _FakeSearchCollection("gmail"),
+            "drive_chunks": _FakeSearchCollection("drive"),
+        }
+
+    def get_or_create_collection(self, name):
+        if "gmail" in name:
+            return self.collections["gmail_chunks"]
+        if "drive" in name:
+            return self.collections["drive_chunks"]
+        raise KeyError(name)
+
+
 class GmailJitEndpointTests(unittest.TestCase):
+    def test_retriever_expands_domain_query_hints(self):
+        expansions = retriever.expand_query("지난번 계약 일정")
+
+        self.assertEqual(expansions[0], "지난번 계약 일정")
+        self.assertTrue(any("계약서" in expansion for expansion in expansions))
+        self.assertTrue(any("deadline" in expansion for expansion in expansions))
+        self.assertLessEqual(len(expansions), 3)
+
+    def test_query_expansion_is_bounded_for_repeated_noisy_terms(self):
+        expansions = retriever.expand_query("  계약   계약   일정   일정   ")
+
+        self.assertEqual(expansions[0], "계약 계약 일정 일정")
+        self.assertEqual(len(expansions), len(set(expansions)))
+        self.assertLessEqual(len(expansions), retriever.MAX_VECTOR_QUERY_VARIANTS)
+
+    def test_match_metadata_uses_content_and_source_metadata_terms(self):
+        chunk = {
+            "id": "gmail_m1_0",
+            "content": "본문에는 직접 단서가 적습니다.",
+            "metadata": {
+                "title": "계약 일정 확인",
+                "sender": "manager@example.com",
+                "owners": "Owner <owner@example.com>",
+            },
+            "source": "gmail",
+        }
+
+        annotated = retriever._with_match_metadata(chunk, "semantic", ["계약 일정 manager owner"])
+        metadata = annotated["metadata"]
+
+        self.assertIn("semantic", metadata["match_channels"])
+        self.assertIn("계약", metadata["matched_terms"])
+        self.assertIn("일정", metadata["matched_terms"])
+        self.assertIn("manager", metadata["matched_terms"])
+        self.assertIn("매칭", metadata["match_reason"])
+
+    def test_retrieve_chunks_uses_expanded_queries_and_wide_candidate_pool(self):
+        client = _FakeSearchClient()
+        model = _FakeQueryModel()
+        expansions = retriever.expand_query("계약 일정")
+
+        with patch("src.rag.retriever.get_chroma_client", return_value=client), \
+             patch("src.rag.retriever.get_embedding_model", return_value=model), \
+             patch("src.rag.retriever.load_bm25_index", return_value=None):
+            results = retriever.retrieve_chunks("계약 일정", top_k=3, sources=["gmail", "drive"])
+
+        self.assertEqual(len(model.queries), len(expansions))
+        self.assertTrue(all(query.startswith("query: ") for query in model.queries))
+        self.assertEqual(client.collections["gmail_chunks"].calls, [24] * len(expansions))
+        self.assertEqual(client.collections["drive_chunks"].calls, [24] * len(expansions))
+        self.assertEqual(len(results), 3)
+        self.assertTrue(all("semantic" in item["metadata"]["match_channels"] for item in results))
+        self.assertTrue(all(item["metadata"].get("match_reason") for item in results))
+
+    def test_low_signal_drive_filename_fallback_is_filtered(self):
+        chunks = [
+            {
+                "id": "drive_fallback",
+                "content": "파일명: 오래된 파일\n파일 형식: application/pdf",
+                "metadata": {"source": "drive"},
+                "source": "drive",
+            },
+            {
+                "id": "drive_real",
+                "content": "계약 일정 본문",
+                "metadata": {"source": "drive"},
+                "source": "drive",
+            },
+            {
+                "id": "gmail_filename_like",
+                "content": "파일명: 메일 첨부\n파일 형식: text/plain",
+                "metadata": {"source": "gmail"},
+                "source": "gmail",
+            },
+        ]
+
+        filtered = retriever._filter_low_signal_chunks(chunks)
+
+        self.assertEqual([chunk["id"] for chunk in filtered], ["drive_real", "gmail_filename_like"])
+
+    def test_chunk_to_evidence_record_preserves_location_metadata(self):
+        chunk = {
+            "id": "drive_f1_2",
+            "content": "계약 일정 본문",
+            "metadata": {
+                "doc_id": "f1",
+                "title": "계약 일정",
+                "source": "drive",
+                "original_url": "https://drive.google.com/file/d/f1",
+                "location_label": "DRIVE: 계약 일정",
+                "provider_item_id": "f1",
+                "chunk_index": "2",
+                "file_id": "f1",
+                "resourceKey": "rk",
+                "page_number": "7",
+                "heading_path": "Root > 계약",
+                "text_start_offset": "10",
+                "text_end_offset": "42",
+                "match_reason": "의미 검색 매칭: 계약, 일정",
+            },
+            "distance": 0.15,
+            "rrf_score": 0.05,
+            "source": "drive",
+        }
+
+        evidence = retriever.chunk_to_evidence_record(chunk, rank=4)
+
+        self.assertEqual(evidence.source_location.original_url, "https://drive.google.com/file/d/f1")
+        self.assertEqual(evidence.source_location.location_label, "DRIVE: 계약 일정")
+        self.assertEqual(evidence.source_location.chunk_index, 2)
+        self.assertEqual(evidence.source_location.page_number, 7)
+        self.assertEqual(evidence.source_location.heading_path, "Root > 계약")
+        self.assertEqual(evidence.source_location.text_start_offset, 10)
+        self.assertEqual(evidence.source_location.text_end_offset, 42)
+        self.assertEqual(evidence.metadata["match_reason"], "의미 검색 매칭: 계약, 일정")
+
+    def test_rrf_merges_semantic_and_keyword_match_metadata(self):
+        vector_chunk = {
+            "id": "drive_f1_0",
+            "content": "계약서 초안",
+            "metadata": {
+                "title": "계약서",
+                "match_channels": "semantic",
+                "matched_terms": "계약",
+                "query_expansions": "계약 일정",
+            },
+            "distance": 0.1,
+            "source": "drive",
+        }
+        keyword_chunk = {
+            "id": "drive_f1_0",
+            "content": "계약서 초안",
+            "metadata": {
+                "title": "계약서",
+                "match_channels": "keyword",
+                "matched_terms": "일정",
+                "query_expansions": "계약 일정",
+            },
+            "source": "drive",
+        }
+
+        merged = retriever.reciprocal_rank_fusion([vector_chunk], [keyword_chunk])
+
+        metadata = merged[0]["metadata"]
+        self.assertIn("semantic", metadata["match_channels"])
+        self.assertIn("keyword", metadata["match_channels"])
+        self.assertIn("계약", metadata["matched_terms"])
+        self.assertIn("일정", metadata["matched_terms"])
+        self.assertIn("매칭", metadata["match_reason"])
+
+    def test_rrf_keeps_keyword_only_result_with_match_metadata(self):
+        keyword_chunk = {
+            "id": "gmail_m1_0",
+            "content": "면접 일정 메일",
+            "metadata": {
+                "title": "면접 일정",
+                "match_channels": "keyword",
+                "matched_terms": "면접, 일정",
+                "query_expansions": "지원자 면접 자료",
+            },
+            "source": "gmail",
+        }
+
+        merged = retriever.reciprocal_rank_fusion([], [keyword_chunk])
+
+        self.assertEqual(merged[0]["id"], "gmail_m1_0")
+        self.assertEqual(merged[0]["distance"], 999.0)
+        self.assertEqual(merged[0]["source"], "gmail")
+        self.assertIn("keyword", merged[0]["metadata"]["match_channels"])
+        self.assertIn("매칭", merged[0]["metadata"]["match_reason"])
+
+    def test_search_evidence_returns_query_expansions(self):
+        chunk = {
+            "id": "drive_f1_0",
+            "content": "계약서 마감 일정은 다음 주입니다.",
+            "metadata": {
+                "doc_id": "f1",
+                "title": "계약 일정",
+                "source": "drive",
+                "match_channels": "semantic",
+                "matched_terms": "계약, 일정",
+                "match_reason": "의미 검색 매칭: 계약, 일정",
+            },
+            "distance": 0.2,
+            "source": "drive",
+        }
+        with patch("src.rag.retriever.retrieve_chunks", return_value=[chunk]):
+            result = retriever.search_evidence("계약 일정", top_k=12, sources=["drive"])
+
+        self.assertEqual(result["status"], "success")
+        self.assertIn("query_expansions", result)
+        self.assertTrue(any("계약서" in expansion for expansion in result["query_expansions"]))
+        self.assertEqual(result["evidence"][0]["metadata"]["match_reason"], "의미 검색 매칭: 계약, 일정")
+
     def test_rejects_untrusted_browser_origin(self):
         client = TestClient(main.app)
 

@@ -158,6 +158,10 @@ const getGmailSender = (item: EvidenceRecord): string => {
   return getMetadataString(item, "sender") || getMetadataString(item, "from");
 };
 
+const getMatchReason = (item: EvidenceRecord): string => {
+  return getMetadataString(item, "match_reason");
+};
+
 const formatFileTypeLabel = (mimeType: string): string => {
   if (mimeType === "application/vnd.google-apps.document") return "Google 문서";
   if (mimeType === "application/vnd.google-apps.spreadsheet") return "Google 스프레드시트";
@@ -500,7 +504,7 @@ export default function RagSearchPanel() {
       const response = await fetch("http://localhost:18731/api/rag/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: trimmedQuery, top_k: 5, sources: selectedSources }),
+          body: JSON.stringify({ query: trimmedQuery, top_k: 12, sources: selectedSources }),
       });
       const data = toRecord(await response.json());
 
@@ -1050,6 +1054,7 @@ export default function RagSearchPanel() {
               const selected = selectedEvidenceIds.includes(item.id);
               const url = getEvidenceUrl(item);
               const relevanceLabel = formatRelevanceScore(item.score);
+              const matchReason = getMatchReason(item);
               return (
                 <article
                   key={item.id}
@@ -1097,8 +1102,13 @@ export default function RagSearchPanel() {
                       </div>
                       <p className="text-xs text-[#444746] leading-relaxed whitespace-pre-wrap">
                         <span className="font-bold text-[#1f1f1f]">매칭 근거: </span>
-                        {item.snippet}
+                        {matchReason || item.snippet}
                       </p>
+                      {matchReason && (
+                        <p className="text-[11px] text-[#444746] leading-relaxed whitespace-pre-wrap bg-[#f8fafd] border border-[#e1e3e1] rounded-xl px-3 py-2">
+                          {item.snippet}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </article>
