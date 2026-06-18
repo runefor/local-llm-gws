@@ -175,11 +175,11 @@ export default function SyncPanel() {
       <header className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-[1.125rem] font-medium leading-snug text-text-primary flex items-center gap-2">
-            <span className="material-symbols-rounded text-primary">inventory_2</span>
-            Gmail · Drive 가져오기
+            <span className="material-symbols-rounded text-primary">auto_stories</span>
+            LLM Wiki 조건
           </h2>
           <p className="text-sm text-text-secondary leading-relaxed mt-1">
-            조건을 만들어 필요한 자료만 가져오고, 조건 범위에서 Wiki 초안을 만듭니다.
+            조건별로 필요한 자료만 가져오고, 조건 범위에서 Wiki 초안을 만듭니다.
           </p>
         </div>
         <button

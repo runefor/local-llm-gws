@@ -9,75 +9,7 @@ import ServiceConfigPanel from "../components/ServiceConfigPanel";
 import RagSearchPanel from "../components/RagSearchPanel";
 import KnowledgePipelinePanel from "../components/KnowledgePipelinePanel";
 import LogConsole from "../components/LogConsole";
-
-type DesktopMenu = "hybrid" | "sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs";
-
-interface MenuItem {
-  id: DesktopMenu;
-  icon: string;
-  label: string;
-  description: string;
-}
-
-const menuSections: { title: string; items: MenuItem[] }[] = [
-  {
-    title: "자료 준비",
-    items: [
-      {
-        id: "hybrid",
-        icon: "mail",
-        label: "Gmail 작업함",
-        description: "메일을 고르고 필요한 내용만 확인"
-      },
-      {
-        id: "sync",
-        icon: "sync",
-        label: "Gmail · Drive 가져오기",
-        description: "로컬 지식으로 동기화"
-      },
-      {
-        id: "workspace",
-        icon: "account_tree",
-        label: "메일/파일 탐색",
-        description: "연결된 자료를 한 화면에서 보기"
-      }
-    ]
-  },
-  {
-    title: "찾고 답하기",
-    items: [
-      {
-        id: "rag",
-        icon: "search",
-        label: "근거로 자료 찾기",
-        description: "원문 위치와 관련 자료 검색"
-      },
-      {
-        id: "pipeline",
-        icon: "insights",
-        label: "지식 파이프라인",
-        description: "확인한 자료를 내보내기"
-      }
-    ]
-  },
-  {
-    title: "관리",
-    items: [
-      {
-        id: "settings",
-        icon: "settings",
-        label: "로컬 LLM 설정",
-        description: "모델과 서비스 연결 관리"
-      },
-      {
-        id: "logs",
-        icon: "terminal",
-        label: "실행 로그",
-        description: "오류와 백엔드 기록 확인"
-      }
-    ]
-  }
-];
+import { menuSections, type DesktopMenu } from "./desktopMenu";
 
 export default function DesktopLayout() {
   const {
@@ -253,6 +185,16 @@ export default function DesktopLayout() {
           {activeMenu === "sync" && (
             <div className="h-full min-h-0 space-y-6 overflow-y-auto pr-1">
               <SyncPanel />
+              <div className="bg-primary-container/20 rounded-2xl p-6 border border-primary-container/30 text-xs text-text-secondary">
+                <h3 className="font-semibold text-text-primary mb-2 flex items-center">
+                  <span className="material-symbols-rounded text-primary mr-1 text-sm">route</span>
+                  LLM Wiki 흐름 안내
+                </h3>
+                <p className="leading-relaxed">
+                  이 탭은 단순 동기화가 아니라 “어떤 자료를 Wiki 초안으로 만들지” 조건을 관리하는 곳입니다.
+                  원문을 먼저 훑을 때는 자료 준비 탭을, 관련 자료를 직접 찾아 묶을 때는 통합 자료 찾기 탭을 사용하세요.
+                </p>
+              </div>
             </div>
           )}
 
