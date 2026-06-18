@@ -207,7 +207,7 @@ export default function KnowledgePipelinePanel() {
           개인 지식 추출 및 가공 파이프라인
         </h2>
         <p className="text-xs text-text-secondary leading-relaxed mt-1">
-          구글 워크스페이스(메일, 드라이브)에서 원하는 주제의 정보를 안전하게 수집한 뒤, 로컬 LLM을 통해 정돈된 노트를 생성하고 Obsidian이나 Notion으로 내보냅니다.
+          자료 준비에서 확인한 원본과 찾기에서 벡터 검색으로 고른 근거를 바탕으로 로컬 LLM Wiki 초안을 만들고, 원본 근거와 함께 Obsidian이나 Notion으로 저장합니다.
         </p>
       </div>
 
@@ -219,7 +219,7 @@ export default function KnowledgePipelinePanel() {
               취합 재료 선택
             </h3>
             <p className="text-[11px] text-text-secondary leading-relaxed mt-1">
-              선택한 소스만 검색해 요약합니다. 데이터가 많을 때 Gmail 또는 Drive만 골라 처리할 수 있습니다.
+              선택한 원본 소스만 다시 수집해 Wiki 초안 대상으로 삼습니다. 데이터가 많을 때 Gmail 또는 Drive만 골라 처리할 수 있습니다.
             </p>
           </div>
           <span className="text-[10px] font-bold text-primary bg-primary-container border border-primary/10 rounded-full px-3 py-1">
@@ -323,7 +323,7 @@ export default function KnowledgePipelinePanel() {
               <div>
                 <h4 className="text-xs font-bold text-text-primary flex items-center">
                   <span className="material-symbols-rounded text-xs text-primary mr-1.5 font-icon">output</span>
-                  외부 지식 베이스로 내보내기
+                  외부 지식 베이스에 저장
                 </h4>
                 <p className="text-[10px] text-text-secondary mt-0.5">정리된 내용을 로컬 Obsidian 보관소나 연결된 Notion으로 안전하게 전달합니다.</p>
               </div>
@@ -366,7 +366,7 @@ export default function KnowledgePipelinePanel() {
                   className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold py-2.5 px-4 rounded-full transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span className="material-symbols-rounded text-xs">edit_note</span>
-                  {exportingNotion ? "전송 중..." : "Notion으로 내보내기"}
+                  {exportingNotion ? "전송 중..." : "Notion에 저장"}
                 </button>
               </div>
             </div>
@@ -376,7 +376,7 @@ export default function KnowledgePipelinePanel() {
           <div className="lg:col-span-4 flex flex-col gap-4">
             <h3 className="text-xs font-bold text-text-primary flex items-center px-1">
               <span className="material-symbols-rounded text-xs text-primary mr-1.5">source</span>
-              수집된 원본 이메일 및 문서 ({sources.length}개)
+              저장할 원본 이메일 및 문서 ({sources.length}개)
             </h3>
 
             <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto pr-1">

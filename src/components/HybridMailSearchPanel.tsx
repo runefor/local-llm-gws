@@ -78,7 +78,7 @@ export function HybridMailSearchPanel({
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
             <span className="material-symbols-rounded text-primary text-sm">mail</span>
-            Gmail 메타데이터 검색
+            GWS Gmail 원본 메타데이터 검색
           </h3>
           {gmailItems.length > 0 && (
             <button type="button" onClick={onToggleAll} className="text-[10px] bg-white hover:bg-primary-container/35 border border-surface-variant text-primary px-3 py-1.5 rounded-full font-bold transition-all">
@@ -189,7 +189,7 @@ export function HybridMailSearchPanel({
         <div className="mt-1.5 h-2 rounded-full bg-surface overflow-hidden">
           <div className="h-full bg-primary transition-all" style={{ width: selectedIds.length === 0 ? "0%" : `${Math.round((vectorizedSelectedCount / selectedIds.length) * 100)}%` }} />
         </div>
-        <p className="mt-1.5 leading-relaxed">오른쪽 목록에서 필요한 메일만 선택해 벡터화하세요.</p>
+        <p className="mt-1.5 leading-relaxed">오른쪽 목록에서 필요한 원본 메일만 선택해 벡터 검색 대상으로 만드세요.</p>
       </div>
 
       <button type="button" onClick={onVectorize} disabled={!canUseGmail || selectedIds.length === 0 || vectorizing} className="bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white font-semibold py-2.5 px-5 rounded-full text-xs transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5">

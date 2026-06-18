@@ -111,6 +111,23 @@ class WikiConditionTests(unittest.TestCase):
             if path.exists():
                 path.unlink()
 
+    def test_drive_sync_returns_originals_without_vector_indexing(self):
+        drive_files = [{"id": "d1", "name": "Resume", "mimeType": "text/plain"}]
+        with (
+            patch("main.list_drive_files", return_value=(drive_files, None)) as list_drive_files,
+            patch("src.rag.indexer.index_drive_raw") as index_drive_raw,
+            patch("src.rag.indexer.rebuild_bm25_index") as rebuild_bm25_index,
+        ):
+            client = TestClient(main.app)
+            response = client.post("/api/sync/drive", headers=HEADERS, json={"max_emails": 10, "query": "resume"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+        self.assertEqual(response.json()["files"], drive_files)
+        list_drive_files.assert_called_once_with(max_results=10, query="resume")
+        index_drive_raw.assert_not_called()
+        rebuild_bm25_index.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,17 @@ interface GmailSearchResponse {
   message?: string;
 }
 
+interface OriginalSearchResponse {
+  status: string;
+  count?: number;
+  gmail_count?: number;
+  drive_count?: number;
+  messages?: GmailItem[];
+  files?: DriveItem[];
+  has_more?: boolean;
+  message?: string;
+}
+
 export interface GmailLabel {
   id: string;
   name: string;
@@ -104,6 +115,7 @@ interface AppContextType {
   vectorizeGmailMessages: (messageIds: string[]) => Promise<GmailVectorizeResult>;
   processGmailMessages: (messageIds: string[], instruction: string) => Promise<GmailProcessResult>;
   handleDriveSync: (query?: string) => Promise<void>;
+  searchWorkspaceOriginals: (query?: string, maxItems?: number | null) => Promise<void>;
   handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
   addLog: (msg: string) => void;
   triggerGoogleLogin: () => Promise<void>;
@@ -418,7 +430,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
 
-  // Google Drive 동기화 실행 및 API 호출
+  // Google Drive 원본 목록 조회 실행 및 API 호출
   const handleDriveSync = async (query?: string) => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
@@ -426,7 +438,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     setSyncStatus("syncing");
     setSyncProgress(0);
-    addLog(query ? `Google Drive 동기화 시작 (검색어: "${query}")...` : "Google Drive 동기화 시작 (Docs, Sheets, PDFs 필터링)...");
+    addLog(query ? `Google Drive 원본 조회 시작 (검색어: "${query}")...` : "Google Drive 원본 조회 시작 (Docs, Sheets, PDFs 필터링)...");
     
     try {
       const response = await fetch("http://localhost:18731/api/sync/drive", {
@@ -440,14 +452,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setDriveItems(data.files || []);
         setSyncProgress(100);
         setSyncStatus("done");
-        addLog(`Google Drive 동기화 성공: ${data.count}개의 문서를 가져왔습니다.`);
+        addLog(`Google Drive 원본 조회 성공: ${data.count}개의 문서를 가져왔습니다. 벡터 검색에는 별도 인덱스 갱신이 필요합니다.`);
       } else {
         setSyncStatus("error");
-        addLog(`Google Drive 동기화 실패: ${data.message || "알 수 없는 오류"}`);
+        addLog(`Google Drive 원본 조회 실패: ${data.message || "알 수 없는 오류"}`);
       }
     } catch (error) {
       setSyncStatus("error");
-      addLog(`Google Drive 동기화 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+      addLog(`Google Drive 원본 조회 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+    }
+  };
+
+  const searchWorkspaceOriginals = async (query?: string, maxItems?: number | null) => {
+    if (backendStatus !== "online") {
+      addLog("오류: 백엔드 서버가 오프라인입니다.");
+      return;
+    }
+
+    setSyncStatus("syncing");
+    setSyncProgress(0);
+    addLog(query ? `Gmail/Drive 원본 검색 시작 (검색어: "${query}")...` : "Gmail/Drive 원본 검색 시작...");
+
+    try {
+      const response = await fetch("http://localhost:18731/api/gws/originals/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          max_emails: maxItems === null ? undefined : maxItems ?? 30,
+          query: query || undefined,
+        })
+      });
+      const data: OriginalSearchResponse = await response.json();
+
+      if (data.status === "success") {
+        setGmailItems(data.messages || []);
+        setDriveItems(data.files || []);
+        setSyncProgress(100);
+        setSyncStatus("done");
+        addLog(`Gmail/Drive 원본 검색 완료: Gmail ${data.gmail_count ?? 0}개, Drive ${data.drive_count ?? 0}개`);
+      } else {
+        setSyncStatus("error");
+        addLog(`Gmail/Drive 원본 검색 실패: ${data.message || "알 수 없는 오류"}`);
+      }
+    } catch (error) {
+      setSyncStatus("error");
+      addLog(`Gmail/Drive 원본 검색 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
     }
   };
 
@@ -897,6 +946,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         vectorizeGmailMessages,
         processGmailMessages,
         handleDriveSync,
+        searchWorkspaceOriginals,
         handleLlmTest,
         addLog,
         triggerGoogleLogin,

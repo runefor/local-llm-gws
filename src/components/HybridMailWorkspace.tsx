@@ -148,10 +148,10 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
         <div className="flex flex-col gap-1">
           <h2 className="text-text-primary text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-primary">view_sidebar</span>
-            Gmail Hybrid Workspace
+            GWS Gmail 원본 검색
           </h2>
           <p className="text-xs text-text-secondary leading-relaxed">
-            메타데이터로 빠르게 찾고, 검색된 메일을 넓은 목록에서 확인한 뒤 필요한 항목만 선택합니다.
+            GWS에서 본문 없이 메일 메타데이터를 먼저 검색하고, 필요한 메일만 선택해 벡터화합니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[10px] font-bold">

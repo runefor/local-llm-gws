@@ -9,8 +9,7 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
   const {
     workspaceItems,
     syncStatus,
-    handleGmailSync,
-    handleDriveSync,
+    searchWorkspaceOriginals,
     backendStatus,
     isGwsAuthenticated
   } = useApp();
@@ -23,11 +22,8 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
     e.preventDefault();
     if (backendStatus !== "online" || !isGwsAuthenticated) return;
     
-    // Gmail과 Drive 동시 동기화 실행
-    await Promise.all([
-      handleGmailSync(query),
-      handleDriveSync(query)
-    ]);
+    // Gmail/Drive 원본 목록을 단일 계약으로 함께 조회합니다.
+    await searchWorkspaceOriginals(query);
   };
 
   // 날짜별로 아이템 그룹화 (Timeline 뷰용)
@@ -89,7 +85,7 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
         <div className="flex items-center justify-between">
           <h2 className="text-[#1f1f1f] text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-[#0b57d0]">hub</span>
-            통합 Workspace 데이터 검색
+            Gmail · Drive 원본 검색
           </h2>
           
           {/* 뷰 모드 토글 (완전한 알약 형태) */}
@@ -121,13 +117,13 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Gmail 및 Drive 동시 검색 (예: 보고서, from:sender)"
+                placeholder="GWS Gmail/Drive 원본 검색 (예: 보고서, from:sender)"
                 disabled={backendStatus !== "online" || !isGwsAuthenticated || isSyncing}
                 className="w-full bg-[#f8fafd] pl-10 pr-4 py-2.5 rounded-full border border-[#e1e3e1] text-sm text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] disabled:opacity-50 transition-all placeholder:text-[#444746]/60"
               />
             </div>
             
-            {/* 검색 및 동기화 버튼 (완전한 알약 형태) */}
+            {/* 원본 조회 버튼 (완전한 알약 형태) */}
             <button
               type="submit"
               disabled={backendStatus !== "online" || !isGwsAuthenticated || isSyncing}
@@ -139,12 +135,12 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  <span>동기화 중...</span>
+                  <span>가져오는 중...</span>
                 </>
               ) : (
                 <>
                   <span className="material-symbols-rounded text-sm">sync</span>
-                  <span>동기화 및 검색</span>
+                  <span>원본 가져오기</span>
                 </>
               )}
             </button>
@@ -154,8 +150,8 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
           <div className="flex items-center space-x-1.5 text-[11px] text-[#444746] px-3">
             <span className="material-symbols-rounded text-[14px] text-[#0b57d0]">info</span>
             <span>
-              검색어가 없을 경우 <strong>기본 1주일</strong> 기간 필터가 적용됩니다. 
-              (팁: Gmail은 <code className="bg-[#f8fafd] px-1 py-0.5 rounded border border-[#e1e3e1]">newer_than:30d</code>, Drive는 <code className="bg-[#f8fafd] px-1 py-0.5 rounded border border-[#e1e3e1]">modifiedTime &gt; '2026-06-01'</code> 등으로 기간을 직접 지정할 수 있습니다.)
+              검색어로 GWS 원본 목록만 조회합니다. 검색어가 없을 경우 <strong>기본 1주일</strong> 기간 필터가 적용됩니다. 
+              (팁: 여기서 가져온 Drive 원본은 자동으로 벡터 검색에 들어가지 않습니다. 찾기 메뉴에서 벡터 인덱스 갱신을 따로 실행하세요.)
             </span>
           </div>
         </form>
@@ -167,8 +163,8 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
         {workspaceItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
             <span className="material-symbols-rounded text-4xl text-[#444746]/40">folder_open</span>
-            <p className="text-sm text-[#444746] font-medium">동기화된 지식 데이터가 없습니다.</p>
-            <p className="text-xs text-[#444746]/70">위 검색 창을 통해 데이터를 동기화하고 조회해보세요.</p>
+            <p className="text-sm text-[#444746] font-medium">가져온 원본 자료가 없습니다.</p>
+            <p className="text-xs text-[#444746]/70">위 검색창으로 GWS의 Gmail/Drive 원본 목록만 가져와 확인하세요. 벡터 검색 대상은 찾기 메뉴에서 따로 준비합니다.</p>
           </div>
         ) : viewMode === "list" ? (
           

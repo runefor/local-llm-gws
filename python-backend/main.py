@@ -212,24 +212,38 @@ def sync_gmail(req: SyncRequest):
 
 @app.post("/api/sync/drive")
 def sync_drive(req: SyncRequest):
-    """Google Drive 파일 목록을 가져오며, ChromaDB에 자동으로 인덱싱합니다."""
+    """Google Drive 원본 파일 목록만 가져옵니다. 벡터 인덱싱은 /api/rag/index에서만 수행합니다."""
     try:
         files, next_token = list_drive_files(max_results=req.max_emails or 100, query=req.query)
-        
-        # RAG 자동 인덱싱 및 BM25 빌드 (선택적 동기화)
-        if files:
-            try:
-                from src.rag.indexer import index_drive_raw, rebuild_bm25_index
-                index_drive_raw(files)
-                rebuild_bm25_index()
-            except Exception as idx_err:
-                print(f"[Drive] RAG 자동 인덱싱 오류: {idx_err}")
-                
         return {
             "status": "success",
             "count": len(files),
             "files": files,
             "has_more": next_token is not None
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/gws/originals/search")
+def search_gws_originals(req: SyncRequest):
+    """Gmail/Drive 원본 목록을 한 번에 검색합니다. 벡터 인덱싱은 수행하지 않습니다."""
+    try:
+        max_results = req.max_emails or 50
+        messages, gmail_next_token = list_message_metadata(
+            max_results=max_results,
+            query=req.query,
+            label_ids=req.label_ids,
+        )
+        files, drive_next_token = list_drive_files(max_results=max_results, query=req.query)
+        return {
+            "status": "success",
+            "count": len(messages) + len(files),
+            "gmail_count": len(messages),
+            "drive_count": len(files),
+            "messages": messages,
+            "files": files,
+            "has_more": gmail_next_token is not None or drive_next_token is not None,
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}

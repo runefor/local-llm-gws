@@ -66,7 +66,7 @@ export default function DesktopLayout() {
                   GWS 로컬 지식함
                 </h1>
                 <p className="text-[11px] text-text-secondary font-medium truncate">
-                  Gmail · Drive를 로컬에서 검색
+                  GWS 원본부터 벡터 검색까지
                 </p>
               </div>
             </div>
@@ -160,7 +160,7 @@ export default function DesktopLayout() {
 
             {backendStatus === "offline" && (
               <div className="rounded-2xl bg-primary-container/30 px-3 py-2 text-[10px] leading-4 text-text-secondary">
-                백엔드가 꺼져 있으면 검색과 동기화가 제한됩니다.
+                백엔드가 꺼져 있으면 원본 조회와 벡터 검색이 제한됩니다.
                 <button 
                   type="button"
                   onClick={checkBackend} 
@@ -191,8 +191,8 @@ export default function DesktopLayout() {
                   LLM Wiki 흐름 안내
                 </h3>
                 <p className="leading-relaxed">
-                  이 탭은 단순 동기화가 아니라 “어떤 자료를 Wiki 초안으로 만들지” 조건을 관리하는 곳입니다.
-                  원문을 먼저 훑을 때는 자료 준비 탭을, 관련 자료를 직접 찾아 묶을 때는 통합 자료 찾기 탭을 사용하세요.
+                  이 탭은 “어떤 원본 자료를 Wiki 초안으로 만들지” 조건을 관리하는 곳입니다.
+                  Gmail/Drive 원본 목록은 자료 준비 탭에서만 확인하고, 선택 벡터화 또는 벡터 인덱스 갱신이 끝난 자료만 벡터 자료 찾기 탭에서 검색하세요.
                 </p>
               </div>
             </div>
@@ -210,11 +210,11 @@ export default function DesktopLayout() {
               <div className="bg-primary-container/20 rounded-2xl p-6 border border-primary-container/30 text-xs text-text-secondary">
                 <h3 className="font-semibold text-text-primary mb-2 flex items-center">
                   <span className="material-symbols-rounded text-primary mr-1 text-sm">info</span>
-                  통합 자료 찾기 안내
+                  벡터 자료 찾기 안내
                 </h3>
                 <p className="leading-relaxed">
-                  Gmail/Drive에서 먼저 관련 자료와 원문 위치를 찾고, 필요한 항목만 정보 묶음으로 저장합니다.
-                  요약 생성과 Obsidian/Notion 내보내기는 자료를 확인한 뒤 실행하는 후속 작업입니다.
+                  Gmail에서 선택 벡터화했거나 Drive 벡터 인덱스 갱신까지 끝난 자료만 검색하고, 필요한 항목만 정보 묶음으로 저장합니다.
+                  원본 목록 확인은 자료 준비의 Gmail · Drive 원본 검색에서 하고, Drive 원본은 벡터 인덱스 갱신 후 찾기에 나타납니다.
                 </p>
               </div>
             </div>

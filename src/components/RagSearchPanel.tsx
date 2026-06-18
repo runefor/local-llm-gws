@@ -77,8 +77,8 @@ type DateFilterMode = "all" | "known" | "unknown";
 
 const defaultArtifactInstruction = "선택한 자료 근거만 사용해 핵심 요약과 출처 기반 인사이트를 Markdown으로 정리해 주세요.";
 const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
-  { id: "gmail", label: "Gmail", description: "메일 본문과 스레드에서 관련 자료 찾기", icon: "mail" },
-  { id: "drive", label: "Drive", description: "문서와 시트에서 관련 자료 찾기", icon: "description" },
+  { id: "gmail", label: "Gmail", description: "선택 벡터화된 메일 본문에서 찾기", icon: "mail" },
+  { id: "drive", label: "Drive", description: "벡터 인덱싱된 문서와 시트에서 찾기", icon: "description" },
 ];
 
 const toRecord = (value: unknown): Record<string, unknown> => {
@@ -384,7 +384,7 @@ export default function RagSearchPanel() {
   const handleIndexing = async () => {
     setIndexing(true);
     addLog("ChromaDB 지식베이스 인덱싱 작업 실행 중...");
-    showNotification("info", "지식베이스 인덱싱을 갱신하는 중입니다...");
+    showNotification("info", "선택한 출처의 벡터 인덱스를 갱신하는 중입니다...");
     try {
         const response = await fetch("http://localhost:18731/api/rag/index", {
           method: "POST",
@@ -394,7 +394,7 @@ export default function RagSearchPanel() {
       const data = toRecord(await response.json());
       if (data.status === "success") {
         addLog(`인덱싱 완료! ${selectedSourceLabel} 기준으로 Gmail ${toNumberValue(data.gmail_indexed) ?? 0}개, Drive ${toNumberValue(data.drive_indexed) ?? 0}개 처리.`);
-        showNotification("success", "지식베이스 인덱싱 갱신이 완료되었습니다.");
+        showNotification("success", "벡터 인덱스 갱신이 완료되었습니다.");
         fetchIndexStatus();
       } else {
         const message = toStringValue(data.message, "알 수 없는 오류");
@@ -791,10 +791,10 @@ export default function RagSearchPanel() {
         <div className="flex flex-col gap-0.5">
           <h2 className="text-[#1f1f1f] text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-[#0b57d0]">hub</span>
-            통합 자료 찾기
+            벡터 자료 찾기
           </h2>
           <p className="text-xs text-[#444746] font-normal leading-relaxed">
-            먼저 Gmail/Drive 자료 위치와 관련 항목을 찾고, 선택한 자료를 정보 묶음으로 저장한 뒤 필요할 때만 요약을 생성합니다.
+            Gmail에서 선택 벡터화했거나 Drive 벡터 인덱스 갱신으로 넣은 근거만 검색하고, 선택한 자료를 정보 묶음으로 저장한 뒤 필요할 때만 요약을 생성합니다.
           </p>
         </div>
 
@@ -805,7 +805,7 @@ export default function RagSearchPanel() {
           className="text-xs bg-[#d3e3fd] hover:bg-[#c0d8fc] text-[#0b57d0] font-semibold py-1.5 px-4 rounded-full cursor-pointer disabled:cursor-default disabled:opacity-50 transition-all flex items-center gap-1.5"
         >
           <span className={`material-symbols-rounded text-sm ${indexing ? "animate-spin" : ""}`}>sync</span>
-          {indexing ? "갱신 중..." : "인덱싱 갱신"}
+          {indexing ? "갱신 중..." : "벡터 인덱스 갱신"}
         </button>
       </div>
 
@@ -835,7 +835,7 @@ export default function RagSearchPanel() {
                 최근 정보 묶음
               </h3>
               <p className="text-[11px] text-[#444746] leading-relaxed mt-1">
-                이전에 저장한 Gmail/Drive 자료 묶음을 다시 열어 선택 자료, 메모, 요약 흐름을 이어갑니다.
+                이전에 저장한 벡터 검색 결과 묶음을 다시 열어 선택 자료, 메모, 요약 흐름을 이어갑니다.
               </p>
             </div>
             <button
@@ -892,10 +892,10 @@ export default function RagSearchPanel() {
           <div>
             <h3 className="text-xs font-bold text-[#1f1f1f] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">filter_alt</span>
-              검색할 자료 위치
+              검색할 벡터 출처
             </h3>
             <p className="text-[11px] text-[#444746] leading-relaxed mt-1">
-              Gmail과 Drive를 한 입력창에서 함께 찾습니다. 데이터가 많을 때는 필요한 위치만 골라 처리할 수 있습니다.
+              원본 조회만 한 자료는 제외하고, 선택 벡터화 또는 벡터 인덱스 갱신까지 끝난 Gmail/Drive 자료만 찾습니다.
             </p>
           </div>
           <span className="text-[10px] font-bold text-[#0b57d0] bg-white border border-[#d3e3fd] rounded-full px-3 py-1">
@@ -993,7 +993,7 @@ export default function RagSearchPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={loading || backendStatus !== "online"}
-            placeholder="대충 떠오르는 말로 Gmail/Drive 자료를 찾아보세요..."
+            placeholder="벡터 인덱스에 들어간 Gmail/Drive 자료만 찾아보세요..."
             className="w-full bg-[#f8fafd] pl-11 pr-4 py-3 rounded-full border border-[#e1e3e1] text-xs text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] disabled:opacity-50 transition-all placeholder:text-[#444746]/60 shadow-[0_1px_2px_rgba(0,0,0,0.01)]"
           />
         </div>
@@ -1264,7 +1264,7 @@ export default function RagSearchPanel() {
           <div className="flex items-center justify-between border-b border-[#e1e3e1]/60 pb-3 flex-wrap gap-3">
             <h3 className="text-[#1f1f1f] text-xs font-bold flex items-center">
               <span className="material-symbols-rounded mr-2 text-[#0b57d0]">rate_review</span>
-              요약 편집 및 내보내기
+              요약 편집 및 저장
             </h3>
             <span className="text-[10px] bg-[#d3e3fd] text-[#0b57d0] px-2.5 py-0.5 rounded-full font-bold">수정 편집 가능</span>
           </div>
