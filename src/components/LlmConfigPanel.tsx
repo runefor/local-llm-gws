@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
+import { classifyLlmEndpoint, type LlmServeMode } from "../utils/llmEndpoint";
 
 interface Preset {
   id: string;
@@ -23,7 +24,9 @@ export default function LlmConfigPanel() {
     handleLlmDisconnect,
     handleLlmTest, addLog, backendStatus,
     detectedServers, isDetecting, scanLocalServers,
-    saveLlmConfig
+    saveLlmConfig,
+    suppressExternalLlmSensitiveWarning,
+    saveExternalLlmWarningPreference,
   } = useApp();
   
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -38,6 +41,7 @@ export default function LlmConfigPanel() {
   const [progress, setProgress] = useState<number>(0);
   const [backendOffline, setBackendOffline] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [savingWarningPreference, setSavingWarningPreference] = useState(false);
 
   // 내장 서버 프로세스 관리 상태 추가
   const [serverStatus, setServerStatus] = useState<{ running: boolean; model: string | null; endpoint: string | null }>({
@@ -46,6 +50,17 @@ export default function LlmConfigPanel() {
     endpoint: null
   });
   const [serverActionLoading, setServerActionLoading] = useState(false);
+  const savedLlmServeMode: LlmServeMode = llmMode === "internal" ? "llamacpp" : "external";
+  const endpointClassification = classifyLlmEndpoint(llmEndpoint, savedLlmServeMode);
+
+  const handleWarningPreferenceChange = async (suppress: boolean) => {
+    setSavingWarningPreference(true);
+    try {
+      await saveExternalLlmWarningPreference(suppress);
+    } finally {
+      setSavingWarningPreference(false);
+    }
+  };
 
   // 내장 서버 실행 상태 조회
   const fetchServerStatus = async () => {
@@ -314,6 +329,60 @@ export default function LlmConfigPanel() {
           />
           <span>외부 API (Ollama 등)</span>
         </label>
+      </div>
+
+      <div
+        className={`mb-4 rounded-2xl border p-3.5 text-xs leading-relaxed ${
+          endpointClassification === "external-remote"
+            ? "bg-[#fef9c3] border-[#eab308]/40 text-[#854d0e]"
+            : "bg-[#d3e3fd]/35 border-[#0b57d0]/20 text-[#0b57d0]"
+        }`}
+      >
+        <div className="flex items-start gap-2">
+          <span className="material-symbols-rounded text-base mt-0.5">
+            {endpointClassification === "external-remote" ? "warning" : "shield_lock"}
+          </span>
+          <div className="flex flex-col gap-1">
+            <span className="font-semibold text-[#1f1f1f]">
+              {endpointClassification === "local-internal" && "내장 llama.cpp 로컬 처리"}
+              {endpointClassification === "local-loopback" && "로컬 loopback LLM 처리"}
+              {endpointClassification === "external-remote" && "원격 외부 API 전송 주의"}
+            </span>
+            <span>
+              {endpointClassification === "local-internal" &&
+                "선택한 Gmail/Drive 원문은 이 기기의 내장 서버에서만 사용됩니다."}
+              {endpointClassification === "local-loopback" &&
+                "Ollama/LM Studio처럼 localhost 또는 127.0.0.1에서 실행 중인 서버로 보이며, 이 기기 안의 로컬 런타임으로 취급합니다."}
+              {endpointClassification === "external-remote" &&
+                "현재 endpoint는 loopback이 아닌 원격 주소로 보입니다. Gmail/Drive 자료 기반 생성 전에는 민감정보가 외부로 전송될 수 있음을 사용자에게 알려야 합니다."}
+            </span>
+            {endpointClassification === "external-remote" && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-[11px] font-semibold text-[#854d0e]">
+                  <input
+                    type="checkbox"
+                    checked={suppressExternalLlmSensitiveWarning}
+                    disabled={savingWarningPreference || backendStatus !== "online"}
+                    onChange={(e) => handleWarningPreferenceChange(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-[#eab308]/60 accent-[#0b57d0]"
+                  />
+                  자료 기반 생성 전 경고를 이 기기에서 다시 보지 않기
+                </label>
+                {suppressExternalLlmSensitiveWarning && (
+                  <button
+                    type="button"
+                    disabled={savingWarningPreference || backendStatus !== "online"}
+                    onClick={() => handleWarningPreferenceChange(false)}
+                    className="text-[10px] font-bold text-[#0b57d0] hover:underline disabled:text-[#444746]/40"
+                  >
+                    경고 다시 표시
+                  </button>
+                )}
+                {savingWarningPreference && <span className="text-[10px] text-[#444746]">저장 중...</span>}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {isLoading ? (

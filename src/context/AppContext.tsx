@@ -123,8 +123,11 @@ interface AppContextType {
   setNotionApiKey: React.Dispatch<React.SetStateAction<string>>;
   notionPageId: string;
   setNotionPageId: React.Dispatch<React.SetStateAction<string>>;
+  suppressExternalLlmSensitiveWarning: boolean;
+  setSuppressExternalLlmSensitiveWarning: React.Dispatch<React.SetStateAction<boolean>>;
   loadPipelineSettings: () => Promise<void>;
   savePipelineSettings: (vaultPath: string, apiKey: string, pageId: string) => Promise<boolean>;
+  saveExternalLlmWarningPreference: (suppress: boolean) => Promise<boolean>;
   exportToObsidian: (title: string, content: string, tags?: string[]) => Promise<{ status: string; message: string; filename?: string; filepath?: string }>;
   exportToNotion: (title: string, content: string) => Promise<{ status: string; message: string }>;
   triggerNotionLogin: () => Promise<void>;
@@ -171,6 +174,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [obsidianVaultPath, setObsidianVaultPath] = useState("");
   const [notionApiKey, setNotionApiKey] = useState("");
   const [notionPageId, setNotionPageId] = useState("");
+  const [suppressExternalLlmSensitiveWarning, setSuppressExternalLlmSensitiveWarning] = useState(false);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
@@ -636,6 +640,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setObsidianVaultPath(data.obsidian_vault_path || "");
         setNotionApiKey(data.notion_api_key || "");
         setNotionPageId(data.notion_page_id || "");
+        setSuppressExternalLlmSensitiveWarning(!!data.suppress_external_llm_sensitive_warning);
       }
     } catch (error) {
       console.error("지식 파이프라인 설정 로드 실패:", error);
@@ -652,7 +657,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           obsidian_vault_path: vaultPath,
           notion_api_key: apiKey,
-          notion_page_id: pageId
+          notion_page_id: pageId,
+          suppress_external_llm_sensitive_warning: suppressExternalLlmSensitiveWarning,
         })
       });
       const data = await response.json();
@@ -668,6 +674,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       addLog(`설정 저장 중 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+      return false;
+    }
+  };
+
+  const saveExternalLlmWarningPreference = async (suppress: boolean) => {
+    try {
+      addLog("외부 LLM 민감정보 경고 설정 저장 중...");
+      const response = await fetch("http://localhost:18731/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          obsidian_vault_path: obsidianVaultPath,
+          notion_api_key: notionApiKey,
+          notion_page_id: notionPageId,
+          suppress_external_llm_sensitive_warning: suppress,
+        }),
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        setSuppressExternalLlmSensitiveWarning(suppress);
+        addLog("외부 LLM 민감정보 경고 설정이 저장되었습니다.");
+        return true;
+      }
+      addLog(`외부 LLM 민감정보 경고 설정 저장 실패: ${data.message}`);
+      return false;
+    } catch (error) {
+      addLog(`외부 LLM 민감정보 경고 설정 저장 중 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
       return false;
     }
   };
@@ -883,8 +916,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setNotionApiKey,
         notionPageId,
         setNotionPageId,
+        suppressExternalLlmSensitiveWarning,
+        setSuppressExternalLlmSensitiveWarning,
         loadPipelineSettings,
         savePipelineSettings,
+        saveExternalLlmWarningPreference,
         exportToObsidian,
         exportToNotion,
         triggerNotionLogin,

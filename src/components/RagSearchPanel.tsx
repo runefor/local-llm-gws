@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useApp } from "../context/AppContext";
+import { classifyLlmEndpoint } from "../utils/llmEndpoint";
 
 interface CitationMapEntry {
   evidence_id: string;
@@ -50,6 +51,7 @@ interface EvidenceSet {
   notes?: string;
   tags: string[];
   created_at?: string;
+  updated_at?: string;
 }
 
 interface Artifact {
@@ -71,11 +73,12 @@ interface IndexStatus {
 
 type NotificationType = "success" | "error" | "info" | "warning";
 type RagSource = "gmail" | "drive";
+type DateFilterMode = "all" | "known" | "unknown";
 
-const defaultArtifactInstruction = "선택한 근거만 사용해 핵심 요약과 출처 기반 인사이트를 Markdown으로 정리해 주세요.";
+const defaultArtifactInstruction = "선택한 자료 근거만 사용해 핵심 요약과 출처 기반 인사이트를 Markdown으로 정리해 주세요.";
 const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
-  { id: "gmail", label: "Gmail", description: "메일 본문과 스레드에서 근거 검색", icon: "mail" },
-  { id: "drive", label: "Drive", description: "문서와 시트에서 근거 검색", icon: "description" },
+  { id: "gmail", label: "Gmail", description: "메일 본문과 스레드에서 관련 자료 찾기", icon: "mail" },
+  { id: "drive", label: "Drive", description: "문서와 시트에서 관련 자료 찾기", icon: "description" },
 ];
 
 const toRecord = (value: unknown): Record<string, unknown> => {
@@ -137,6 +140,37 @@ const normalizeSourceLocation = (value: unknown): SourceLocation | undefined => 
   };
 };
 
+const formatRelevanceScore = (score?: number): string | undefined => {
+  if (score === undefined || !Number.isFinite(score)) return undefined;
+  return `관련도 점수 ${score.toFixed(score >= 10 ? 0 : 2)}`;
+};
+
+const getMetadataString = (item: EvidenceRecord, key: string): string => {
+  const value = item.metadata?.[key];
+  return typeof value === "string" ? value : "";
+};
+
+const getDriveFileType = (item: EvidenceRecord): string => {
+  return getMetadataString(item, "mime_type") || getMetadataString(item, "mimeType");
+};
+
+const getGmailSender = (item: EvidenceRecord): string => {
+  return getMetadataString(item, "sender") || getMetadataString(item, "from");
+};
+
+const formatFileTypeLabel = (mimeType: string): string => {
+  if (mimeType === "application/vnd.google-apps.document") return "Google 문서";
+  if (mimeType === "application/vnd.google-apps.spreadsheet") return "Google 스프레드시트";
+  if (mimeType === "application/vnd.google-apps.presentation") return "Google 프레젠테이션";
+  if (mimeType === "text/plain") return "텍스트";
+  return mimeType.split("/").pop()?.replace("vnd.google-apps.", "Google ") || mimeType;
+};
+
+const parseDateFilterMode = (value: string): DateFilterMode => {
+  if (value === "known" || value === "unknown") return value;
+  return "all";
+};
+
 const normalizeEvidenceRecord = (value: unknown, index: number): EvidenceRecord => {
   const record = toRecord(value);
   const sourceLocation = normalizeSourceLocation(record.source_location);
@@ -169,7 +203,16 @@ const normalizeEvidenceRecord = (value: unknown, index: number): EvidenceRecord 
   };
 };
 
-const normalizeEvidenceSet = (value: unknown, fallback: EvidenceSet): EvidenceSet => {
+const emptyEvidenceSetFallback: EvidenceSet = {
+  id: "",
+  title: "",
+  original_query: "",
+  evidence_items: [],
+  notes: "",
+  tags: [],
+};
+
+const normalizeEvidenceSet = (value: unknown, fallback: EvidenceSet = emptyEvidenceSetFallback): EvidenceSet => {
   const record = toRecord(value);
   const evidenceItems = Array.isArray(record.evidence_items)
     ? record.evidence_items.map((item, index) => normalizeEvidenceRecord(item, index))
@@ -185,6 +228,7 @@ const normalizeEvidenceSet = (value: unknown, fallback: EvidenceSet): EvidenceSe
     notes: toStringValue(record.notes, fallback.notes),
     tags,
     created_at: maybeString(record.created_at) || fallback.created_at,
+    updated_at: maybeString(record.updated_at) || fallback.updated_at,
   };
 };
 
@@ -210,7 +254,11 @@ export default function RagSearchPanel() {
     exportToNotion,
     obsidianVaultPath,
     notionApiKey,
-    notionPageId
+    notionPageId,
+    llmEndpoint,
+    llmMode,
+    suppressExternalLlmSensitiveWarning,
+    saveExternalLlmWarningPreference
   } = useApp();
 
   const [query, setQuery] = useState("");
@@ -222,14 +270,19 @@ export default function RagSearchPanel() {
   const [evidenceSetNotes, setEvidenceSetNotes] = useState("");
   const [savingEvidenceSet, setSavingEvidenceSet] = useState(false);
   const [savedEvidenceSet, setSavedEvidenceSet] = useState<EvidenceSet | null>(null);
+  const [savedEvidenceSets, setSavedEvidenceSets] = useState<EvidenceSet[]>([]);
+  const [loadingEvidenceSets, setLoadingEvidenceSets] = useState(false);
+  const [openingEvidenceSetId, setOpeningEvidenceSetId] = useState<string | null>(null);
   const [artifactType, setArtifactType] = useState("summary");
   const [artifactInstruction, setArtifactInstruction] = useState(defaultArtifactInstruction);
   const [generatingArtifact, setGeneratingArtifact] = useState(false);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const [showExternalLlmWarning, setShowExternalLlmWarning] = useState(false);
+  const [rememberExternalLlmWarning, setRememberExternalLlmWarning] = useState(false);
 
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContent, setDraftContent] = useState("");
-  const [draftTags, setDraftTags] = useState<string>("rag-search, evidence-set");
+  const [draftTags, setDraftTags] = useState<string>("자료찾기, 정보묶음");
 
   const [exportingObsidian, setExportingObsidian] = useState(false);
   const [exportingNotion, setExportingNotion] = useState(false);
@@ -242,13 +295,49 @@ export default function RagSearchPanel() {
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
   const [selectedSources, setSelectedSources] = useState<RagSource[]>(["gmail", "drive"]);
+  const [dateFilter, setDateFilter] = useState<DateFilterMode>("all");
+  const [driveFileTypeFilter, setDriveFileTypeFilter] = useState("");
+  const [gmailSenderFilter, setGmailSenderFilter] = useState("");
 
   const reviewRef = useRef<HTMLDivElement>(null);
 
+  const driveFileTypeOptions = useMemo(() => {
+    const fileTypes = evidence
+      .filter((item) => item.source === "drive")
+      .map((item) => getDriveFileType(item))
+      .filter((mimeType) => mimeType.length > 0);
+    return Array.from(new Set(fileTypes)).sort();
+  }, [evidence]);
+
+  const gmailSenderOptions = useMemo(() => {
+    const senders = evidence
+      .filter((item) => item.source === "gmail")
+      .map((item) => getGmailSender(item))
+      .filter((sender) => sender.length > 0);
+    return Array.from(new Set(senders)).sort();
+  }, [evidence]);
+
+  const filteredEvidence = useMemo(() => {
+    return evidence.filter((item) => {
+      const sourceMatches = selectedSources.some((source) => source === item.source);
+      if (!sourceMatches) return false;
+      if (dateFilter === "known" && !item.date) return false;
+      if (dateFilter === "unknown" && item.date) return false;
+      if (driveFileTypeFilter && (item.source !== "drive" || getDriveFileType(item) !== driveFileTypeFilter)) return false;
+      if (gmailSenderFilter && (item.source !== "gmail" || getGmailSender(item) !== gmailSenderFilter)) return false;
+      return true;
+    });
+  }, [dateFilter, driveFileTypeFilter, evidence, gmailSenderFilter, selectedSources]);
+
   const selectedEvidence = evidence.filter((item) => selectedEvidenceIds.includes(item.id));
   const selectedCount = selectedEvidence.length;
-  const allEvidenceSelected = evidence.length > 0 && selectedCount === evidence.length;
+  const filteredSelectedCount = filteredEvidence.filter((item) => selectedEvidenceIds.includes(item.id)).length;
+  const allEvidenceSelected = filteredEvidence.length > 0 && filteredSelectedCount === filteredEvidence.length;
   const selectedSourceLabel = selectedSources.map((source) => source === "gmail" ? "Gmail" : "Drive").join(" + ");
+  const llmServeMode = llmMode === "internal" ? "llamacpp" : "external";
+  const llmEndpointClassification = classifyLlmEndpoint(llmEndpoint, llmServeMode);
+  const shouldWarnBeforeExternalGeneration =
+    llmEndpointClassification === "external-remote" && !suppressExternalLlmSensitiveWarning;
 
   useEffect(() => {
     if (notification) {
@@ -318,7 +407,7 @@ export default function RagSearchPanel() {
 
   const buildDefaultEvidenceSetTitle = (searchQuery: string) => {
     const dateStr = new Date().toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
-    return `[근거 세트] ${searchQuery.slice(0, 24)}${searchQuery.length > 24 ? "..." : ""} (${dateStr})`;
+    return `[정보 묶음] ${searchQuery.slice(0, 24)}${searchQuery.length > 24 ? "..." : ""} (${dateStr})`;
   };
 
   const getEvidenceUrl = (item: EvidenceRecord) => {
@@ -337,6 +426,48 @@ export default function RagSearchPanel() {
       .map((tag) => tag.trim())
       .filter(Boolean);
   };
+
+  const applyEvidenceSetToWorkspace = (set: EvidenceSet) => {
+    setSavedEvidenceSet(set);
+    setEvidence(set.evidence_items);
+    setSelectedEvidenceIds(set.evidence_items.map((item) => item.id));
+    const restoredSources = Array.from(new Set(set.evidence_items.map((item) => item.source)))
+      .filter((source) => source === "gmail" || source === "drive") as Array<"gmail" | "drive">;
+    setSelectedSources(restoredSources.length > 0 ? restoredSources : ["gmail", "drive"]);
+    setQuery(set.original_query);
+    setLastQuery(set.original_query);
+    setDateFilter("all");
+    setDriveFileTypeFilter("");
+    setGmailSenderFilter("");
+    setEvidenceSetTitle(set.title);
+    setEvidenceSetNotes(set.notes || "");
+    setDraftTags(set.tags.length > 0 ? set.tags.join(", ") : "자료찾기, 정보묶음");
+    setArtifact(null);
+    setDraftTitle(set.title);
+    setDraftContent("");
+    setArtifactInstruction(defaultArtifactInstruction);
+    setArtifactType("summary");
+  };
+
+  const fetchSavedEvidenceSets = useCallback(async () => {
+    setLoadingEvidenceSets(true);
+    try {
+      const response = await fetch("http://localhost:18731/api/evidence-sets");
+      const data = toRecord(await response.json());
+      if (data.status === "success" && Array.isArray(data.evidence_sets)) {
+        setSavedEvidenceSets(
+          data.evidence_sets
+            .map((item) => normalizeEvidenceSet(item))
+            .filter((item) => item.id)
+            .slice(0, 8)
+        );
+      }
+    } catch (err) {
+      console.error("정보 묶음 목록 조회 에러:", err);
+    } finally {
+      setLoadingEvidenceSets(false);
+    }
+  }, []);
 
   const resetArtifactDraft = () => {
     setSavedEvidenceSet(null);
@@ -385,7 +516,7 @@ export default function RagSearchPanel() {
         showNotification(
           evidenceItems.length > 0 ? "success" : "warning",
           evidenceItems.length > 0
-            ? "근거 검색이 완료되었습니다. 사용할 근거를 선택한 뒤 Evidence Set으로 저장하세요."
+            ? "자료 찾기가 완료되었습니다. 사용할 자료를 선택한 뒤 정보 묶음으로 저장하세요."
             : "검색은 완료되었지만 저장할 근거가 없습니다. 다른 검색어를 시도해 주세요."
         );
         setTimeout(() => {
@@ -415,7 +546,7 @@ export default function RagSearchPanel() {
     setSavedEvidenceSet(null);
     setArtifact(null);
     setDraftContent("");
-    setSelectedEvidenceIds(allEvidenceSelected ? [] : evidence.map((item) => item.id));
+    setSelectedEvidenceIds(allEvidenceSelected ? [] : filteredEvidence.map((item) => item.id));
   };
 
   const handleSaveEvidenceSet = async () => {
@@ -429,14 +560,19 @@ export default function RagSearchPanel() {
       notes: evidenceSetNotes.trim(),
       tags: parseTags(),
     };
+    const isUpdatingEvidenceSet = !!savedEvidenceSet?.id;
+    const requestUrl = isUpdatingEvidenceSet
+      ? `http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}`
+      : "http://localhost:18731/api/evidence-sets";
+    const requestMethod = isUpdatingEvidenceSet ? "PATCH" : "POST";
 
     setSavingEvidenceSet(true);
-    showNotification("info", "선택한 근거를 Evidence Set으로 저장하는 중입니다...");
-    addLog(`Evidence Set 저장 요청: ${selectedCount}개 근거 선택.`);
+    showNotification("info", isUpdatingEvidenceSet ? "정보 묶음을 수정 저장하는 중입니다..." : "선택한 자료를 정보 묶음으로 저장하는 중입니다...");
+    addLog(`정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"} 요청: ${selectedCount}개 근거 선택.`);
 
     try {
-      const response = await fetch("http://localhost:18731/api/evidence-sets", {
-        method: "POST",
+      const response = await fetch(requestUrl, {
+        method: requestMethod,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -451,35 +587,67 @@ export default function RagSearchPanel() {
           notes: payload.notes,
           tags: payload.tags,
         };
-        const normalizedSet = normalizeEvidenceSet(data.evidence_set, fallbackSet);
+        const normalizedSet = normalizeEvidenceSet(data.evidence_set, fallbackSet ?? emptyEvidenceSetFallback);
         setSavedEvidenceSet(normalizedSet);
+        setSavedEvidenceSets((prev) => [normalizedSet, ...prev.filter((item) => item.id !== normalizedSet.id)].slice(0, 8));
         setArtifact(null);
         setDraftTitle(normalizedSet.title);
         setDraftContent("");
-        addLog(`Evidence Set 저장 완료: ${normalizedSet.id}`);
-        showNotification("success", "Evidence Set이 저장되었습니다. 이제 Artifact를 명시적으로 생성할 수 있습니다.");
+        addLog(`정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"} 완료: ${normalizedSet.id}`);
+        showNotification("success", isUpdatingEvidenceSet ? "정보 묶음 수정이 저장되었습니다." : "정보 묶음이 저장되었습니다. 필요할 때만 요약을 생성하세요.");
         setTimeout(() => {
           reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 150);
       } else {
         const message = toStringValue(data.message, "알 수 없는 오류");
-        addLog(`Evidence Set 저장 실패: ${message}`);
-        showNotification("error", `Evidence Set 저장 실패: ${message}`);
+        addLog(`정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"} 실패: ${message}`);
+        showNotification("error", `정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"} 실패: ${message}`);
       }
     } catch (err) {
-      addLog("Evidence Set 저장 중 네트워크 오류가 발생했습니다.");
-      showNotification("error", "네트워크 오류로 Evidence Set 저장에 실패했습니다.");
+      addLog(`정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"} 중 네트워크 오류가 발생했습니다.`);
+      showNotification("error", `네트워크 오류로 정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"}에 실패했습니다.`);
     } finally {
       setSavingEvidenceSet(false);
     }
   };
 
-  const handleGenerateArtifact = async () => {
+  const handleOpenEvidenceSet = async (evidenceSetId: string) => {
+    if (openingEvidenceSetId || backendStatus !== "online") return;
+
+    setOpeningEvidenceSetId(evidenceSetId);
+    showNotification("info", "저장된 정보 묶음을 불러오는 중입니다...");
+    try {
+      const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(evidenceSetId)}`);
+      const data = toRecord(await response.json());
+      if (data.status === "success") {
+        const fallbackSet = savedEvidenceSets.find((item) => item.id === evidenceSetId);
+        const normalizedSet = normalizeEvidenceSet(data.evidence_set, fallbackSet);
+        applyEvidenceSetToWorkspace(normalizedSet);
+        setSavedEvidenceSets((prev) => [normalizedSet, ...prev.filter((item) => item.id !== normalizedSet.id)].slice(0, 8));
+        addLog(`정보 묶음 다시 열기 완료: ${normalizedSet.id}`);
+        showNotification("success", "정보 묶음을 다시 열었습니다. 선택 자료와 메모를 이어서 사용할 수 있습니다.");
+        setTimeout(() => {
+          reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 150);
+      } else {
+        const message = toStringValue(data.message, "알 수 없는 오류");
+        addLog(`정보 묶음 다시 열기 실패: ${message}`);
+        showNotification("error", `정보 묶음 다시 열기 실패: ${message}`);
+      }
+    } catch (err) {
+      addLog("정보 묶음 다시 열기 중 네트워크 오류가 발생했습니다.");
+      showNotification("error", "네트워크 오류로 정보 묶음을 다시 열 수 없습니다.");
+    } finally {
+      setOpeningEvidenceSetId(null);
+    }
+  };
+
+  const executeGenerateArtifact = async () => {
     if (!savedEvidenceSet || generatingArtifact || backendStatus !== "online") return;
 
     setGeneratingArtifact(true);
-    showNotification("info", "저장된 Evidence Set에서 Artifact를 생성하는 중입니다...");
-    addLog(`Artifact 생성 요청: Evidence Set ${savedEvidenceSet.id}, type=${artifactType}`);
+    showNotification("info", "저장된 정보 묶음에서 요약을 생성하는 중입니다...");
+    addLog(`요약 생성 요청: 정보 묶음 ${savedEvidenceSet.id}, type=${artifactType}`);
 
     try {
       const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
@@ -495,26 +663,48 @@ export default function RagSearchPanel() {
       if (data.status === "success") {
         const normalizedArtifact = normalizeArtifact(data.artifact, savedEvidenceSet.id);
         setArtifact(normalizedArtifact);
-        setDraftTitle(normalizedArtifact.title || `[Artifact] ${savedEvidenceSet.title}`);
+        setDraftTitle(normalizedArtifact.title || `[요약] ${savedEvidenceSet.title}`);
         setDraftContent(normalizedArtifact.content);
-        addLog(`Artifact 생성 완료: ${normalizedArtifact.id}`);
-        showNotification("success", "Artifact가 생성되었습니다. 내용을 편집한 뒤 내보내거나 복사할 수 있습니다.");
+        addLog(`요약 생성 완료: ${normalizedArtifact.id}`);
+        showNotification("success", "요약이 생성되었습니다. 내용을 편집한 뒤 내보내거나 복사할 수 있습니다.");
       } else {
         const message = toStringValue(data.message, "알 수 없는 오류");
-        addLog(`Artifact 생성 실패: ${message}`);
-        showNotification("error", `Artifact 생성 실패: ${message}`);
+        addLog(`요약 생성 실패: ${message}`);
+        showNotification("error", `요약 생성 실패: ${message}`);
       }
     } catch (err) {
-      addLog("Artifact 생성 중 네트워크 오류가 발생했습니다.");
-      showNotification("error", "네트워크 오류로 Artifact 생성에 실패했습니다.");
+      addLog("요약 생성 중 네트워크 오류가 발생했습니다.");
+      showNotification("error", "네트워크 오류로 요약 생성에 실패했습니다.");
     } finally {
       setGeneratingArtifact(false);
     }
   };
 
+  const handleGenerateArtifact = async () => {
+    if (!savedEvidenceSet || generatingArtifact || backendStatus !== "online") return;
+    if (shouldWarnBeforeExternalGeneration) {
+      setRememberExternalLlmWarning(false);
+      setShowExternalLlmWarning(true);
+      return;
+    }
+
+    await executeGenerateArtifact();
+  };
+
+  const handleConfirmExternalLlmGeneration = async () => {
+    setShowExternalLlmWarning(false);
+    if (rememberExternalLlmWarning) {
+      const saved = await saveExternalLlmWarningPreference(true);
+      if (!saved) {
+        showNotification("warning", "경고 숨김 설정 저장은 실패했지만 이번 요약 생성은 계속합니다.");
+      }
+    }
+    await executeGenerateArtifact();
+  };
+
   const handleExportObsidian = async () => {
     if (!draftContent.trim()) {
-      showNotification("warning", "내보낼 Artifact 본문이 없습니다. 먼저 Artifact를 생성해 주세요.");
+      showNotification("warning", "내보낼 요약 본문이 없습니다. 먼저 요약을 생성해 주세요.");
       return;
     }
     if (!obsidianVaultPath) {
@@ -543,7 +733,7 @@ export default function RagSearchPanel() {
 
   const handleExportNotion = async () => {
     if (!draftContent.trim()) {
-      showNotification("warning", "내보낼 Artifact 본문이 없습니다. 먼저 Artifact를 생성해 주세요.");
+      showNotification("warning", "내보낼 요약 본문이 없습니다. 먼저 요약을 생성해 주세요.");
       return;
     }
     if (!notionApiKey || !notionPageId) {
@@ -552,12 +742,12 @@ export default function RagSearchPanel() {
     }
 
     setExportingNotion(true);
-    showNotification("info", "Notion 페이지로 Artifact를 전송하는 중입니다...");
+    showNotification("info", "Notion 페이지로 요약을 전송하는 중입니다...");
 
     try {
       const res = await exportToNotion(draftTitle, draftContent);
       if (res.status === "success") {
-        showNotification("success", "Notion 페이지에 성공적으로 Artifact가 작성되었습니다.");
+        showNotification("success", "Notion 페이지에 성공적으로 요약이 작성되었습니다.");
         addLog("Notion 내보내기 성공");
       } else {
         showNotification("error", `Notion 전송 실패: ${res.message}`);
@@ -572,13 +762,13 @@ export default function RagSearchPanel() {
 
   const handleCopyToClipboard = async () => {
     if (!draftContent.trim()) {
-      showNotification("warning", "복사할 Artifact 본문이 없습니다. 먼저 Artifact를 생성해 주세요.");
+      showNotification("warning", "복사할 요약 본문이 없습니다. 먼저 요약을 생성해 주세요.");
       return;
     }
     const formattedNote = `# ${draftTitle}\n\n${draftContent}`;
     try {
       await navigator.clipboard.writeText(formattedNote);
-      showNotification("success", "마크다운 Artifact가 클립보드에 복사되었습니다. 원하는 곳에 붙여넣으세요.");
+      showNotification("success", "마크다운 요약이 클립보드에 복사되었습니다. 원하는 곳에 붙여넣으세요.");
     } catch (err) {
       showNotification("error", "복사하는 도중 오류가 발생했습니다.");
     }
@@ -587,8 +777,9 @@ export default function RagSearchPanel() {
   useEffect(() => {
     if (backendStatus === "online") {
       fetchIndexStatus();
+      fetchSavedEvidenceSets();
     }
-  }, [backendStatus, fetchIndexStatus]);
+  }, [backendStatus, fetchIndexStatus, fetchSavedEvidenceSets]);
 
   return (
     <div className="bg-white rounded-2xl p-6 border border-[#e1e3e1] shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] flex flex-col gap-6 w-full">
@@ -596,10 +787,10 @@ export default function RagSearchPanel() {
         <div className="flex flex-col gap-0.5">
           <h2 className="text-[#1f1f1f] text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-[#0b57d0]">hub</span>
-            RAG Evidence Set 및 Artifact 파이프라인
+            통합 자료 찾기
           </h2>
           <p className="text-xs text-[#444746] font-normal leading-relaxed">
-            Gmail 및 Drive 데이터에서 근거를 선별해 Evidence Set으로 저장하고, 필요할 때만 Artifact를 생성합니다.
+            먼저 Gmail/Drive 자료 위치와 관련 항목을 찾고, 선택한 자료를 정보 묶음으로 저장한 뒤 필요할 때만 요약을 생성합니다.
           </p>
         </div>
 
@@ -631,15 +822,76 @@ export default function RagSearchPanel() {
         </div>
       )}
 
+      {(loadingEvidenceSets || savedEvidenceSets.length > 0) && (
+        <section className="bg-[#f8fafd] border border-[#e1e3e1] rounded-2xl p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-xs font-bold text-[#1f1f1f] flex items-center gap-1.5">
+                <span className="material-symbols-rounded text-sm text-[#0b57d0]">inventory_2</span>
+                최근 정보 묶음
+              </h3>
+              <p className="text-[11px] text-[#444746] leading-relaxed mt-1">
+                이전에 저장한 Gmail/Drive 자료 묶음을 다시 열어 선택 자료, 메모, 요약 흐름을 이어갑니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSavedEvidenceSets}
+              disabled={loadingEvidenceSets || backendStatus !== "online"}
+              className="text-[10px] bg-white hover:bg-[#d3e3fd]/50 border border-[#e1e3e1] text-[#0b57d0] px-3 py-1.5 rounded-full font-bold transition-all disabled:opacity-50"
+            >
+              {loadingEvidenceSets ? "불러오는 중..." : "목록 새로고침"}
+            </button>
+          </div>
+          {savedEvidenceSets.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {savedEvidenceSets.map((set) => (
+                <article key={set.id} className="bg-white border border-[#e1e3e1] rounded-2xl p-3 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-[#1f1f1f] truncate">{set.title}</h4>
+                      <p className="text-[11px] text-[#444746] truncate">{set.original_query || "검색어 없음"}</p>
+                    </div>
+                    <span className="text-[10px] font-bold text-[#0b57d0] bg-[#d3e3fd]/70 rounded-full px-2 py-0.5 whitespace-nowrap">
+                      자료 {set.evidence_items.length}개
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {(set.tags.length > 0 ? set.tags : ["태그 없음"]).map((tag) => (
+                      <span key={tag} className="text-[10px] text-[#444746] bg-[#f8fafd] border border-[#e1e3e1] rounded-full px-2 py-0.5">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-[#444746] truncate">
+                      {(set.updated_at || set.created_at) ? new Date(set.updated_at || set.created_at || "").toLocaleString("ko-KR") : "저장일 없음"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEvidenceSet(set.id)}
+                      disabled={!!openingEvidenceSetId || backendStatus !== "online"}
+                      className="text-[10px] text-[#0b57d0] font-bold hover:underline disabled:text-[#444746]/40"
+                    >
+                      {openingEvidenceSetId === set.id ? "여는 중..." : "다시 열기"}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="bg-[#f8fafd] border border-[#e1e3e1] rounded-2xl p-4 flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h3 className="text-xs font-bold text-[#1f1f1f] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">filter_alt</span>
-              검색 재료 선택
+              검색할 자료 위치
             </h3>
             <p className="text-[11px] text-[#444746] leading-relaxed mt-1">
-              선택한 소스만 인덱싱하고 검색합니다. 데이터가 많을 때 Gmail 또는 Drive만 골라 처리할 수 있습니다.
+              Gmail과 Drive를 한 입력창에서 함께 찾습니다. 데이터가 많을 때는 필요한 위치만 골라 처리할 수 있습니다.
             </p>
           </div>
           <span className="text-[10px] font-bold text-[#0b57d0] bg-white border border-[#d3e3fd] rounded-full px-3 py-1">
@@ -672,6 +924,61 @@ export default function RagSearchPanel() {
             );
           })}
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+          <label className="flex flex-col gap-1 text-[11px] font-bold text-[#444746]">
+            날짜
+            <select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(parseDateFilterMode(e.target.value))}
+              className="bg-white border border-[#e1e3e1] rounded-xl px-3 py-2 text-xs text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0]"
+            >
+              <option value="all">전체 날짜</option>
+              <option value="known">날짜 있는 자료</option>
+              <option value="unknown">날짜 없음</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] font-bold text-[#444746]">
+            Drive 파일 형식
+            <select
+              value={driveFileTypeFilter}
+              onChange={(e) => setDriveFileTypeFilter(e.target.value)}
+              disabled={driveFileTypeOptions.length === 0}
+              className="bg-white border border-[#e1e3e1] rounded-xl px-3 py-2 text-xs text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] disabled:text-[#444746]/50 disabled:bg-[#f8fafd]"
+            >
+              <option value="">전체 형식</option>
+              {driveFileTypeOptions.map((mimeType) => (
+                <option key={mimeType} value={mimeType}>{formatFileTypeLabel(mimeType)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] font-bold text-[#444746]">
+            Gmail 발신자
+            <select
+              value={gmailSenderFilter}
+              onChange={(e) => setGmailSenderFilter(e.target.value)}
+              disabled={gmailSenderOptions.length === 0}
+              className="bg-white border border-[#e1e3e1] rounded-xl px-3 py-2 text-xs text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] disabled:text-[#444746]/50 disabled:bg-[#f8fafd]"
+            >
+              <option value="">전체 발신자</option>
+              {gmailSenderOptions.map((sender) => (
+                <option key={sender} value={sender}>{sender}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[10px] text-[#444746]">
+          <span className="rounded-full border border-[#e1e3e1] bg-white px-3 py-1">
+            Gmail 라벨 필터는 선택 메일 인덱스에 labelIds가 저장된 뒤 활성화됩니다.
+          </span>
+          <span className="rounded-full border border-[#e1e3e1] bg-white px-3 py-1">
+            Drive 담당자 필터는 owners/creator 메타데이터가 추가된 뒤 활성화됩니다.
+          </span>
+          {evidence.length > 0 && (
+            <span className="rounded-full border border-[#d3e3fd] bg-white px-3 py-1 font-bold text-[#0b57d0]">
+              표시 {filteredEvidence.length}개 / 전체 {evidence.length}개
+            </span>
+          )}
+        </div>
       </div>
 
       <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2.5">
@@ -682,7 +989,7 @@ export default function RagSearchPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={loading || backendStatus !== "online"}
-            placeholder="동기화된 이메일/문서 내에서 Evidence Set으로 저장할 근거를 검색하세요..."
+            placeholder="대충 떠오르는 말로 Gmail/Drive 자료를 찾아보세요..."
             className="w-full bg-[#f8fafd] pl-11 pr-4 py-3 rounded-full border border-[#e1e3e1] text-xs text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] disabled:opacity-50 transition-all placeholder:text-[#444746]/60 shadow-[0_1px_2px_rgba(0,0,0,0.01)]"
           />
         </div>
@@ -699,7 +1006,7 @@ export default function RagSearchPanel() {
               </svg>
               <span>검색 중...</span>
             </div>
-          ) : "근거 검색"}
+          ) : "자료 찾기"}
         </button>
       </form>
 
@@ -727,7 +1034,7 @@ export default function RagSearchPanel() {
           <div className="flex items-center justify-between border-b border-[#e1e3e1]/60 pb-3 flex-wrap gap-3">
             <h3 className="text-[#1f1f1f] text-xs font-bold flex items-center">
               <span className="material-symbols-rounded mr-2 text-[#0b57d0]">fact_check</span>
-              검색된 근거 선택 ({selectedCount}/{evidence.length})
+              찾은 자료 먼저 확인 ({filteredSelectedCount}/{filteredEvidence.length})
             </h3>
             <button
               type="button"
@@ -739,9 +1046,10 @@ export default function RagSearchPanel() {
           </div>
 
           <div className="grid grid-cols-1 gap-3">
-            {evidence.map((item) => {
+            {filteredEvidence.map((item) => {
               const selected = selectedEvidenceIds.includes(item.id);
               const url = getEvidenceUrl(item);
+              const relevanceLabel = formatRelevanceScore(item.score);
               return (
                 <article
                   key={item.id}
@@ -767,7 +1075,12 @@ export default function RagSearchPanel() {
                               {item.source}
                             </span>
                             {item.location_label && <span title={item.location_label} className="max-w-full bg-[#f8fafd] border border-[#e1e3e1] px-2 py-0.5 rounded-full break-words">{item.location_label}</span>}
-                            {item.date && <span>{item.date}</span>}
+                            <span>{item.date || "날짜 없음"}</span>
+                            {relevanceLabel && (
+                              <span className="bg-[#f8fafd] border border-[#e1e3e1] px-2 py-0.5 rounded-full font-semibold text-[#1f1f1f]">
+                                {relevanceLabel}
+                              </span>
+                            )}
                           </div>
                         </div>
                         {url && (
@@ -782,7 +1095,10 @@ export default function RagSearchPanel() {
                           </a>
                         )}
                       </div>
-                      <p className="text-xs text-[#444746] leading-relaxed whitespace-pre-wrap">{item.snippet}</p>
+                      <p className="text-xs text-[#444746] leading-relaxed whitespace-pre-wrap">
+                        <span className="font-bold text-[#1f1f1f]">매칭 근거: </span>
+                        {item.snippet}
+                      </p>
                     </div>
                   </div>
                 </article>
@@ -794,7 +1110,7 @@ export default function RagSearchPanel() {
             <div className="flex flex-col gap-1.5">
               <label htmlFor="evidence-set-title" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
                 <span className="material-symbols-rounded text-sm text-[#0b57d0]">title</span>
-                Evidence Set 제목
+                정보 묶음 제목
               </label>
               <input
                 id="evidence-set-title"
@@ -802,7 +1118,7 @@ export default function RagSearchPanel() {
                 value={evidenceSetTitle}
                 onChange={(e) => setEvidenceSetTitle(e.target.value)}
                 className="w-full bg-white border border-[#e1e3e1] rounded-xl px-4 py-2.5 text-xs text-[#1f1f1f] font-semibold focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
-                placeholder="저장할 Evidence Set 제목을 입력하세요."
+                placeholder="저장할 정보 묶음 제목을 입력하세요."
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -816,7 +1132,7 @@ export default function RagSearchPanel() {
                 value={draftTags}
                 onChange={(e) => setDraftTags(e.target.value)}
                 className="w-full bg-white border border-[#e1e3e1] rounded-xl px-4 py-2.5 text-xs text-[#444746] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
-                placeholder="rag-search, evidence-set"
+                placeholder="자료찾기, 정보묶음"
               />
             </div>
           </div>
@@ -824,7 +1140,7 @@ export default function RagSearchPanel() {
           <div className="flex flex-col gap-1.5">
             <label htmlFor="evidence-set-notes" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">notes</span>
-              Evidence Set 메모
+              정보 묶음 메모
             </label>
             <textarea
               id="evidence-set-notes"
@@ -832,13 +1148,13 @@ export default function RagSearchPanel() {
               onChange={(e) => setEvidenceSetNotes(e.target.value)}
               rows={3}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl p-3 text-xs text-[#1f1f1f] leading-relaxed focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all resize-y"
-              placeholder="Artifact 생성 시 참고할 맥락이나 검토 메모를 남길 수 있습니다."
+              placeholder="나중에 요약을 만들 때 참고할 맥락이나 검토 메모를 남길 수 있습니다."
             />
           </div>
 
           <div className="flex items-center justify-between gap-3 bg-white border border-[#e1e3e1]/60 p-4 rounded-xl flex-wrap">
             <div className="text-xs text-[#444746] font-medium">
-              선택된 근거 <strong className="text-[#0b57d0]">{selectedCount}개</strong>를 저장한 뒤 Artifact를 생성합니다.
+              선택한 자료 <strong className="text-[#0b57d0]">{selectedCount}개</strong>를 {savedEvidenceSet ? "열린 정보 묶음에 수정 저장합니다." : "먼저 정보 묶음으로 저장합니다."}
             </div>
             <button
               type="button"
@@ -854,7 +1170,7 @@ export default function RagSearchPanel() {
               ) : (
                 <span className="material-symbols-rounded text-sm">save</span>
               )}
-              <span>{savingEvidenceSet ? "저장 중..." : "Evidence Set 저장"}</span>
+              <span>{savingEvidenceSet ? "저장 중..." : savedEvidenceSet ? "정보 묶음 수정 저장" : "정보 묶음 저장"}</span>
             </button>
           </div>
         </div>
@@ -866,7 +1182,7 @@ export default function RagSearchPanel() {
             <div className="flex flex-col gap-1">
               <h3 className="text-[#1f1f1f] text-xs font-bold flex items-center">
                 <span className="material-symbols-rounded mr-2 text-[#0b57d0]">inventory_2</span>
-                저장된 Evidence Set
+                저장된 정보 묶음
               </h3>
               <p className="text-[11px] text-[#444746] break-words">{savedEvidenceSet.title} · 근거 {savedEvidenceSet.evidence_items.length}개</p>
             </div>
@@ -877,7 +1193,7 @@ export default function RagSearchPanel() {
             <div className="flex flex-col gap-1.5">
               <label htmlFor="artifact-type" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
                 <span className="material-symbols-rounded text-sm text-[#0b57d0]">category</span>
-                Artifact 유형
+                필요 시 생성할 요약 유형
               </label>
               <select
                 id="artifact-type"
@@ -907,7 +1223,7 @@ export default function RagSearchPanel() {
                 }}
                 rows={3}
                 className="w-full bg-white border border-[#e1e3e1] rounded-xl p-3 text-xs text-[#1f1f1f] leading-relaxed focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all resize-y"
-                placeholder="Artifact 생성 지시문을 입력하세요."
+                placeholder="요약 생성 지시문을 입력하세요."
               />
             </div>
           </div>
@@ -927,7 +1243,7 @@ export default function RagSearchPanel() {
               ) : (
                 <span className="material-symbols-rounded text-sm">auto_awesome</span>
               )}
-              <span>{generatingArtifact ? "생성 중..." : "Artifact 생성"}</span>
+              <span>{generatingArtifact ? "생성 중..." : "요약 생성"}</span>
             </button>
           </div>
         </div>
@@ -938,7 +1254,7 @@ export default function RagSearchPanel() {
           <div className="flex items-center justify-between border-b border-[#e1e3e1]/60 pb-3 flex-wrap gap-3">
             <h3 className="text-[#1f1f1f] text-xs font-bold flex items-center">
               <span className="material-symbols-rounded mr-2 text-[#0b57d0]">rate_review</span>
-              Artifact 편집 및 내보내기
+              요약 편집 및 내보내기
             </h3>
             <span className="text-[10px] bg-[#d3e3fd] text-[#0b57d0] px-2.5 py-0.5 rounded-full font-bold">수정 편집 가능</span>
           </div>
@@ -946,7 +1262,7 @@ export default function RagSearchPanel() {
           <div className="flex flex-col gap-1.5">
             <label htmlFor="artifact-title" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">title</span>
-              Artifact 제목
+              요약 제목
             </label>
             <input
               id="artifact-title"
@@ -954,7 +1270,7 @@ export default function RagSearchPanel() {
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl px-4 py-2.5 text-xs text-[#1f1f1f] font-semibold focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
-              placeholder="내보낼 Artifact 제목을 입력하세요."
+              placeholder="내보낼 요약 제목을 입력하세요."
             />
           </div>
 
@@ -969,14 +1285,14 @@ export default function RagSearchPanel() {
               value={draftTags}
               onChange={(e) => setDraftTags(e.target.value)}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl px-4 py-2 text-xs text-[#444746] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
-              placeholder="예: RAG-검색, Evidence-Set, Artifact"
+              placeholder="예: 자료찾기, 정보묶음, 요약"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="artifact-content" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">subject</span>
-              Artifact 본문 (Markdown 지원)
+              요약 본문 (Markdown 지원)
             </label>
             <textarea
               id="artifact-content"
@@ -984,7 +1300,7 @@ export default function RagSearchPanel() {
               onChange={(e) => setDraftContent(e.target.value)}
               rows={12}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl p-4 text-xs text-[#1f1f1f] leading-relaxed focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all font-mono resize-y"
-              placeholder="생성된 Artifact 본문을 검토하고 편집하세요."
+              placeholder="생성된 요약 본문을 검토하고 편집하세요."
             />
           </div>
 
@@ -992,7 +1308,7 @@ export default function RagSearchPanel() {
             <div className="flex flex-col gap-2 bg-white border border-[#e1e3e1]/60 p-4 rounded-xl">
               <span className="text-[11px] text-[#444746] font-bold flex items-center gap-1.5">
                 <span className="material-symbols-rounded text-sm text-[#0b57d0]">format_quote</span>
-                Citation Map ({artifact.citation_map.length}개)
+                출처 매핑 ({artifact.citation_map.length}개)
               </span>
               <div className="flex flex-wrap gap-2">
                 {artifact.citation_map.map((citation) => (
@@ -1053,6 +1369,66 @@ export default function RagSearchPanel() {
               <span className="material-symbols-rounded text-sm">content_copy</span>
               <span>마크다운 복사</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {showExternalLlmWarning && (
+        <div
+          className="fixed inset-0 z-50 bg-[#1f1f1f]/35 backdrop-blur-[1px] flex items-center justify-center px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="external-llm-warning-title"
+        >
+          <div className="w-full max-w-lg bg-white border border-[#e1e3e1] rounded-3xl shadow-[0_12px_32px_rgba(60,64,67,0.18)] p-6 flex flex-col gap-5">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-rounded text-[#b3261e] bg-[#fce8e6] rounded-full p-2 text-xl">privacy_tip</span>
+              <div className="flex flex-col gap-1">
+                <h3 id="external-llm-warning-title" className="text-sm font-bold text-[#1f1f1f]">
+                  외부 LLM 전송 전 확인
+                </h3>
+                <p className="text-xs text-[#444746] leading-relaxed">
+                  선택한 Gmail/Drive 자료에 민감한 정보가 포함될 수 있습니다. 현재 LLM 설정은 외부 API로 보이며,
+                  요약 생성을 계속하면 저장한 정보 묶음의 내용이 해당 원격 엔드포인트로 전송될 수 있습니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#f8fafd] border border-[#e1e3e1] rounded-2xl p-3 text-[11px] text-[#444746] leading-relaxed">
+              <div className="font-bold text-[#1f1f1f] mb-1">현재 전송 대상</div>
+              <div className="break-all">{llmEndpoint || "엔드포인트 미설정"}</div>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-[#444746] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberExternalLlmWarning}
+                onChange={(e) => setRememberExternalLlmWarning(e.target.checked)}
+                className="h-4 w-4 accent-[#0b57d0]"
+              />
+              <span>이 기기에서 다시 보지 않기</span>
+            </label>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExternalLlmWarning(false);
+                  setRememberExternalLlmWarning(false);
+                }}
+                className="px-5 py-2.5 rounded-full border border-[#e1e3e1] bg-white text-[#444746] text-xs font-bold hover:bg-[#f8fafd] transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExternalLlmGeneration}
+                disabled={generatingArtifact}
+                className="px-5 py-2.5 rounded-full bg-[#0b57d0] text-white text-xs font-bold hover:bg-[#0842a0] disabled:opacity-50 transition-colors"
+              >
+                계속
+              </button>
+            </div>
           </div>
         </div>
       )}

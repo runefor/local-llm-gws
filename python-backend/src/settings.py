@@ -6,7 +6,8 @@ SETTINGS_FILE = config.DATA_DIR / "settings.json"
 DEFAULT_SETTINGS = {
     "obsidian_vault_path": "",
     "notion_api_key": "",
-    "notion_page_id": ""
+    "notion_page_id": "",
+    "suppress_external_llm_sensitive_warning": False,
 }
 
 def load_settings() -> dict:
@@ -29,11 +30,19 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> bool:
     """data/settings.json 파일에 사용자의 외부 서비스 연동 설정을 저장합니다."""
     try:
-        # 안전한 키 필터링
+        existing_settings = {}
+        if SETTINGS_FILE.exists():
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    existing_settings = loaded
+
+        # 안전한 키 필터링: 기본값 < 기존 저장값 < 이번 요청값 순서로 병합해
+        # 일부 설정만 저장하는 요청이 Obsidian/Notion 값을 지우지 않도록 한다.
         clean_settings = {}
-        for k in DEFAULT_SETTINGS.keys():
-            clean_settings[k] = settings.get(k, "")
-            
+        for k, default_value in DEFAULT_SETTINGS.items():
+            clean_settings[k] = settings.get(k, existing_settings.get(k, default_value))
+
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(clean_settings, f, ensure_ascii=False, indent=2)
         return True

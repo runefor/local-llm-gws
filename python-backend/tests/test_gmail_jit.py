@@ -4,6 +4,7 @@ import sys
 import types
 from fastapi.testclient import TestClient
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,40 @@ _install_dependency_stubs()
 main = importlib.import_module("main")
 indexer = importlib.import_module("src.rag.indexer")
 gmail = importlib.import_module("src.gws.gmail")
+settings = importlib.import_module("src.settings")
+
+
+class _FakeModel:
+    def encode(self, chunks):
+        class _FakeEmbedding:
+            def tolist(self):
+                return [[0.1, 0.2] for _ in chunks]
+
+        return _FakeEmbedding()
+
+
+class _FakeCollection:
+    def __init__(self):
+        self.upsert_payload: dict[str, Any] | None = None
+
+    def get(self, where=None, include=None):
+        return {"ids": []}
+
+    def upsert(self, ids, embeddings, documents, metadatas):
+        self.upsert_payload = {
+            "ids": ids,
+            "embeddings": embeddings,
+            "documents": documents,
+            "metadatas": metadatas,
+        }
+
+
+class _FakeClient:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def get_or_create_collection(self, name):
+        return self.collection
 
 
 class GmailJitEndpointTests(unittest.TestCase):
@@ -182,6 +217,119 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertIn("선택 메일 벡터화", result["message"])
         list_messages.assert_not_called()
         get_message.assert_not_called()
+
+    def test_selected_gmail_index_persists_label_ids_metadata(self):
+        collection = _FakeCollection()
+        message = {
+            "id": "m1",
+            "threadId": "t1",
+            "internalDate": "1767225600000",
+            "labelIds": ["INBOX", "IMPORTANT"],
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Hello"},
+                    {"name": "From", "value": "a@example.com"},
+                    {"name": "Message-ID", "value": "<msg@example.com>"},
+                ],
+                "mimeType": "text/plain",
+                "body": {"data": "Qm9keQ=="},
+            },
+        }
+        with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(collection)), \
+             patch("src.rag.indexer.get_embedding_model", return_value=_FakeModel()):
+            indexed = indexer.index_gmail_raw([message])
+
+        self.assertEqual(indexed, 1)
+        payload = collection.upsert_payload
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        metadata = payload["metadatas"][0]
+        self.assertEqual(metadata["labelIds"], "INBOX,IMPORTANT")
+        self.assertEqual(metadata["label_ids"], "INBOX,IMPORTANT")
+        self.assertEqual(metadata["sender"], "a@example.com")
+
+    def test_drive_index_persists_owner_creator_metadata(self):
+        collection = _FakeCollection()
+        drive_file = {
+            "id": "f1",
+            "name": "Doc",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-01-02T00:00:00Z",
+            "createdTime": "2026-01-01T00:00:00Z",
+            "webViewLink": "https://drive.google.com/file",
+            "resourceKey": "rk",
+            "owners": [{"displayName": "Owner", "emailAddress": "owner@example.com"}],
+            "lastModifyingUser": {"displayName": "Editor", "emailAddress": "editor@example.com"},
+        }
+        with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(collection)), \
+             patch("src.rag.indexer.get_embedding_model", return_value=_FakeModel()), \
+             patch("src.rag.indexer.fetch_drive_file_content", return_value="Drive body"):
+            indexed = indexer.index_drive_raw([drive_file])
+
+        self.assertEqual(indexed, 1)
+        payload = collection.upsert_payload
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        metadata = payload["metadatas"][0]
+        self.assertEqual(metadata["owners"], "Owner <owner@example.com>")
+        self.assertEqual(metadata["creator"], "Owner <owner@example.com>")
+        self.assertEqual(metadata["last_modifying_user"], "Editor <editor@example.com>")
+        self.assertEqual(metadata["created_time"], "2026-01-01T00:00:00Z")
+    def test_settings_api_partial_update_preserves_existing_values(self):
+        settings_path = BACKEND_ROOT / "data" / "test-settings-api-preserve.json"
+        if settings_path.exists():
+            settings_path.unlink()
+        try:
+            with patch("src.settings.SETTINGS_FILE", settings_path):
+                client = TestClient(main.app)
+                headers = {"host": "localhost:18731", "origin": "http://localhost:18732"}
+                first = client.post("/api/settings", headers=headers, json={
+                    "obsidian_vault_path": "C:/vault",
+                    "notion_api_key": "secret",
+                    "notion_page_id": "page",
+                    "suppress_external_llm_sensitive_warning": False,
+                })
+                second = client.post("/api/settings", headers=headers, json={
+                    "suppress_external_llm_sensitive_warning": True,
+                })
+                saved = settings.load_settings()
+
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(saved["obsidian_vault_path"], "C:/vault")
+            self.assertEqual(saved["notion_api_key"], "secret")
+            self.assertEqual(saved["notion_page_id"], "page")
+            self.assertTrue(saved["suppress_external_llm_sensitive_warning"])
+        finally:
+            if settings_path.exists():
+                settings_path.unlink()
+
+
+    def test_settings_partial_save_preserves_existing_values(self):
+        settings_path = BACKEND_ROOT / "data" / "test-settings-preserve.json"
+        if settings_path.exists():
+            settings_path.unlink()
+        try:
+            with patch("src.settings.SETTINGS_FILE", settings_path):
+                self.assertTrue(settings.save_settings({
+                    "obsidian_vault_path": "C:/vault",
+                    "notion_api_key": "secret",
+                    "notion_page_id": "page",
+                    "suppress_external_llm_sensitive_warning": False,
+                }))
+                self.assertTrue(settings.save_settings({
+                    "suppress_external_llm_sensitive_warning": True,
+                }))
+
+                saved = settings.load_settings()
+
+            self.assertEqual(saved["obsidian_vault_path"], "C:/vault")
+            self.assertEqual(saved["notion_api_key"], "secret")
+            self.assertEqual(saved["notion_page_id"], "page")
+            self.assertTrue(saved["suppress_external_llm_sensitive_warning"])
+        finally:
+            if settings_path.exists():
+                settings_path.unlink()
 
 
 if __name__ == "__main__":

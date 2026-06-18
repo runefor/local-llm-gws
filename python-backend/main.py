@@ -478,7 +478,7 @@ def evidence_sets_get(evidence_set_id: str):
         from src.evidence import get_evidence_set, list_artifacts
         evidence_set = get_evidence_set(evidence_set_id)
         if evidence_set is None:
-            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+            return {"status": "error", "message": "정보 묶음을 찾을 수 없습니다."}
         return {
             "status": "success",
             "evidence_set": evidence_set.model_dump(),
@@ -499,7 +499,7 @@ def evidence_sets_update(evidence_set_id: str, req: EvidenceSetUpdateRequest):
             evidence_items=req.evidence_items,
         )
         if evidence_set is None:
-            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+            return {"status": "error", "message": "정보 묶음을 찾을 수 없습니다."}
         return {"status": "success", "evidence_set": evidence_set.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -509,7 +509,7 @@ def evidence_sets_delete(evidence_set_id: str):
     try:
         from src.evidence import delete_evidence_set
         if not delete_evidence_set(evidence_set_id):
-            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+            return {"status": "error", "message": "정보 묶음을 찾을 수 없습니다."}
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -520,7 +520,7 @@ def evidence_sets_create_artifact(evidence_set_id: str, req: ArtifactCreateReque
         from src.evidence import create_artifact
         artifact = create_artifact(evidence_set_id, req.artifact_type, req.instruction)
         if artifact is None:
-            return {"status": "error", "message": "Evidence Set을 찾을 수 없습니다."}
+            return {"status": "error", "message": "정보 묶음을 찾을 수 없습니다."}
         return {"status": "success", "artifact": artifact.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -561,9 +561,10 @@ async def agent_run_stream(query: str, max_turns: int = 15):
 # -----------------------------------------------------------------------
 
 class SettingsUpdateRequest(BaseModel):
-    obsidian_vault_path: str = ""
-    notion_api_key: str = ""
-    notion_page_id: str = ""
+    obsidian_vault_path: Optional[str] = None
+    notion_api_key: Optional[str] = None
+    notion_page_id: Optional[str] = None
+    suppress_external_llm_sensitive_warning: Optional[bool] = None
 
 class PipelineRunRequest(BaseModel):
     query: str
@@ -593,7 +594,7 @@ def update_settings(req: SettingsUpdateRequest):
     """Obsidian 및 Notion 연동 설정을 저장합니다."""
     try:
         from src.settings import save_settings
-        success = save_settings(req.model_dump())
+        success = save_settings(req.model_dump(exclude_unset=True, exclude_none=True))
         if success:
             return {"status": "success", "message": "설정이 저장되었습니다."}
         return {"status": "error", "message": "설정 저장 실패"}

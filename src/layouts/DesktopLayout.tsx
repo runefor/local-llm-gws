@@ -96,7 +96,7 @@ export default function DesktopLayout() {
                 }`}
               >
                 <span className="material-symbols-rounded text-lg">search</span>
-                <span>RAG 지식 검색</span>
+                <span>통합 자료 찾기</span>
               </button>
 
               <button
@@ -232,11 +232,11 @@ export default function DesktopLayout() {
               <div className="bg-primary-container/20 rounded-2xl p-6 border border-primary-container/30 text-xs text-text-secondary">
                 <h3 className="font-semibold text-text-primary mb-2 flex items-center">
                   <span className="material-symbols-rounded text-primary mr-1 text-sm">info</span>
-                  데스크탑 RAG 안내
+                  통합 자료 찾기 안내
                 </h3>
                 <p className="leading-relaxed">
-                  옵시디언 마크다운 지식 저장소와 ChromaDB 임베딩 엔진은 로컬 백엔드 서버에서 실행됩니다. 
-                  데스크탑 앱 상에서 RAG 질문을 던지면, 백엔드가 로컬 LLM을 호출하여 완전 오프라인 프라이버시가 보장되는 고성능 지식 답변을 반환합니다.
+                  Gmail/Drive에서 먼저 관련 자료와 원문 위치를 찾고, 필요한 항목만 정보 묶음으로 저장합니다.
+                  요약 생성과 Obsidian/Notion 내보내기는 자료를 확인한 뒤 실행하는 후속 작업입니다.
                 </p>
               </div>
             </div>

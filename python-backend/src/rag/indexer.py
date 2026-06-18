@@ -68,6 +68,25 @@ def _gmail_search_url(message_id_header: str) -> str:
     normalized = message_id_header.strip().strip("<>")
     return f"https://mail.google.com/mail/u/0/#search/rfc822msgid%3A{quote(normalized)}"
 
+def _compact_string_list(value: Any) -> str:
+    if isinstance(value, list):
+        return ",".join(str(item).strip() for item in value if str(item).strip())
+    return str(value).strip() if value else ""
+
+def _compact_person(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    email = str(value.get("emailAddress", "")).strip()
+    name = str(value.get("displayName", "")).strip()
+    if email and name:
+        return f"{name} <{email}>"
+    return email or name
+
+def _compact_people(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    return ", ".join(person for person in (_compact_person(item) for item in value) if person)
+
 def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
 
@@ -270,6 +289,7 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
             date_iso = datetime.fromtimestamp(internal_date_ms / 1000.0).isoformat()
         else:
             date_iso = datetime.now().isoformat()
+        label_ids = _compact_string_list(msg_detail.get("labelIds", []))
         body = parse_gmail_body(msg_detail)
         
         if not body:
@@ -296,6 +316,8 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
                 "internal_date": date_iso,
                 "message_id": msg_id,
                 "rfc822msgid": rfc822msgid,
+                "labelIds": label_ids,
+                "label_ids": label_ids,
                 "original_url": _gmail_search_url(message_id_header),
                 "location_label": f"Gmail: {subject}",
                 "chunk_index": i,
@@ -329,6 +351,8 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
         file_id = f["id"]
         name = f["name"]
         mime_type = f["mimeType"]
+        owners = _compact_people(f.get("owners", []))
+        last_modifying_user = _compact_person(f.get("lastModifyingUser", {}))
         
         content = fetch_drive_file_content(file_id, mime_type)
         if not content:
@@ -351,6 +375,11 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
                 "title": name,
                 "mime_type": mime_type,
                 "date": f.get("modifiedTime", datetime.now().isoformat()),
+                "created_time": f.get("createdTime", ""),
+                "owners": owners,
+                "owner": owners,
+                "creator": owners,
+                "last_modifying_user": last_modifying_user,
                 "webViewLink": f.get("webViewLink", ""),
                 "resourceKey": f.get("resourceKey", ""),
                 "original_url": f.get("webViewLink", ""),
