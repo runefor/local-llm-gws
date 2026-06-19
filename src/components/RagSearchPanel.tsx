@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { classifyLlmEndpoint } from "../utils/llmEndpoint";
+import { ArtifactStatusPanel, type ArtifactLintResult, type ArtifactStatus } from "./rag/ArtifactStatusPanel";
+import { MatchReasonDetails } from "./rag/MatchReasonDetails";
 
 interface CitationMapEntry {
   evidence_id: string;
@@ -61,8 +63,13 @@ interface Artifact {
   title?: string;
   content: string;
   instruction?: string;
+  status?: ArtifactStatus;
+  frontmatter?: Record<string, string | number | boolean | string[] | null>;
+  lint?: ArtifactLintResult;
   citation_map?: CitationMapEntry[];
   created_at?: string;
+  updated_at?: string;
+  approved_at?: string | null;
 }
 
 interface IndexStatus {
@@ -75,7 +82,7 @@ type NotificationType = "success" | "error" | "info" | "warning";
 type RagSource = "gmail" | "drive";
 type DateFilterMode = "all" | "known" | "unknown";
 
-const defaultArtifactInstruction = "선택한 자료 근거만 사용해 핵심 요약과 출처 기반 인사이트를 Markdown으로 정리해 주세요.";
+const defaultArtifactInstruction = "선택한 자료 근거만 사용해 Wiki 후보를 만들고, 핵심 사실마다 [ev_...] 근거를 붙여 주세요.";
 const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
   { id: "gmail", label: "Gmail", description: "선택 벡터화된 메일 본문에서 찾기", icon: "mail" },
   { id: "drive", label: "Drive", description: "벡터 인덱싱된 문서와 시트에서 찾기", icon: "description" },
@@ -122,6 +129,43 @@ const normalizeCitationMap = (value: unknown): CitationMapEntry[] | undefined =>
     };
   });
   return citations.length > 0 ? citations : undefined;
+};
+
+
+const parseArtifactStatus = (value: unknown): ArtifactStatus | undefined => {
+  if (value === "candidate" || value === "needs_review" || value === "approved" || value === "source_missing") {
+    return value;
+  }
+  return undefined;
+};
+
+const normalizeArtifactLint = (value: unknown): ArtifactLintResult | undefined => {
+  const record = toRecord(value);
+  const status = record.status === "passed" || record.status === "failed" ? record.status : undefined;
+  const rawIssues = Array.isArray(record.issues) ? record.issues : [];
+  const issues = rawIssues.map((item) => {
+    const issue = toRecord(item);
+    return {
+      code: toStringValue(issue.code, "lint"),
+      severity: issue.severity === "warning" ? "warning" as const : "error" as const,
+      message: toStringValue(issue.message, "확인 필요"),
+      evidence_id: maybeString(issue.evidence_id),
+    };
+  });
+  return status || issues.length > 0 ? { status, issues } : undefined;
+};
+
+const normalizeArtifactFrontmatter = (value: unknown): Record<string, string | number | boolean | string[] | null> | undefined => {
+  const record = toRecord(value);
+  const entries = Object.entries(record).filter((entry): entry is [string, string | number | boolean | string[] | null] => {
+    const entryValue = entry[1];
+    return typeof entryValue === "string"
+      || typeof entryValue === "number"
+      || typeof entryValue === "boolean"
+      || entryValue === null
+      || (Array.isArray(entryValue) && entryValue.every((item) => typeof item === "string"));
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 };
 
 const normalizeSourceLocation = (value: unknown): SourceLocation | undefined => {
@@ -245,8 +289,13 @@ const normalizeArtifact = (value: unknown, fallbackEvidenceSetId?: string): Arti
     title: maybeString(record.title),
     content: toStringValue(record.content, toStringValue(record.markdown, toStringValue(record.body, ""))),
     instruction: maybeString(record.instruction),
+    status: parseArtifactStatus(record.status),
+    frontmatter: normalizeArtifactFrontmatter(record.frontmatter),
+    lint: normalizeArtifactLint(record.lint),
     citation_map: normalizeCitationMap(record.citation_map),
     created_at: maybeString(record.created_at),
+    updated_at: maybeString(record.updated_at),
+    approved_at: typeof record.approved_at === "string" || record.approved_at === null ? record.approved_at : undefined,
   };
 };
 
@@ -277,7 +326,7 @@ export default function RagSearchPanel() {
   const [savedEvidenceSets, setSavedEvidenceSets] = useState<EvidenceSet[]>([]);
   const [loadingEvidenceSets, setLoadingEvidenceSets] = useState(false);
   const [openingEvidenceSetId, setOpeningEvidenceSetId] = useState<string | null>(null);
-  const [artifactType, setArtifactType] = useState("summary");
+  const [artifactType, setArtifactType] = useState("wiki");
   const [artifactInstruction, setArtifactInstruction] = useState(defaultArtifactInstruction);
   const [generatingArtifact, setGeneratingArtifact] = useState(false);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
@@ -290,6 +339,8 @@ export default function RagSearchPanel() {
 
   const [exportingObsidian, setExportingObsidian] = useState(false);
   const [exportingNotion, setExportingNotion] = useState(false);
+  const [savingArtifact, setSavingArtifact] = useState(false);
+  const [updatingArtifactStatus, setUpdatingArtifactStatus] = useState(false);
 
   const [notification, setNotification] = useState<{
     type: NotificationType;
@@ -598,7 +649,7 @@ export default function RagSearchPanel() {
         setDraftTitle(normalizedSet.title);
         setDraftContent("");
         addLog(`정보 묶음 ${isUpdatingEvidenceSet ? "수정" : "저장"} 완료: ${normalizedSet.id}`);
-        showNotification("success", isUpdatingEvidenceSet ? "정보 묶음 수정이 저장되었습니다." : "정보 묶음이 저장되었습니다. 필요할 때만 요약을 생성하세요.");
+        showNotification("success", isUpdatingEvidenceSet ? "정보 묶음 수정이 저장되었습니다." : "정보 묶음이 저장되었습니다. 필요할 때만 Wiki 후보를 생성하세요.");
         setTimeout(() => {
           reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 150);
@@ -650,8 +701,8 @@ export default function RagSearchPanel() {
     if (!savedEvidenceSet || generatingArtifact || backendStatus !== "online") return;
 
     setGeneratingArtifact(true);
-    showNotification("info", "저장된 정보 묶음에서 요약을 생성하는 중입니다...");
-    addLog(`요약 생성 요청: 정보 묶음 ${savedEvidenceSet.id}, type=${artifactType}`);
+    showNotification("info", "저장된 정보 묶음에서 Wiki 후보를 생성하는 중입니다...");
+    addLog(`Wiki 후보 생성 요청: 정보 묶음 ${savedEvidenceSet.id}, type=${artifactType}`);
 
     try {
       const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
@@ -667,18 +718,18 @@ export default function RagSearchPanel() {
       if (data.status === "success") {
         const normalizedArtifact = normalizeArtifact(data.artifact, savedEvidenceSet.id);
         setArtifact(normalizedArtifact);
-        setDraftTitle(normalizedArtifact.title || `[요약] ${savedEvidenceSet.title}`);
+        setDraftTitle(normalizedArtifact.title || `[Wiki 후보] ${savedEvidenceSet.title}`);
         setDraftContent(normalizedArtifact.content);
-        addLog(`요약 생성 완료: ${normalizedArtifact.id}`);
-        showNotification("success", "요약이 생성되었습니다. 내용을 편집한 뒤 내보내거나 복사할 수 있습니다.");
+        addLog(`Wiki 후보 생성 완료: ${normalizedArtifact.id}`);
+        showNotification("success", "Wiki 후보가 생성되었습니다. Linter 상태를 확인한 뒤 승인하거나 내보낼 수 있습니다.");
       } else {
         const message = toStringValue(data.message, "알 수 없는 오류");
-        addLog(`요약 생성 실패: ${message}`);
-        showNotification("error", `요약 생성 실패: ${message}`);
+        addLog(`Wiki 후보 생성 실패: ${message}`);
+        showNotification("error", `Wiki 후보 생성 실패: ${message}`);
       }
     } catch (err) {
-      addLog("요약 생성 중 네트워크 오류가 발생했습니다.");
-      showNotification("error", "네트워크 오류로 요약 생성에 실패했습니다.");
+      addLog("Wiki 후보 생성 중 네트워크 오류가 발생했습니다.");
+      showNotification("error", "네트워크 오류로 Wiki 후보 생성에 실패했습니다.");
     } finally {
       setGeneratingArtifact(false);
     }
@@ -706,9 +757,81 @@ export default function RagSearchPanel() {
     await executeGenerateArtifact();
   };
 
+  const handleSaveArtifactDraft = async (): Promise<Artifact | null> => {
+    if (!artifact || !draftContent.trim() || backendStatus !== "online") {
+      showNotification("warning", "저장할 Wiki 후보 본문이 없습니다.");
+      return null;
+    }
+
+    setSavingArtifact(true);
+    try {
+      const response = await fetch(`http://localhost:18731/api/artifacts/${encodeURIComponent(artifact.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: draftTitle.trim(), content: draftContent }),
+      });
+      const data = toRecord(await response.json());
+      if (data.status === "success") {
+        const normalizedArtifact = normalizeArtifact(data.artifact, artifact.evidence_set_id);
+        setArtifact(normalizedArtifact);
+        setDraftTitle(normalizedArtifact.title || draftTitle);
+        setDraftContent(normalizedArtifact.content);
+        addLog(`Wiki 후보 저장 완료: ${normalizedArtifact.id}, status=${normalizedArtifact.status || "candidate"}`);
+        showNotification("success", normalizedArtifact.status === "needs_review" ? "후보가 저장되었습니다. Linter 확인 항목을 먼저 해결해 주세요." : "Wiki 후보가 저장되었습니다.");
+        return normalizedArtifact;
+      }
+      const message = toStringValue(data.message, "알 수 없는 오류");
+      showNotification("error", `Wiki 후보 저장 실패: ${message}`);
+      addLog(`Wiki 후보 저장 실패: ${message}`);
+      return null;
+    } catch (err) {
+      showNotification("error", "네트워크 오류로 Wiki 후보 저장에 실패했습니다.");
+      addLog("Wiki 후보 저장 중 네트워크 오류가 발생했습니다.");
+      return null;
+    } finally {
+      setSavingArtifact(false);
+    }
+  };
+
+  const handleSetArtifactStatus = async (nextStatus: "candidate" | "approved") => {
+    if (!artifact || backendStatus !== "online") return;
+    let targetArtifact: Artifact | null = artifact;
+    if (nextStatus === "approved") {
+      targetArtifact = await handleSaveArtifactDraft();
+      if (!targetArtifact) return;
+    }
+
+    setUpdatingArtifactStatus(true);
+    try {
+      const response = await fetch(`http://localhost:18731/api/artifacts/${encodeURIComponent(targetArtifact.id)}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = toRecord(await response.json());
+      if (data.status === "success") {
+        const normalizedArtifact = normalizeArtifact(data.artifact, targetArtifact.evidence_set_id);
+        setArtifact(normalizedArtifact);
+        setDraftTitle(normalizedArtifact.title || draftTitle);
+        setDraftContent(normalizedArtifact.content);
+        showNotification("success", nextStatus === "approved" ? "Wiki 산출물을 승인했습니다." : "승인 상태를 해제하고 후보로 되돌렸습니다.");
+        addLog(`Wiki 상태 변경: ${normalizedArtifact.id}, status=${normalizedArtifact.status || nextStatus}`);
+      } else {
+        const message = toStringValue(data.message, "알 수 없는 오류");
+        showNotification("error", `Wiki 상태 변경 실패: ${message}`);
+        addLog(`Wiki 상태 변경 실패: ${message}`);
+      }
+    } catch (err) {
+      showNotification("error", "네트워크 오류로 Wiki 상태 변경에 실패했습니다.");
+      addLog("Wiki 상태 변경 중 네트워크 오류가 발생했습니다.");
+    } finally {
+      setUpdatingArtifactStatus(false);
+    }
+  };
+
   const handleExportObsidian = async () => {
     if (!draftContent.trim()) {
-      showNotification("warning", "내보낼 요약 본문이 없습니다. 먼저 요약을 생성해 주세요.");
+      showNotification("warning", "내보낼 Wiki 후보 본문이 없습니다. 먼저 후보를 생성해 주세요.");
       return;
     }
     if (!obsidianVaultPath) {
@@ -737,7 +860,7 @@ export default function RagSearchPanel() {
 
   const handleExportNotion = async () => {
     if (!draftContent.trim()) {
-      showNotification("warning", "내보낼 요약 본문이 없습니다. 먼저 요약을 생성해 주세요.");
+      showNotification("warning", "내보낼 Wiki 후보 본문이 없습니다. 먼저 후보를 생성해 주세요.");
       return;
     }
     if (!notionApiKey || !notionPageId) {
@@ -746,12 +869,12 @@ export default function RagSearchPanel() {
     }
 
     setExportingNotion(true);
-    showNotification("info", "Notion 페이지로 요약을 전송하는 중입니다...");
+    showNotification("info", "Notion 페이지로 Wiki 후보를 전송하는 중입니다...");
 
     try {
       const res = await exportToNotion(draftTitle, draftContent);
       if (res.status === "success") {
-        showNotification("success", "Notion 페이지에 성공적으로 요약이 작성되었습니다.");
+        showNotification("success", "Notion 페이지에 성공적으로 Wiki 후보가 작성되었습니다.");
         addLog("Notion 내보내기 성공");
       } else {
         showNotification("error", `Notion 전송 실패: ${res.message}`);
@@ -766,13 +889,13 @@ export default function RagSearchPanel() {
 
   const handleCopyToClipboard = async () => {
     if (!draftContent.trim()) {
-      showNotification("warning", "복사할 요약 본문이 없습니다. 먼저 요약을 생성해 주세요.");
+      showNotification("warning", "복사할 Wiki 후보 본문이 없습니다. 먼저 후보를 생성해 주세요.");
       return;
     }
     const formattedNote = `# ${draftTitle}\n\n${draftContent}`;
     try {
       await navigator.clipboard.writeText(formattedNote);
-      showNotification("success", "마크다운 요약이 클립보드에 복사되었습니다. 원하는 곳에 붙여넣으세요.");
+      showNotification("success", "마크다운 Wiki 후보가 클립보드에 복사되었습니다. 원하는 곳에 붙여넣으세요.");
     } catch (err) {
       showNotification("error", "복사하는 도중 오류가 발생했습니다.");
     }
@@ -1100,15 +1223,7 @@ export default function RagSearchPanel() {
                           </a>
                         )}
                       </div>
-                      <p className="text-xs text-[#444746] leading-relaxed whitespace-pre-wrap">
-                        <span className="font-bold text-[#1f1f1f]">매칭 근거: </span>
-                        {matchReason || item.snippet}
-                      </p>
-                      {matchReason && (
-                        <p className="text-[11px] text-[#444746] leading-relaxed whitespace-pre-wrap bg-[#f8fafd] border border-[#e1e3e1] rounded-xl px-3 py-2">
-                          {item.snippet}
-                        </p>
-                      )}
+                      <MatchReasonDetails reason={matchReason} snippet={item.snippet} metadata={item.metadata} />
                     </div>
                   </div>
                 </article>
@@ -1158,7 +1273,7 @@ export default function RagSearchPanel() {
               onChange={(e) => setEvidenceSetNotes(e.target.value)}
               rows={3}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl p-3 text-xs text-[#1f1f1f] leading-relaxed focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all resize-y"
-              placeholder="나중에 요약을 만들 때 참고할 맥락이나 검토 메모를 남길 수 있습니다."
+              placeholder="나중에 Wiki 후보를 만들 때 참고할 맥락이나 검토 메모를 남길 수 있습니다."
             />
           </div>
 
@@ -1203,7 +1318,7 @@ export default function RagSearchPanel() {
             <div className="flex flex-col gap-1.5">
               <label htmlFor="artifact-type" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
                 <span className="material-symbols-rounded text-sm text-[#0b57d0]">category</span>
-                필요 시 생성할 요약 유형
+                필요 시 생성할 Wiki 후보 유형
               </label>
               <select
                 id="artifact-type"
@@ -1214,6 +1329,7 @@ export default function RagSearchPanel() {
                 }}
                 className="w-full bg-white border border-[#e1e3e1] rounded-xl px-3 py-2.5 text-xs text-[#1f1f1f] font-semibold focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
               >
+                <option value="wiki">wiki 후보</option>
                 <option value="summary">summary</option>
                 <option value="brief">brief</option>
                 <option value="memo">memo</option>
@@ -1233,7 +1349,7 @@ export default function RagSearchPanel() {
                 }}
                 rows={3}
                 className="w-full bg-white border border-[#e1e3e1] rounded-xl p-3 text-xs text-[#1f1f1f] leading-relaxed focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all resize-y"
-                placeholder="요약 생성 지시문을 입력하세요."
+                placeholder="Wiki 후보 생성 지시문을 입력하세요."
               />
             </div>
           </div>
@@ -1253,7 +1369,7 @@ export default function RagSearchPanel() {
               ) : (
                 <span className="material-symbols-rounded text-sm">auto_awesome</span>
               )}
-              <span>{generatingArtifact ? "생성 중..." : "요약 생성"}</span>
+              <span>{generatingArtifact ? "생성 중..." : "Wiki 후보 생성"}</span>
             </button>
           </div>
         </div>
@@ -1264,15 +1380,26 @@ export default function RagSearchPanel() {
           <div className="flex items-center justify-between border-b border-[#e1e3e1]/60 pb-3 flex-wrap gap-3">
             <h3 className="text-[#1f1f1f] text-xs font-bold flex items-center">
               <span className="material-symbols-rounded mr-2 text-[#0b57d0]">rate_review</span>
-              요약 편집 및 저장
+              Wiki 후보 검토 및 저장
             </h3>
-            <span className="text-[10px] bg-[#d3e3fd] text-[#0b57d0] px-2.5 py-0.5 rounded-full font-bold">수정 편집 가능</span>
+            <span className="text-[10px] bg-[#d3e3fd] text-[#0b57d0] px-2.5 py-0.5 rounded-full font-bold">{artifact.status === "approved" ? "승인됨" : "후보 편집 가능"}</span>
           </div>
+
+          <ArtifactStatusPanel
+            status={artifact.status}
+            lint={artifact.lint}
+            saving={savingArtifact}
+            approving={updatingArtifactStatus}
+            canSave={Boolean(draftContent.trim()) && backendStatus === "online"}
+            onSave={() => { void handleSaveArtifactDraft(); }}
+            onApprove={() => { void handleSetArtifactStatus("approved"); }}
+            onReturnToCandidate={() => { void handleSetArtifactStatus("candidate"); }}
+          />
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="artifact-title" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">title</span>
-              요약 제목
+              Wiki 제목
             </label>
             <input
               id="artifact-title"
@@ -1280,7 +1407,7 @@ export default function RagSearchPanel() {
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl px-4 py-2.5 text-xs text-[#1f1f1f] font-semibold focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
-              placeholder="내보낼 요약 제목을 입력하세요."
+              placeholder="내보낼 Wiki 제목을 입력하세요."
             />
           </div>
 
@@ -1295,14 +1422,14 @@ export default function RagSearchPanel() {
               value={draftTags}
               onChange={(e) => setDraftTags(e.target.value)}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl px-4 py-2 text-xs text-[#444746] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
-              placeholder="예: 자료찾기, 정보묶음, 요약"
+              placeholder="예: 자료찾기, 정보묶음, Wiki"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="artifact-content" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
               <span className="material-symbols-rounded text-sm text-[#0b57d0]">subject</span>
-              요약 본문 (Markdown 지원)
+              Wiki 본문 (Markdown 지원)
             </label>
             <textarea
               id="artifact-content"
@@ -1310,7 +1437,7 @@ export default function RagSearchPanel() {
               onChange={(e) => setDraftContent(e.target.value)}
               rows={12}
               className="w-full bg-white border border-[#e1e3e1] rounded-xl p-4 text-xs text-[#1f1f1f] leading-relaxed focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all font-mono resize-y"
-              placeholder="생성된 요약 본문을 검토하고 편집하세요."
+              placeholder="생성된 Wiki 후보 본문을 검토하고 편집하세요."
             />
           </div>
 
@@ -1350,7 +1477,7 @@ export default function RagSearchPanel() {
               ) : (
                 <span className="material-symbols-rounded text-sm">send_and_archive</span>
               )}
-              <span>Obsidian 저장</span>
+              <span>{artifact.status === "approved" ? "승인 Wiki Obsidian 저장" : "후보 Obsidian 저장"}</span>
             </button>
 
             <button
@@ -1367,7 +1494,7 @@ export default function RagSearchPanel() {
               ) : (
                 <span className="material-symbols-rounded text-sm">open_in_new</span>
               )}
-              <span>Notion 저장</span>
+              <span>{artifact.status === "approved" ? "승인 Wiki Notion 저장" : "후보 Notion 저장"}</span>
             </button>
 
             <button

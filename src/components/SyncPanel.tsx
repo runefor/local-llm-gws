@@ -176,10 +176,10 @@ export default function SyncPanel() {
         <div>
           <h2 className="text-[1.125rem] font-medium leading-snug text-text-primary flex items-center gap-2">
             <span className="material-symbols-rounded text-primary">auto_stories</span>
-            LLM Wiki 조건
+            Wiki 후보 조건
           </h2>
           <p className="text-sm text-text-secondary leading-relaxed mt-1">
-            조건별로 필요한 자료만 가져오고, 조건 범위에서 Wiki 초안을 만듭니다.
+            조건별로 필요한 원본 후보를 모으고, 메타데이터/스니펫 기반 초안을 만듭니다. 최종 Wiki는 벡터 자료 찾기에서 정보 묶음으로 확정하세요.
           </p>
         </div>
         <button
@@ -212,7 +212,7 @@ export default function SyncPanel() {
                 onChange={(event) => setDraft((current) => ({ ...current, autoWikiEnabled: event.target.checked }))}
                 className="h-4 w-4 accent-primary"
               />
-              자동 Wiki
+              스니펫 초안 만들기
             </label>
           </div>
 
@@ -362,7 +362,7 @@ export default function SyncPanel() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold text-text-primary">{condition.name}</span>
-                    <span className="rounded-full bg-white/80 px-2 py-1 text-[11px] font-semibold text-text-secondary">{condition.autoWikiEnabled ? "Wiki ON" : "Wiki OFF"}</span>
+                    <span className="rounded-full bg-white/80 px-2 py-1 text-[11px] font-semibold text-text-secondary">{condition.autoWikiEnabled ? "초안 ON" : "초안 OFF"}</span>
                   </div>
                   <p className="mt-2 text-xs text-text-secondary leading-relaxed">
                     {periodLabels[condition.period]} · {condition.keyword || "검색어 없음"} · Gmail {condition.gmailLabelIds.length} · Drive {condition.driveFolderIds.length}
@@ -377,7 +377,7 @@ export default function SyncPanel() {
             disabled={controlsDisabled || !selectedCondition}
             className="w-full rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-on-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/60"
           >
-            {loading ? "실행 중" : "선택 조건 실행"}
+            {loading ? "실행 중" : "선택 조건 후보 수집"}
           </button>
         </aside>
       </div>
@@ -392,7 +392,7 @@ export default function SyncPanel() {
             disabled={controlsDisabled}
             className="mt-4 rounded-full bg-primary px-5 py-2 text-sm font-medium text-on-primary hover:bg-[#094cb3] disabled:opacity-50"
           >
-            확인 후 Wiki 만들기
+            확인 후 스니펫 초안 만들기
           </button>
         </div>
       )}
@@ -403,7 +403,7 @@ export default function SyncPanel() {
             <div>
               <h3 className="text-sm font-semibold text-text-primary">가져온 결과</h3>
               <p className="text-xs text-text-secondary mt-1">
-                Gmail {runResult.gmail?.count ?? 0}개 · Drive {runResult.drive?.count ?? 0}개 · Wiki 상태: {runResult.wiki?.status ?? "unknown"}
+                Gmail {runResult.gmail?.count ?? 0}개 · Drive {runResult.drive?.count ?? 0}개 · 초안 상태: {runResult.wiki?.status ?? "unknown"}{runResult.wiki?.artifact_status ? ` · 산출물: ${runResult.wiki.artifact_status}` : ""}
               </p>
             </div>
             <input
@@ -415,7 +415,7 @@ export default function SyncPanel() {
           </div>
 
           <p className="rounded-2xl bg-surface px-4 py-3 text-xs text-text-secondary">
-            Gmail은 V1에서 제목, 보낸 사람, 날짜, 라벨, 스니펫 기준으로 Wiki 초안을 만듭니다. 본문 전체 Wiki화는 후속 고도화 범위입니다.
+            Gmail은 V1에서 제목, 보낸 사람, 날짜, 라벨, 스니펫 기준으로 후보 초안을 만듭니다. 최종 Wiki는 원문을 검토한 정보 묶음에서 생성합니다.
           </p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

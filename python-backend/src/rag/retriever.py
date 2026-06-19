@@ -1,17 +1,23 @@
 import logging
 import pickle
 import re
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional
 import chromadb
 from config import config
 from src.llm.inference import chat_completion
 from src.rag.indexer import get_embedding_model, get_chroma_client, normalize_sources
 from src.evidence import EvidenceRecord, EvidenceScores, SourceLocation
+from src.rag.match_reason import (
+    MAX_MATCH_TERMS,
+    _merge_match_metadata,
+    _query_terms,
+    _unique_strings,
+    _with_match_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
 MAX_VECTOR_QUERY_VARIANTS = 3
-MAX_MATCH_TERMS = 8
 QUERY_EXPANSION_HINTS = {
     "계약": ["계약서", "협약", "contract", "agreement"],
     "견적": ["제안서", "비용", "quote", "proposal"],
@@ -35,21 +41,6 @@ def load_bm25_index() -> Optional[Dict[str, Any]]:
         logger.error(f"BM25 인덱스 파일 로드 중 오류: {e}")
         return None
 
-def _unique_strings(values: List[str]) -> List[str]:
-    unique = []
-    seen = set()
-    for value in values:
-        normalized = value.strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        unique.append(normalized)
-    return unique
-
-def _query_terms(query: str) -> List[str]:
-    terms = re.findall(r"[0-9A-Za-z가-힣_]{2,}", query.lower())
-    return _unique_strings(terms)
-
 def expand_query(query: str) -> List[str]:
     """대충 말한 검색어의 회수율을 높이기 위한 보수적 쿼리 확장."""
     normalized = " ".join(query.split())
@@ -65,71 +56,6 @@ def expand_query(query: str) -> List[str]:
         expansions.append(" ".join(terms))
 
     return _unique_strings(expansions)[:MAX_VECTOR_QUERY_VARIANTS]
-
-def _metadata_list(metadata: Dict[str, Any], key: str) -> List[str]:
-    value = metadata.get(key)
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        return [item.strip() for item in re.split(r"[,|]", value) if item.strip()]
-    return []
-
-def _merge_metadata_values(existing: Dict[str, Any], incoming: Dict[str, Any], key: str) -> None:
-    merged = _unique_strings(_metadata_list(existing, key) + _metadata_list(incoming, key))
-    if merged:
-        existing[key] = ", ".join(merged)
-
-def _merge_match_metadata(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
-    merged = dict(existing)
-    for key, value in incoming.items():
-        if key not in merged or merged[key] in (None, ""):
-            merged[key] = value
-    _merge_metadata_values(merged, incoming, "match_channels")
-    _merge_metadata_values(merged, incoming, "matched_terms")
-    _merge_metadata_values(merged, incoming, "query_expansions")
-    merged["match_reason"] = _build_match_reason(merged)
-    return merged
-
-def _matched_terms(content: str, metadata: Dict[str, Any], query_expansions: List[str]) -> List[str]:
-    haystack_parts = [
-        content,
-        str(metadata.get("title", "")),
-        str(metadata.get("name", "")),
-        str(metadata.get("sender", "")),
-        str(metadata.get("from", "")),
-        str(metadata.get("owners", "")),
-        str(metadata.get("creator", "")),
-    ]
-    haystack = " ".join(haystack_parts).lower()
-    terms: Set[str] = set()
-    for expanded_query in query_expansions:
-        terms.update(_query_terms(expanded_query))
-    return [term for term in sorted(terms, key=len, reverse=True) if term in haystack][:MAX_MATCH_TERMS]
-
-def _build_match_reason(metadata: Dict[str, Any]) -> str:
-    channels = _metadata_list(metadata, "match_channels")
-    terms = _metadata_list(metadata, "matched_terms")
-    channel_label = " + ".join(
-        "의미 검색" if channel == "semantic" else "키워드 검색" if channel == "keyword" else channel
-        for channel in channels
-    )
-    if channel_label and terms:
-        return f"{channel_label} 매칭: {', '.join(terms[:4])}"
-    if channel_label:
-        return f"{channel_label}으로 관련 자료를 찾았습니다."
-    if terms:
-        return f"검색어와 겹친 단서: {', '.join(terms[:4])}"
-    return ""
-
-def _with_match_metadata(chunk: Dict[str, Any], channel: str, query_expansions: List[str]) -> Dict[str, Any]:
-    metadata = dict(chunk.get("metadata") or {})
-    metadata["match_channels"] = ", ".join(_unique_strings(_metadata_list(metadata, "match_channels") + [channel]))
-    metadata["query_expansions"] = " | ".join(query_expansions)
-    terms = _matched_terms(chunk.get("content") or "", metadata, query_expansions)
-    if terms:
-        metadata["matched_terms"] = ", ".join(_unique_strings(_metadata_list(metadata, "matched_terms") + terms))
-    metadata["match_reason"] = _build_match_reason(metadata)
-    return {**chunk, "metadata": metadata}
 
 def _add_ranked_result(results: List[Dict[str, Any]], chunk: Dict[str, Any]) -> None:
     chunk_id = chunk.get("id")

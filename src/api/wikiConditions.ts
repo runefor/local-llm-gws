@@ -45,6 +45,7 @@ export type WikiRunState = {
   status: WikiRunStatus;
   message: string;
   artifact_id?: string;
+  artifact_status?: "candidate";
   markdown?: string;
   warning?: {
     title: string;

@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import uvicorn
 from src.gws.gmail import list_labels, list_message_metadata
 from src.gws.drive import list_drive_files
@@ -550,6 +550,13 @@ class ArtifactCreateRequest(BaseModel):
     artifact_type: str = "summary"
     instruction: str = ""
 
+class ArtifactUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+class ArtifactStatusRequest(BaseModel):
+    status: Literal["candidate", "approved"]
+
 @app.get("/api/evidence-sets")
 def evidence_sets_list():
     try:
@@ -622,6 +629,28 @@ def evidence_sets_create_artifact(evidence_set_id: str, req: ArtifactCreateReque
         artifact = create_artifact(evidence_set_id, req.artifact_type, req.instruction)
         if artifact is None:
             return {"status": "error", "message": "정보 묶음을 찾을 수 없습니다."}
+        return {"status": "success", "artifact": artifact.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.patch("/api/artifacts/{artifact_id}")
+def artifacts_update(artifact_id: str, req: ArtifactUpdateRequest):
+    try:
+        from src.evidence import update_artifact
+        artifact = update_artifact(artifact_id, title=req.title, content=req.content)
+        if artifact is None:
+            return {"status": "error", "message": "산출물을 찾을 수 없습니다."}
+        return {"status": "success", "artifact": artifact.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.patch("/api/artifacts/{artifact_id}/status")
+def artifacts_update_status(artifact_id: str, req: ArtifactStatusRequest):
+    try:
+        from src.evidence import update_artifact_status
+        artifact = update_artifact_status(artifact_id, req.status)
+        if artifact is None:
+            return {"status": "error", "message": "산출물을 찾을 수 없습니다."}
         return {"status": "success", "artifact": artifact.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}

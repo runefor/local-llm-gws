@@ -190,6 +190,9 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertIn("계약", metadata["matched_terms"])
         self.assertIn("일정", metadata["matched_terms"])
         self.assertIn("manager", metadata["matched_terms"])
+        self.assertIn("title", metadata["matched_fields"])
+        self.assertIn("sender", metadata["matched_fields"])
+        self.assertIn("owners", metadata["matched_fields"])
         self.assertIn("매칭", metadata["match_reason"])
 
     def test_retrieve_chunks_uses_expanded_queries_and_wide_candidate_pool(self):
@@ -280,6 +283,7 @@ class GmailJitEndpointTests(unittest.TestCase):
                 "title": "계약서",
                 "match_channels": "semantic",
                 "matched_terms": "계약",
+                "matched_fields": "title",
                 "query_expansions": "계약 일정",
             },
             "distance": 0.1,
@@ -292,6 +296,7 @@ class GmailJitEndpointTests(unittest.TestCase):
                 "title": "계약서",
                 "match_channels": "keyword",
                 "matched_terms": "일정",
+                "matched_fields": "title",
                 "query_expansions": "계약 일정",
             },
             "source": "drive",
@@ -304,6 +309,7 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertIn("keyword", metadata["match_channels"])
         self.assertIn("계약", metadata["matched_terms"])
         self.assertIn("일정", metadata["matched_terms"])
+        self.assertIn("title", metadata["matched_fields"])
         self.assertIn("매칭", metadata["match_reason"])
 
     def test_rrf_keeps_keyword_only_result_with_match_metadata(self):

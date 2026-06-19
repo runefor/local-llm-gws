@@ -53,8 +53,8 @@ export const menuSections = [
       {
         id: "pipeline",
         icon: "insights",
-        label: "요약 · 저장",
-        description: "원본과 함께 노션/옵시디언 저장",
+        label: "Wiki 저장 안내",
+        description: "정보 묶음 기반 저장 흐름",
       },
     ],
   },

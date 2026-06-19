@@ -80,7 +80,7 @@ def _build_wiki_prompt(condition: WikiCondition, records: list[dict[str, Any]]) 
             "role": "system",
             "content": (
                 "당신은 Gmail/Drive 메타데이터와 스니펫만 사용해 개인 지식 Wiki 초안을 만드는 비서입니다. "
-                "Gmail 본문 원문은 제공되지 않았으므로 스니펫 밖의 내용을 추측하지 마세요. "
+                "Gmail 본문 원문은 제공되지 않았으므로 스니펫 밖의 내용을 추측하지 마세요. 이 결과는 최종 Wiki가 아니라 원문 검토 전 후보 초안입니다. "
                 "한국어 Markdown으로 제목, 요약, 근거 항목, 후속 확인 필요 항목을 작성하세요.\n\n"
                 f"--- 조건: {condition['name']} ---\n{context}"
             ),
@@ -92,7 +92,7 @@ def _build_wiki_prompt(condition: WikiCondition, records: list[dict[str, Any]]) 
 def _warning_payload() -> WarningPayload:
     return {
         "title": "외부 LLM 전송 확인",
-        "message": "Gmail/Drive에서 가져온 메타데이터와 스니펫이 외부 LLM endpoint로 전송될 수 있습니다.",
+        "message": "조건 후보 생성을 위해 Gmail/Drive 메타데이터와 스니펫이 외부 LLM endpoint로 전송될 수 있습니다. 최종 Wiki는 원문 검토와 정보 묶음 확정 뒤 생성하세요.",
     }
 
 
@@ -123,19 +123,26 @@ def run_condition(
     records = [_normalize_gmail_item(item, condition) for item in gmail_items]
     records.extend(_normalize_drive_item(item, condition) for item in drive_items)
 
-    wiki: dict[str, Any] = {"auto": condition["autoWikiEnabled"], "status": "skipped", "message": "자동 Wiki가 꺼져 있습니다."}
+    wiki: dict[str, Any] = {"auto": condition["autoWikiEnabled"], "status": "skipped", "message": "스니펫 초안 생성이 꺼져 있습니다."}
     if condition["autoWikiEnabled"]:
         settings = load_settings()
         suppress_warning = settings.get("suppress_external_llm_sensitive_warning", False) if suppress_external_warning is None else suppress_external_warning
         external_llm = is_external_llm_endpoint() if is_external_llm is None else is_external_llm
         if external_llm and not suppress_warning and not confirm_external_llm:
-            wiki = {"auto": True, "status": "warning_required", "warning": _warning_payload(), "message": "외부 LLM 전송 확인이 필요합니다."}
+            wiki = {"auto": True, "status": "warning_required", "warning": _warning_payload(), "message": "스니펫 초안을 만들기 전 외부 LLM 전송 확인이 필요합니다."}
         else:
             llm_result = chat(messages=_build_wiki_prompt(condition, records), max_tokens=2048, temperature=0.2)
             if "error" in llm_result:
                 wiki = {"auto": True, "status": "failed", "message": str(llm_result["error"])}
             else:
-                wiki = {"auto": True, "status": "created", "artifact_id": f"wiki-{condition['id']}", "markdown": llm_result.get("content", ""), "message": "Wiki 초안을 만들었습니다."}
+                wiki = {
+                    "auto": True,
+                    "status": "created",
+                    "artifact_id": f"wiki-candidate-{condition['id']}",
+                    "artifact_status": "candidate",
+                    "markdown": llm_result.get("content", ""),
+                    "message": "조건 후보 기반 스니펫 초안을 만들었습니다. 원문 검토 후 정보 묶음 기반 Wiki로 확정하세요.",
+                }
 
     return {
         "status": "success",
