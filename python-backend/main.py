@@ -7,10 +7,12 @@ from typing import Any, Dict, List, Optional
 import uvicorn
 from src.gws.gmail import list_labels, list_message_metadata
 from src.gws.drive import list_drive_files
+from src.gws.originals import router as gws_originals_router
 from src.wiki_conditions import ConditionValidationError, WikiConditionStore
 from src.wiki_condition_runner import run_condition
 
 app = FastAPI(title="Local LLM GWS API", description="Python Backend API for Tauri")
+app.include_router(gws_originals_router)
 
 ALLOWED_ORIGINS = {
     "http://localhost:18732",

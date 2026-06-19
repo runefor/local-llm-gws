@@ -57,6 +57,7 @@ export interface DriveItem {
   name: string;
   mimeType: string;
   modifiedTime: string;
+  resourceKey?: string;
 }
 
 export interface WorkspaceItem {
@@ -65,6 +66,7 @@ export interface WorkspaceItem {
   title: string;
   subtitle: string;
   snippet?: string;
+  resourceKey?: string;
   timestamp: string;
 }
 
@@ -879,6 +881,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         type: "drive",
         title: item.name || "이름 없는 파일",
         subtitle: item.mimeType || "알 수 없는 유형",
+        resourceKey: item.resourceKey,
         timestamp: item.modifiedTime || new Date().toISOString(),
       });
     });

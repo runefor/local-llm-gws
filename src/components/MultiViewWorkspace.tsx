@@ -1,5 +1,9 @@
 import React, { useState, useMemo } from "react";
 import { useApp, WorkspaceItem } from "../context/AppContext";
+import { OriginalDetailModal, OriginalErrorToast } from "./OriginalDetailModal";
+import { OriginalOpenButton } from "./OriginalOpenButton";
+import { WorkspaceOriginalSearchHeader } from "./WorkspaceOriginalSearchHeader";
+import { fetchOriginalDetail, type OriginalDetail } from "./originalDetail";
 
 interface MultiViewWorkspaceProps {
   isDesktop?: boolean;
@@ -17,6 +21,9 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "timeline">("list");
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [originalDetail, setOriginalDetail] = useState<OriginalDetail | null>(null);
+  const [originalLoadingId, setOriginalLoadingId] = useState<string | null>(null);
+  const [originalError, setOriginalError] = useState<string | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +65,21 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
     setExpandedItemId(prev => (prev === id ? null : id));
   };
 
+  const handleOpenOriginal = async (item: WorkspaceItem) => {
+    if (backendStatus !== "online" || !isGwsAuthenticated) return;
+
+    setOriginalLoadingId(item.id);
+    setOriginalError(null);
+    try {
+      setOriginalDetail(await fetchOriginalDetail(item));
+      setExpandedItemId(item.id);
+    } catch (error) {
+      setOriginalError(error instanceof Error ? error.message : "네트워크 오류로 원문을 불러오지 못했습니다.");
+    } finally {
+      setOriginalLoadingId(null);
+    }
+  };
+
   const getMimeTypeLabel = (mimeType: string) => {
     if (mimeType.includes("document")) return "Google Docs";
     if (mimeType.includes("spreadsheet")) return "Google Sheets";
@@ -76,86 +98,21 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
   };
 
   const isSyncing = syncStatus === "syncing";
+  const controlsDisabled = backendStatus !== "online" || !isGwsAuthenticated || isSyncing;
 
   return (
     <div className={`bg-white rounded-2xl p-6 border border-[#e1e3e1] shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] space-y-5 flex flex-col ${isDesktop ? "h-full min-h-0 overflow-hidden" : "h-[550px] overflow-hidden"}`}>
-      
-      {/* 1. 스마트 필터 바 & 제어 영역 */}
-      <div className="flex flex-col space-y-3 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[#1f1f1f] text-base font-semibold flex items-center">
-            <span className="material-symbols-rounded mr-2 text-[#0b57d0]">hub</span>
-            Gmail · Drive 원본 검색
-          </h2>
-          
-          {/* 뷰 모드 토글 (완전한 알약 형태) */}
-          {workspaceItems.length > 0 && (
-            <div className="flex bg-[#f8fafd] p-1 rounded-full border border-[#e1e3e1] text-xs">
-              <button
-                onClick={() => setViewMode("list")}
-                className={`px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer flex items-center space-x-1 ${viewMode === "list" ? "bg-[#d3e3fd] text-[#0b57d0] shadow-sm" : "text-[#444746] hover:text-[#1f1f1f]"}`}
-              >
-                <span className="material-symbols-rounded text-sm">list</span>
-                <span>리스트 뷰</span>
-              </button>
-              <button
-                onClick={() => setViewMode("timeline")}
-                className={`px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer flex items-center space-x-1 ${viewMode === "timeline" ? "bg-[#d3e3fd] text-[#0b57d0] shadow-sm" : "text-[#444746] hover:text-[#1f1f1f]"}`}
-              >
-                <span className="material-symbols-rounded text-sm">timeline</span>
-                <span>타임라인 뷰</span>
-              </button>
-            </div>
-          )}
-        </div>
 
-        <form onSubmit={handleSearch} className="flex flex-col space-y-2">
-          <div className="flex space-x-2">
-            <div className="relative flex-1">
-              <span className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-[#444746] text-lg">search</span>
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="GWS Gmail/Drive 원본 검색 (예: 보고서, from:sender)"
-                disabled={backendStatus !== "online" || !isGwsAuthenticated || isSyncing}
-                className="w-full bg-[#f8fafd] pl-10 pr-4 py-2.5 rounded-full border border-[#e1e3e1] text-sm text-[#1f1f1f] focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] disabled:opacity-50 transition-all placeholder:text-[#444746]/60"
-              />
-            </div>
-            
-            {/* 원본 조회 버튼 (완전한 알약 형태) */}
-            <button
-              type="submit"
-              disabled={backendStatus !== "online" || !isGwsAuthenticated || isSyncing}
-              className="px-6 py-2.5 bg-[#0b57d0] hover:bg-[#0b57d0]/90 text-white rounded-full text-sm font-medium transition-all disabled:opacity-50 flex items-center space-x-1 cursor-pointer flex-shrink-0"
-            >
-              {isSyncing ? (
-                <>
-                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  <span>가져오는 중...</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-rounded text-sm">sync</span>
-                  <span>원본 가져오기</span>
-                </>
-              )}
-            </button>
-          </div>
-          
-          {/* 검색 팁 문구 */}
-          <div className="flex items-center space-x-1.5 text-[11px] text-[#444746] px-3">
-            <span className="material-symbols-rounded text-[14px] text-[#0b57d0]">info</span>
-            <span>
-              검색어로 GWS 원본 목록만 조회합니다. 검색어가 없을 경우 <strong>기본 1주일</strong> 기간 필터가 적용됩니다. 
-              (팁: 여기서 가져온 Drive 원본은 자동으로 벡터 검색에 들어가지 않습니다. 찾기 메뉴에서 벡터 인덱스 갱신을 따로 실행하세요.)
-            </span>
-          </div>
-        </form>
-      </div>
+      <WorkspaceOriginalSearchHeader
+        workspaceCount={workspaceItems.length}
+        viewMode={viewMode}
+        query={query}
+        disabled={controlsDisabled}
+        isSyncing={isSyncing}
+        onViewModeChange={setViewMode}
+        onQueryChange={setQuery}
+        onSubmit={handleSearch}
+      />
 
       {/* 2. 데이터 컨텐츠 렌더링 영역 */}
       <div className="flex-1 pr-1 -mr-1 overflow-y-auto scrollbar-none hover:scrollbar-thin scrollbar-thumb-[#e1e3e1] scrollbar-track-transparent">
@@ -202,9 +159,12 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
                     <h4 className="text-sm font-semibold text-[#1f1f1f] line-clamp-1 flex-1">
                       {item.title}
                     </h4>
-                    <span className="material-symbols-rounded text-[#444746] text-lg select-none">
-                      {isExpanded ? "expand_less" : "expand_more"}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <OriginalOpenButton isLoading={originalLoadingId === item.id} onClick={() => void handleOpenOriginal(item)} />
+                      <span className="material-symbols-rounded text-[#444746] text-lg select-none">
+                        {isExpanded ? "expand_less" : "expand_more"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* 이메일 본문 요약 (확장식) */}
@@ -266,9 +226,12 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
                               </span>
                             </div>
                             
-                            <span className="material-symbols-rounded text-[#444746] text-lg select-none">
-                              {isExpanded ? "expand_less" : "expand_more"}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <OriginalOpenButton isLoading={originalLoadingId === item.id} onClick={() => void handleOpenOriginal(item)} />
+                              <span className="material-symbols-rounded text-[#444746] text-lg select-none">
+                                {isExpanded ? "expand_less" : "expand_more"}
+                              </span>
+                            </div>
                           </div>
 
                           <h4 className="text-sm font-semibold text-[#1f1f1f] line-clamp-1">
@@ -304,6 +267,14 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
           </div>
         )}
       </div>
+
+      {originalError && (
+        <OriginalErrorToast message={originalError} onClose={() => setOriginalError(null)} />
+      )}
+
+      {originalDetail && (
+        <OriginalDetailModal detail={originalDetail} onClose={() => setOriginalDetail(null)} />
+      )}
     </div>
   );
 }

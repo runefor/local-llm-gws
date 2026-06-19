@@ -1,8 +1,18 @@
 from googleapiclient.discovery import build
+from markdownify import markdownify as md
 from .auth import get_credentials
+from .text_cleaner import clean_original_markdown
 import os
 
 import datetime
+
+RESOURCE_KEYS_HEADER = "X-Goog-Drive-Resource-Keys"
+
+
+def _execute_with_resource_key(request, file_id: str, resource_key: str = ""):
+    if resource_key:
+        request.headers[RESOURCE_KEYS_HEADER] = f"{file_id}/{resource_key}"
+    return request.execute()
 
 def list_drive_files(query=None, mime_types=None, page_token=None, max_results=100):
     """
@@ -44,7 +54,9 @@ def list_drive_files(query=None, mime_types=None, page_token=None, max_results=1
         q=drive_q,
         pageSize=max_results,
         fields="nextPageToken, files(id, name, mimeType, modifiedTime, webViewLink, resourceKey, owners(displayName,emailAddress), lastModifyingUser(displayName,emailAddress), createdTime)",
-        pageToken=page_token
+        pageToken=page_token,
+        includeItemsFromAllDrives=True,
+        supportsAllDrives=True,
     ).execute()
     
     return results.get('files', []), results.get('nextPageToken', None)
@@ -67,3 +79,50 @@ def export_google_doc(file_id, mime_type):
     request = service.files().export_media(fileId=file_id, mimeType=export_mime)
     # 실제로는 여기서 request.execute() 결과를 받아 파싱
     return request
+
+
+def _decode_media_response(raw_content) -> str:
+    if isinstance(raw_content, bytes):
+        return raw_content.decode("utf-8", errors="ignore")
+    return str(raw_content)
+
+
+def _fetch_drive_original_content(service, file_id: str, mime_type: str, resource_key: str = "") -> tuple[str, str]:
+    if mime_type == "application/vnd.google-apps.document":
+        request = service.files().export_media(fileId=file_id, mimeType="text/html")
+        return clean_original_markdown(md(_decode_media_response(_execute_with_resource_key(request, file_id, resource_key)))), "text/markdown"
+    if mime_type == "application/vnd.google-apps.spreadsheet":
+        request = service.files().export_media(fileId=file_id, mimeType="text/csv")
+        return _decode_media_response(_execute_with_resource_key(request, file_id, resource_key)), "text/csv"
+    if mime_type == "text/plain":
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        return _decode_media_response(_execute_with_resource_key(request, file_id, resource_key)), "text/plain"
+    return (
+        "이 파일 형식은 앱 안에서 텍스트 원문 미리보기를 지원하지 않습니다. 원문 열기로 Google Drive에서 확인하세요.",
+        mime_type,
+    )
+
+
+def get_drive_file_original(file_id: str, mime_type: str, resource_key: str = ""):
+    """Drive 파일의 메타데이터와 앱에서 표시 가능한 원문 텍스트를 반환합니다."""
+    creds = get_credentials()
+    service = build("drive", "v3", credentials=creds)
+    metadata_request = service.files().get(
+        fileId=file_id,
+        fields="id, name, mimeType, webViewLink, modifiedTime, resourceKey",
+        supportsAllDrives=True,
+    )
+    metadata = _execute_with_resource_key(metadata_request, file_id, resource_key)
+    actual_mime_type = metadata.get("mimeType", mime_type)
+    actual_resource_key = metadata.get("resourceKey", resource_key)
+    content, content_type = _fetch_drive_original_content(service, file_id, actual_mime_type, actual_resource_key)
+
+    return {
+        "id": metadata.get("id", file_id),
+        "type": "drive",
+        "title": metadata.get("name", "이름 없는 파일"),
+        "subtitle": actual_mime_type,
+        "content": content,
+        "content_type": content_type,
+        "open_url": metadata.get("webViewLink", ""),
+    }
