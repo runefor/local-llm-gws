@@ -33,6 +33,19 @@ cd ..
 git diff --check
 ```
 
+### Known Non-Blocking Warnings
+
+자동 검증에서 아래 경고만 보이는 경우는 실패로 보지 않는다. 다만 새 경고가 추가되거나 테스트/빌드 exit code가 0이 아니면 실패로 처리한다.
+
+- `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead`
+  - 의미: 현재 FastAPI/Starlette `TestClient`가 사용하는 `httpx` 조합에 대한 향후 호환성 경고다.
+  - 현재 영향: unittest가 `OK`로 끝나면 기능 실패가 아니다.
+  - 정리 기준: FastAPI/Starlette/httpx 의존성 버전을 갱신할 때 `httpx2` 전환 또는 테스트 클라이언트 의존성 조합을 별도 작업으로 검토한다.
+- `LF will be replaced by CRLF the next time Git touches it`
+  - 의미: Windows Git 줄바꿈 설정 때문에 Git이 파일을 다시 만질 때 `LF`가 `CRLF`로 바뀔 수 있다는 working-copy 경고다.
+  - 현재 영향: `git diff --check`가 exit code 0이면 whitespace 실패가 아니다.
+  - 정리 기준: 경고가 반복되어 diff 노이즈가 커지면 `.gitattributes`로 `*.py`, `*.ts`, `*.tsx`, `*.md`, `*.json`의 `eol=lf` 정책을 고정한다.
+
 필수 확인 항목:
 
 - `test_retriever_expands_domain_query_hints`: 한국어 도메인 검색어가 보수적으로 확장된다.
