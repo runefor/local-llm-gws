@@ -37,8 +37,9 @@ class OriginalCleaningTest(unittest.TestCase):
         with patch("src.gws.gmail.get_message", return_value=message):
             original = gmail_module.get_gmail_message_original("g1")
 
+        self.assertEqual(original["content_type"], "text/html")
         self.assertIn("Dear. 틔움이 안녕하세요.", original["content"])
-        self.assertIn("## LLM 위키가 뭔데요?", original["content"])
+        self.assertIn("<h2>LLM 위키가 뭔데요?</h2>", original["content"])
         self.assertIn("원문 본문입니다.", original["content"])
         self.assertNotIn("event.stibee.com", original["content"])
         self.assertNotIn("잘림 없이 보기", original["content"])
@@ -124,8 +125,10 @@ class OriginalCleaningTest(unittest.TestCase):
         with patch("src.gws.gmail.get_message", return_value={"id": "g1", "snippet": plain_preview, "raw": raw}):
             original = gmail_module.get_gmail_message_original("g1")
 
-        self.assertIn("## 나만의 세컨 브레인 만들기", original["content"])
+        self.assertEqual(original["content_type"], "text/html")
+        self.assertIn("<h2>나만의 세컨 브레인 만들기</h2>", original["content"])
         self.assertIn("설치 순서와 활용 예시까지 이어지는 내용입니다.", original["content"])
+
     def test_gmail_original_detail_prefers_richer_raw_html_over_short_plain_alternative(self):
         import base64
         from email.message import EmailMessage
@@ -154,10 +157,108 @@ class OriginalCleaningTest(unittest.TestCase):
 
         self.assertEqual(original["title"], "대체 본문")
         self.assertEqual(original["subtitle"], "sender@example.com")
-        self.assertIn("# 전체 HTML 본문", original["content"])
+        self.assertEqual(original["content_type"], "text/html")
+        self.assertIn("<h1>전체 HTML 본문</h1>", original["content"])
         self.assertIn("두 번째 문단까지 Gmail 원문처럼 보여야 합니다.", original["content"])
         self.assertIn("이전 인용문도 원문 보기에서는 사라지면 안 됩니다.", original["content"])
         self.assertNotIn("binary", original["content"])
+
+    def test_gmail_original_detail_preserves_links_and_images_as_html(self):
+        import base64
+        from email.message import EmailMessage
+
+        message = EmailMessage()
+        message["Subject"] = "HTML 링크"
+        message["From"] = "sender@example.com"
+        message.set_content("plain fallback")
+        message.add_alternative(
+            """
+            <html><body>
+              <p>문서 링크: <a href="https://example.com/report">보고서 열기</a></p>
+              <img src="https://example.com/banner.png" alt="배너" />
+            </body></html>
+            """,
+            subtype="html",
+        )
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
+
+        with patch("src.gws.gmail.get_message", return_value={"id": "g1", "snippet": "snippet", "raw": raw}):
+            original = gmail_module.get_gmail_message_original("g1")
+
+        self.assertEqual(original["content_type"], "text/html")
+        self.assertIn('<a href="https://example.com/report"', original["content"])
+        self.assertIn("보고서 열기</a>", original["content"])
+        self.assertIn('<img src="https://example.com/banner.png" alt="배너">', original["content"])
+        self.assertNotIn("[보고서 열기](https://example.com/report)", original["content"])
+
+    def test_gmail_original_detail_inlines_cid_images(self):
+        import base64
+        from email.message import EmailMessage
+
+        message = EmailMessage()
+        message["Subject"] = "CID 이미지"
+        message["From"] = "sender@example.com"
+        message.set_content("plain fallback")
+        alternative = EmailMessage()
+        alternative.set_content("plain fallback")
+        alternative.add_alternative(
+            '<html><body><img src="cid:chart-1" alt="차트" /></body></html>',
+            subtype="html",
+        )
+        image = EmailMessage()
+        image.set_content(b"fake-png", maintype="image", subtype="png")
+        image["Content-ID"] = "<chart-1>"
+        image["Content-Disposition"] = 'inline; filename="chart.png"'
+        message.make_related()
+        message.attach(alternative)
+        message.attach(image)
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
+
+        with patch("src.gws.gmail.get_message", return_value={"id": "g1", "snippet": "snippet", "raw": raw}):
+            original = gmail_module.get_gmail_message_original("g1")
+
+        self.assertIn('src="data:image/png;base64,ZmFrZS1wbmc="', original["content"])
+        self.assertNotIn("cid:chart-1", original["content"])
+
+    def test_gmail_original_detail_removes_active_html(self):
+        import base64
+        from email.message import EmailMessage
+
+        message = EmailMessage()
+        message["Subject"] = "위험 HTML"
+        message["From"] = "sender@example.com"
+        message.set_content("plain fallback")
+        message.add_alternative(
+            """
+            <html><body>
+              <script>alert('x')</script>
+              <form action="https://example.com"><input name="q" /></form>
+              <a href="javascript:alert(1)" onclick="alert(2)">위험 링크</a>
+              <p style="background:#333; color:#000">안전 본문</p>
+              <pre style="background:#0d1117; color:#c9d1d9"><code style="background-color: rgb(13, 17, 23)">print('hello')</code></pre>
+              <table><tr><td bgcolor="#000000">검정 셀 코드</td></tr></table>
+            </body></html>
+            """,
+            subtype="html",
+        )
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
+
+        with patch("src.gws.gmail.get_message", return_value={"id": "g1", "snippet": "snippet", "raw": raw}):
+            original = gmail_module.get_gmail_message_original("g1")
+
+        self.assertIn("안전 본문", original["content"])
+        self.assertNotIn("<script", original["content"])
+        self.assertNotIn("<form", original["content"])
+        self.assertNotIn("javascript:", original["content"])
+        self.assertNotIn("onclick", original["content"])
+        self.assertNotIn("background:#333", original["content"])
+        self.assertNotIn("background: #333", original["content"])
+        self.assertNotIn("background:#0d1117", original["content"])
+        self.assertNotIn("background-color: rgb(13, 17, 23)", original["content"])
+        self.assertNotIn('bgcolor="#000000"', original["content"])
+        self.assertIn("print('hello')", original["content"])
+        self.assertIn("검정 셀 코드", original["content"])
+
     def test_drive_original_detail_preserves_headings_as_markdown(self):
         class FakeRequest:
             def __init__(self, payload):

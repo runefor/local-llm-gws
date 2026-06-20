@@ -129,6 +129,181 @@ function PlainTextContent({ content }: { readonly content: string }) {
   );
 }
 
+const emailReadabilityOverrideCss = `
+  .email-root pre,
+  .email-root code,
+  .email-root pre *,
+  .email-root code *,
+  .email-root [class*="code" i],
+  .email-root [class*="code" i] *,
+  .email-root [class*="highlight" i],
+  .email-root [class*="highlight" i] *,
+  .email-root [class*="syntax" i],
+  .email-root [class*="syntax" i] *,
+  .email-root [class*="prettyprint" i],
+  .email-root [class*="prettyprint" i] *,
+  .email-root [class*="hljs" i],
+  .email-root [class*="hljs" i] *,
+  .email-root div:has(> pre),
+  .email-root div:has(pre),
+  .email-root td:has(> pre),
+  .email-root td:has(pre),
+  .email-root table:has(pre),
+  blockquote,
+  .email-root [style*="background: #000"],
+  .email-root [style*="background:#000"],
+  .email-root [style*="background: #000000"],
+  .email-root [style*="background:#000000"],
+  .email-root [style*="background: #0d1117"],
+  .email-root [style*="background:#0d1117"],
+  .email-root [style*="background: #161b22"],
+  .email-root [style*="background:#161b22"],
+  .email-root [style*="background: #1f1f1f"],
+  .email-root [style*="background:#1f1f1f"],
+  .email-root [style*="background: #202124"],
+  .email-root [style*="background:#202124"],
+  .email-root [style*="background: #222"],
+  .email-root [style*="background:#222"],
+  .email-root [style*="background: #333"],
+  .email-root [style*="background:#333"],
+  .email-root [style*="background-color: #000"],
+  .email-root [style*="background-color:#000"],
+  .email-root [style*="background-color: #000000"],
+  .email-root [style*="background-color:#000000"],
+  .email-root [style*="background-color: #0d1117"],
+  .email-root [style*="background-color:#0d1117"],
+  .email-root [style*="background-color: #161b22"],
+  .email-root [style*="background-color:#161b22"],
+  .email-root [style*="background-color: #1f1f1f"],
+  .email-root [style*="background-color:#1f1f1f"],
+  .email-root [style*="background-color: #202124"],
+  .email-root [style*="background-color:#202124"],
+  .email-root [style*="background-color: #222"],
+  .email-root [style*="background-color:#222"],
+  .email-root [style*="background-color: #333"],
+  .email-root [style*="background-color:#333"],
+  .email-root [style*="background: rgb(0"],
+  .email-root [style*="background: rgb(13"],
+  .email-root [style*="background: rgb(22"],
+  .email-root [style*="background: rgb(31"],
+  .email-root [style*="background: rgb(32"],
+  .email-root [style*="background-color: rgb(0"],
+  .email-root [style*="background-color: rgb(13"],
+  .email-root [style*="background-color: rgb(22"],
+  .email-root [style*="background-color: rgb(31"],
+  .email-root [style*="background-color: rgb(32"],
+  .email-root [style*="background:rgb(0"],
+  .email-root [style*="background:rgb(13"],
+  .email-root [style*="background:rgb(22"],
+  .email-root [style*="background:rgb(31"],
+  .email-root [style*="background:rgb(32"],
+  .email-root [style*="background-color:rgb(0"] {
+    background-color: #f8fafd !important;
+    color: #1f1f1f !important;
+  }
+
+  .email-root [style*="background-color:rgb(13"],
+  .email-root [style*="background-color:rgb(22"],
+  .email-root [style*="background-color:rgb(31"],
+  .email-root [style*="background-color:rgb(32"] {
+    background-color: #f8fafd !important;
+    color: #1f1f1f !important;
+  }
+
+  .email-root pre {
+    border: 1px solid #e1e3e1 !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+    overflow-x: auto !important;
+  }
+
+  .email-root code {
+    border-radius: 8px !important;
+    padding: 2px 4px !important;
+  }
+
+  .email-root pre code {
+    border: 0 !important;
+    padding: 0 !important;
+  }
+`;
+
+const buildEmailSrcDoc = (content: string): string => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light" />
+    <base target="_blank" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src http: https: data:; style-src 'unsafe-inline'; font-src http: https: data:; media-src http: https: data:;"
+    />
+    <style>
+      html {
+        background: #ffffff;
+        color-scheme: light only;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #ffffff;
+        color: #1f1f1f;
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        color-scheme: light only;
+      }
+
+      .email-root {
+        max-width: 760px;
+        margin: 0 auto;
+        color-scheme: light only;
+      }
+
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+
+      table {
+        max-width: 100%;
+        border-collapse: collapse;
+      }
+
+      a {
+        color: #0b57d0;
+        text-decoration: underline;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      ${emailReadabilityOverrideCss}
+    </style>
+  </head>
+  <body>
+    <div class="email-root">${content}</div>
+    <style>${emailReadabilityOverrideCss}</style>
+  </body>
+</html>`;
+
+function HtmlEmailContent({ content, title }: { readonly content: string; readonly title: string }) {
+  return (
+    <div className="mx-auto min-h-[560px] max-w-5xl overflow-hidden rounded-2xl border border-[#e1e3e1] bg-white">
+      <iframe
+        title={`${title} 원본 HTML`}
+        className="h-[68vh] min-h-[560px] w-full bg-white"
+        sandbox="allow-popups allow-popups-to-escape-sandbox"
+        referrerPolicy="no-referrer"
+        srcDoc={buildEmailSrcDoc(content)}
+      />
+    </div>
+  );
+}
+
 export function OriginalErrorToast({ message, onClose }: OriginalErrorToastProps) {
   return (
     <div className="fixed inset-x-6 bottom-6 z-40 mx-auto max-w-xl rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-medium text-rose-700 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
@@ -146,7 +321,7 @@ export function OriginalErrorToast({ message, onClose }: OriginalErrorToastProps
 export function OriginalDetailModal({ detail, onClose }: OriginalDetailModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f1f1f]/35 p-6">
-      <section className="flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#e1e3e1] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+      <section className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#e1e3e1] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
         <header className="flex items-start justify-between gap-4 border-b border-[#e1e3e1] bg-[#f8fafd] p-5">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
@@ -179,7 +354,9 @@ export function OriginalDetailModal({ detail, onClose }: OriginalDetailModalProp
           </div>
         </header>
         <div className="flex-1 overflow-y-auto bg-white px-5 py-6">
-          {detail.content_type === "text/markdown" ? (
+          {detail.content_type === "text/html" ? (
+            <HtmlEmailContent content={detail.content} title={detail.title} />
+          ) : detail.content_type === "text/markdown" ? (
             <MarkdownContent content={detail.content} />
           ) : (
             <PlainTextContent content={detail.content} />

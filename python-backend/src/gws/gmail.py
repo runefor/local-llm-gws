@@ -1,5 +1,6 @@
 import base64
 import binascii
+import re
 from datetime import datetime, timezone
 from email import policy
 from email.message import EmailMessage, Message
@@ -9,7 +10,7 @@ from typing import List, Optional
 from googleapiclient.discovery import build
 from markdownify import markdownify as md
 from .auth import get_credentials
-from .text_cleaner import clean_original_markdown
+from .text_cleaner import clean_original_markdown, sanitize_email_html
 
 # Gmail API Quota 참고:
 # 1. users.messages.list (목록 가져오기)는 한 번에 최대 500개(maxResults=500)까지 페이징(pageToken)하여 가져올 수 있습니다.
@@ -155,6 +156,56 @@ def _message_text_part(part: Message) -> str:
     return clean_original_markdown(content)
 
 
+def _message_text_part_for_display(part: Message, inline_images: dict[str, str]) -> tuple[str, str]:
+    if part.get_content_disposition() == "attachment":
+        return "", ""
+
+    content_type = part.get_content_type()
+    if content_type not in {"text/plain", "text/html"}:
+        return "", ""
+
+    try:
+        content = part.get_content()
+    except (LookupError, UnicodeDecodeError):
+        return "", ""
+
+    if not isinstance(content, str):
+        return "", ""
+    if content_type == "text/html":
+        return "text/html", sanitize_email_html(_replace_cid_image_sources(content, inline_images))
+    return "text/markdown", clean_original_markdown(content)
+
+
+def _inline_image_data_urls(message: EmailMessage) -> dict[str, str]:
+    images: dict[str, str] = {}
+    for part in message.walk():
+        content_type = part.get_content_type()
+        content_id = (part.get("content-id") or "").strip("<> ")
+        if not content_id or not content_type.startswith("image/"):
+            continue
+
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        images[content_id] = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
+    return images
+
+
+def _replace_cid_image_sources(content: str, inline_images: dict[str, str]) -> str:
+    if not inline_images or "cid:" not in content.lower():
+        return content
+
+    def replace(match: re.Match[str]) -> str:
+        quote = match.group(1)
+        cid = match.group(2)
+        replacement = inline_images.get(cid) or inline_images.get(cid.strip("<>"))
+        if not replacement:
+            return match.group(0)
+        return f"src={quote}{replacement}{quote}"
+
+    return re.sub(r"src=(['\"])cid:([^'\"]+)\1", replace, content, flags=re.IGNORECASE)
+
+
 def _extract_raw_message_text(message: EmailMessage) -> str:
     plain_parts: list[str] = []
     html_parts: list[str] = []
@@ -171,6 +222,25 @@ def _extract_raw_message_text(message: EmailMessage) -> str:
     plain_text = clean_original_markdown("\n\n".join(plain_parts))
     html_text = clean_original_markdown("\n\n".join(html_parts))
     return html_text or plain_text
+
+
+def _extract_raw_message_content(message: EmailMessage) -> tuple[str, str]:
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+    inline_images = _inline_image_data_urls(message)
+
+    for part in message.walk():
+        content_type, text = _message_text_part_for_display(part, inline_images)
+        if not text:
+            continue
+        if content_type == "text/html":
+            html_parts.append(text)
+        else:
+            plain_parts.append(text)
+
+    if html_parts:
+        return "\n\n".join(html_parts), "text/html"
+    return clean_original_markdown("\n\n".join(plain_parts)), "text/markdown"
 
 
 def _parse_raw_message(raw: str) -> EmailMessage | None:
@@ -208,6 +278,33 @@ def _extract_body_text(payload) -> str:
     return clean_original_markdown("\n".join(html_parts or plain_parts))
 
 
+def _extract_body_content(payload) -> tuple[str, str]:
+    body = payload.get("body", {})
+    data = body.get("data", "")
+    mime_type = payload.get("mimeType", "").split(";", 1)[0].strip().lower()
+    parts = payload.get("parts", [])
+
+    if data and mime_type == "text/plain":
+        return clean_original_markdown(_decode_gmail_body_data(data)), "text/markdown"
+    if data and mime_type == "text/html":
+        return sanitize_email_html(_decode_gmail_body_data(data)), "text/html"
+
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+    for part in parts:
+        text, content_type = _extract_body_content(part)
+        if not text:
+            continue
+        if content_type == "text/html":
+            html_parts.append(text)
+        else:
+            plain_parts.append(text)
+
+    if html_parts:
+        return "\n\n".join(html_parts), "text/html"
+    return clean_original_markdown("\n\n".join(plain_parts)), "text/markdown"
+
+
 def _gmail_search_url(message_id_header: str) -> str:
     if not message_id_header:
         return "https://mail.google.com/mail/u/0/#inbox"
@@ -222,21 +319,25 @@ def get_gmail_message_original(message_id: str):
         subject = raw_message.get("subject", "(제목 없음)")
         sender = raw_message.get("from", "알 수 없음")
         message_id_header = raw_message.get("message-id", "")
-        content = _extract_raw_message_text(raw_message) or detail.get("snippet", "")
+        content, content_type = _extract_raw_message_content(raw_message)
     else:
         headers = detail.get("payload", {}).get("headers", [])
         subject = _header_value(headers, "subject", "(제목 없음)")
         sender = _header_value(headers, "from", "알 수 없음")
         message_id_header = _header_value(headers, "message-id", "")
-        content = _extract_body_text(detail.get("payload", {})) or detail.get("snippet", "")
+        content, content_type = _extract_body_content(detail.get("payload", {}))
+
+    if not content:
+        content = clean_original_markdown(detail.get("snippet", ""))
+        content_type = "text/markdown"
 
     return {
         "id": detail.get("id", message_id),
         "type": "gmail",
         "title": subject,
         "subtitle": sender,
-        "content": clean_original_markdown(content),
-        "content_type": "text/markdown",
+        "content": sanitize_email_html(content) if content_type == "text/html" else clean_original_markdown(content),
+        "content_type": content_type,
         "open_url": _gmail_search_url(message_id_header),
     }
 
