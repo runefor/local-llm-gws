@@ -9,7 +9,7 @@ src/
 ├── main.tsx          # React bootstrap
 ├── App.tsx           # AppProvider + Tauri/web layout switch
 ├── context/          # AppContext: shared state and backend calls
-├── layouts/          # DesktopLayout and WebLayout shells
+├── layouts/          # DesktopLayout shell and desktop menu state
 ├── components/       # Feature panels and titlebar
 ├── utils/env.ts      # Tauri environment detection
 ├── App.css           # App-level styling
@@ -22,7 +22,7 @@ src/
 | App boot | `main.tsx`, `App.tsx` | `isTauri()` decides desktop vs web shell. |
 | Shared data/API actions | `context/AppContext.tsx` | Large state hub; touch carefully. |
 | Desktop navigation | `layouts/DesktopLayout.tsx` | `activeMenu` drives view changes; no React Router. |
-| Browser fallback | `layouts/WebLayout.tsx` | Web shell wraps dashboard/logs. |
+| Browser fallback | `layouts/DesktopLayout.tsx` | Browser mode reuses the desktop shell. |
 | RAG/evidence UX | `components/RagSearchPanel.tsx` | Largest panel; search, index, evidence sets, artifacts. |
 | Gmail workflow | `components/HybridMailWorkspace.tsx`, `components/SyncPanel.tsx` | Metadata search, selection, vectorize/process handoff. |
 | Local LLM UX | `components/LlmConfigPanel.tsx` | Server status, preset download/delete, mode config. |

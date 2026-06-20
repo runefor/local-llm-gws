@@ -53,13 +53,6 @@ class SyncRequest(BaseModel):
 class GmailVectorizeRequest(BaseModel):
     message_ids: List[str] = Field(default_factory=list, max_length=200)
 
-class GmailProcessRequest(BaseModel):
-    message_ids: List[str] = Field(default_factory=list, max_length=200)
-    instruction: str = Field(max_length=8000)
-    title: Optional[str] = Field(default=None, max_length=200)
-    export_to_obsidian: bool = False
-    tags: List[str] = Field(default_factory=list, max_length=20)
-
 class LLMTestRequest(BaseModel):
     endpoint: str
     model: str
@@ -508,31 +501,6 @@ def gmail_vectorize(req: GmailVectorizeRequest):
         return {"status": "error", "message": str(e), "indexed": 0}
 
 
-@app.post("/api/gmail/process")
-def gmail_process(req: GmailProcessRequest):
-    """이미 벡터화된 선택 Gmail 청크로 마크다운을 생성하고 선택적으로 Obsidian에 저장합니다."""
-    message_ids = [message_id.strip() for message_id in req.message_ids if message_id.strip()]
-    if not message_ids:
-        return {"status": "error", "message": "처리할 Gmail 메시지를 선택해 주세요."}
-    try:
-        from src.processor.pipeline import process_gmail_chunks
-        result = process_gmail_chunks(message_ids, req.instruction)
-        if result.get("status") != "success" or not req.export_to_obsidian:
-            return result
-
-        from src.settings import load_settings
-        from src.sink.obsidian import export_to_obsidian
-        settings = load_settings()
-        vault_path = settings.get("obsidian_vault_path", "")
-        if not vault_path:
-            result["obsidian"] = {"status": "error", "message": "Obsidian Vault 경로가 설정되지 않았습니다. 설정 탭에서 입력해 주세요."}
-            return result
-        export_title = req.title or "Gmail Knowledge Note"
-        result["obsidian"] = export_to_obsidian(vault_path, export_title, result.get("markdown") or result.get("answer", ""), req.tags)
-        return result
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 class EvidenceSetCreateRequest(BaseModel):
     title: str
     original_query: str = ""
@@ -657,36 +625,6 @@ def artifacts_update_status(artifact_id: str, req: ArtifactStatusRequest):
 
 
 # -----------------------------------------------------------------------
-# 에이전트 API (Phase 4에서 구현체 채워짐)
-# -----------------------------------------------------------------------
-
-class AgentRunRequest(BaseModel):
-    query: str
-    max_turns: int = 15
-
-@app.post("/api/agent/run")
-async def agent_run(req: AgentRunRequest):
-    """하네스 에이전트를 실행하고 최종 결과를 반환합니다."""
-    try:
-        from src.harness.agent_loop import run_agent
-        result = await run_agent(req.query, req.max_turns)
-        return result
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.get("/api/agent/run/stream")
-async def agent_run_stream(query: str, max_turns: int = 15):
-    """하네스 에이전트를 실행하며 각 턴의 상태와 생각을 SSE 스트리밍으로 전달합니다."""
-    from sse_starlette.sse import EventSourceResponse
-    from src.harness.agent_loop import run_agent_generator
-    
-    if not query:
-        return {"status": "error", "message": "query 파라미터가 필요합니다."}
-        
-    return EventSourceResponse(run_agent_generator(query, max_turns))
-
-
-# -----------------------------------------------------------------------
 # 지식 파이프라인 및 서비스 연동 설정 API
 # -----------------------------------------------------------------------
 
@@ -695,11 +633,6 @@ class SettingsUpdateRequest(BaseModel):
     notion_api_key: Optional[str] = None
     notion_page_id: Optional[str] = None
     suppress_external_llm_sensitive_warning: Optional[bool] = None
-
-class PipelineRunRequest(BaseModel):
-    query: str
-    top_k: int = 8
-    sources: Optional[List[str]] = None
 
 class ObsidianExportRequest(BaseModel):
     title: str
@@ -728,15 +661,6 @@ def update_settings(req: SettingsUpdateRequest):
         if success:
             return {"status": "success", "message": "설정이 저장되었습니다."}
         return {"status": "error", "message": "설정 저장 실패"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.post("/api/pipeline/run")
-def pipeline_run(req: PipelineRunRequest):
-    """RAG와 로컬 LLM을 엮은 지식 수집 및 요약 파이프라인을 실행합니다."""
-    try:
-        from src.processor.pipeline import run_pipeline
-        return run_pipeline(req.query, req.top_k, req.sources)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

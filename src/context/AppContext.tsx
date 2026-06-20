@@ -17,14 +17,6 @@ export interface GmailVectorizeResult {
   indexed?: number;
 }
 
-export interface GmailProcessResult {
-  status: string;
-  message?: string;
-  markdown?: string;
-  answer?: string;
-  sources?: unknown[];
-}
-
 interface GmailSearchResponse {
   status: string;
   count?: number;
@@ -70,19 +62,6 @@ export interface WorkspaceItem {
   timestamp: string;
 }
 
-export interface AgentTurnLog {
-  turn: number;
-  thought: string;
-  action: string;
-  arguments: any;
-  result: string;
-  state?: {
-    curated_evidence: any[];
-    verification: any[];
-    search_history: string[];
-  };
-}
-
 interface AppContextType {
   backendStatus: "connecting" | "online" | "offline";
   isGwsAuthenticated: boolean;
@@ -92,8 +71,6 @@ interface AppContextType {
   gmailLabelsLoading: boolean;
   driveItems: DriveItem[];
   workspaceItems: WorkspaceItem[];
-  activeTab: "gmail" | "drive";
-  setActiveTab: (tab: "gmail" | "drive") => void;
   llmEndpoint: string;
   setLlmEndpoint: (endpoint: string) => void;
   llmModel: string;
@@ -112,23 +89,12 @@ interface AppContextType {
   checkBackend: () => Promise<void>;
   checkGwsAuth: () => Promise<void>;
   loadGmailLabels: () => Promise<void>;
-  handleGmailSync: (query?: string, maxEmails?: number | null, labelIds?: string[]) => Promise<void>;
   searchGmailMetadata: (query?: string, maxEmails?: number | null, labelIds?: string[]) => Promise<void>;
   vectorizeGmailMessages: (messageIds: string[]) => Promise<GmailVectorizeResult>;
-  processGmailMessages: (messageIds: string[], instruction: string) => Promise<GmailProcessResult>;
-  handleDriveSync: (query?: string) => Promise<void>;
   searchWorkspaceOriginals: (query?: string, maxItems?: number | null) => Promise<void>;
   handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
   addLog: (msg: string) => void;
   triggerGoogleLogin: () => Promise<void>;
-  
-  // 에이전트 상태 및 함수 추가
-  agentStatus: "idle" | "running" | "done" | "error";
-  agentResult: string;
-  agentLogs: AgentTurnLog[];
-  agentActiveTurns: number;
-  runAgentHarness: (query: string, maxTurns?: number) => Promise<void>;
-  cancelAgentHarness: () => void;
 
   // 지식 파이프라인 연동 상태 및 함수 추가
   obsidianVaultPath: string;
@@ -161,7 +127,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [gmailLabels, setGmailLabels] = useState<GmailLabel[]>([]);
   const [gmailLabelsLoading, setGmailLabelsLoading] = useState(false);
   const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
-  const [activeTab, setActiveTab] = useState<"gmail" | "drive">("gmail");
   
   // LLM 설정 상태
   const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:1234/v1");
@@ -176,13 +141,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncLog, setSyncLog] = useState<string[]>([]);
-
-  // 에이전트 하네스 상태
-  const [agentStatus, setAgentStatus] = useState<"idle" | "running" | "done" | "error">("idle");
-  const [agentResult, setAgentResult] = useState("");
-  const [agentLogs, setAgentLogs] = useState<AgentTurnLog[]>([]);
-  const [agentActiveTurns, setAgentActiveTurns] = useState(0);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // 지식 파이프라인 연동 설정 상태
   const [obsidianVaultPath, setObsidianVaultPath] = useState("");
@@ -295,44 +253,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Gmail 동기화 실행 및 API 호출
-  const handleGmailSync = async (query?: string, maxEmails?: number | null, labelIds: string[] = []) => {
-    if (backendStatus !== "online") {
-      addLog("오류: 백엔드 서버가 오프라인입니다.");
-      return;
-    }
-    setSyncStatus("syncing");
-    setSyncProgress(0);
-    const labelLog = labelIds.length ? `, 라벨 ${labelIds.length}개` : "";
-    addLog(query ? `Gmail 동기화 프로세스 시작 (검색어: "${query}"${labelLog})...` : `Gmail 동기화 프로세스 시작${labelLog}...`);
-    
-    try {
-      const response = await fetch("http://localhost:18731/api/sync/gmail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          max_emails: maxEmails === null ? undefined : maxEmails ?? 500,
-          query: query || undefined,
-          label_ids: labelIds.length ? labelIds : undefined,
-        })
-      });
-      const data = await response.json();
-      
-      if (data.status === "success") {
-        setGmailItems(data.messages || []);
-        setSyncProgress(100);
-        setSyncStatus("done");
-        addLog(`Gmail 동기화 성공: ${data.count}개의 이메일을 가져왔습니다.`);
-      } else {
-        setSyncStatus("error");
-        addLog(`Gmail 동기화 실패: ${data.message || "알 수 없는 오류"}`);
-      }
-    } catch (error) {
-      setSyncStatus("error");
-      addLog(`Gmail 동기화 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
-    }
-  };
-
   const searchGmailMetadata = async (query?: string, maxEmails?: number | null, labelIds: string[] = []) => {
     if (backendStatus !== "online") {
       addLog("오류: 백엔드 서버가 오프라인입니다.");
@@ -400,68 +320,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const message = error instanceof Error ? error.message : "네트워크 오류";
       addLog(`Gmail 선택 메일 벡터화 오류: ${message}`);
       return { status: "error", message };
-    }
-  };
-
-  const processGmailMessages = async (messageIds: string[], instruction: string): Promise<GmailProcessResult> => {
-    if (backendStatus !== "online") {
-      const message = "백엔드 서버가 오프라인입니다.";
-      addLog(`Gmail Markdown 생성 실패: ${message}`);
-      return { status: "error", message };
-    }
-
-    addLog(`Gmail Markdown 생성 시작: ${messageIds.length}개 메일`);
-    try {
-      const response = await fetch("http://localhost:18731/api/gmail/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: messageIds, instruction })
-      });
-      const data: GmailProcessResult = await response.json();
-      if (data.status === "success") {
-        addLog("Gmail Markdown 생성 완료");
-      } else {
-        addLog(`Gmail Markdown 생성 실패: ${data.message || "알 수 없는 오류"}`);
-      }
-      return data;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "네트워크 오류";
-      addLog(`Gmail Markdown 생성 오류: ${message}`);
-      return { status: "error", message };
-    }
-  };
-
-
-  // Google Drive 원본 목록 조회 실행 및 API 호출
-  const handleDriveSync = async (query?: string) => {
-    if (backendStatus !== "online") {
-      addLog("오류: 백엔드 서버가 오프라인입니다.");
-      return;
-    }
-    setSyncStatus("syncing");
-    setSyncProgress(0);
-    addLog(query ? `Google Drive 원본 조회 시작 (검색어: "${query}")...` : "Google Drive 원본 조회 시작 (Docs, Sheets, PDFs 필터링)...");
-    
-    try {
-      const response = await fetch("http://localhost:18731/api/sync/drive", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ max_emails: 30, query: query || undefined })
-      });
-      const data = await response.json();
-      
-      if (data.status === "success") {
-        setDriveItems(data.files || []);
-        setSyncProgress(100);
-        setSyncStatus("done");
-        addLog(`Google Drive 원본 조회 성공: ${data.count}개의 문서를 가져왔습니다. 벡터 검색에는 별도 인덱스 갱신이 필요합니다.`);
-      } else {
-        setSyncStatus("error");
-        addLog(`Google Drive 원본 조회 실패: ${data.message || "알 수 없는 오류"}`);
-      }
-    } catch (error) {
-      setSyncStatus("error");
-      addLog(`Google Drive 원본 조회 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
     }
   };
 
@@ -589,96 +447,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error("로컬 LLM 서버 감지 실패:", error);
     } finally {
       setIsDetecting(false);
-    }
-  };
-
-
-  // 에이전트 SSE 스트리밍 구동 함수
-  const runAgentHarness = async (query: string, maxTurns: number = 15) => {
-    if (backendStatus !== "online") {
-      addLog("오류: 백엔드 서버가 오프라인입니다.");
-      return;
-    }
-    
-    // 이전 실행 정리 및 초기화
-    if (abortController) {
-      abortController.abort();
-    }
-    const controller = new AbortController();
-    setAbortController(controller);
-
-    setAgentStatus("running");
-    setAgentResult("");
-    setAgentLogs([]);
-    setAgentActiveTurns(0);
-    addLog(`하네스 에이전트 루프 실행 시작: "${query}"`);
-
-    try {
-      const url = `http://localhost:18731/api/agent/run/stream?query=${encodeURIComponent(query)}&max_turns=${maxTurns}`;
-      const response = await fetch(url, {
-        signal: controller.signal
-      });
-
-      if (!response.body) {
-        throw new Error("응답 바디를 읽을 수 없습니다.");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
-
-            try {
-              const parsed = JSON.parse(jsonStr);
-              if (parsed.event === "turn") {
-                const turnData: AgentTurnLog = parsed.data;
-                setAgentActiveTurns(turnData.turn);
-                setAgentLogs((prev) => [...prev, turnData]);
-                addLog(`에이전트 턴 ${turnData.turn}: ${turnData.action} 실행`);
-              } else if (parsed.event === "final") {
-                const finalResult = parsed.data;
-                setAgentResult(finalResult.answer);
-                setAgentStatus("done");
-                addLog("하네스 에이전트 실행 완료.");
-              }
-            } catch (err) {
-              console.error("SSE 파싱 에러:", err);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        addLog("사용자가 에이전트 실행을 중단시켰습니다.");
-        setAgentStatus("idle");
-      } else {
-        setAgentStatus("error");
-        setAgentResult(error instanceof Error ? error.message : "네트워크 오류 발생");
-        addLog(`에이전트 실행 중 오류: ${error instanceof Error ? error.message : "알 수 없음"}`);
-      }
-    } finally {
-      setAbortController(null);
-    }
-  };
-
-  // 에이전트 취소 함수
-  const cancelAgentHarness = () => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-      setAgentStatus("idle");
     }
   };
 
@@ -924,8 +692,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         gmailLabelsLoading,
         driveItems,
         workspaceItems,
-        activeTab,
-        setActiveTab,
         llmEndpoint,
         setLlmEndpoint,
         llmModel,
@@ -944,23 +710,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         checkBackend,
         checkGwsAuth,
         loadGmailLabels,
-        handleGmailSync,
         searchGmailMetadata,
         vectorizeGmailMessages,
-        processGmailMessages,
-        handleDriveSync,
         searchWorkspaceOriginals,
         handleLlmTest,
         addLog,
         triggerGoogleLogin,
-        
-        // 에이전트 상태 및 함수 주입
-        agentStatus,
-        agentResult,
-        agentLogs,
-        agentActiveTurns,
-        runAgentHarness,
-        cancelAgentHarness,
 
         // 지식 파이프라인 상태 및 함수 주입
         obsidianVaultPath,

@@ -9,42 +9,9 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from src import evidence as evidence_module
-from src.processor import pipeline
 
 
 class PipelineContractTests(unittest.TestCase):
-    def test_legacy_pipeline_returns_search_candidates_without_llm_summary(self):
-        chunks = [
-            {
-                "source": "drive",
-                "content": "프로젝트 킥오프 결정사항",
-                "metadata": {
-                    "doc_id": "drive-1",
-                    "title": "Kickoff Notes",
-                    "modifiedTime": "2026-06-01T00:00:00Z",
-                },
-            },
-            {
-                "source": "drive",
-                "content": "후속 할 일",
-                "metadata": {
-                    "doc_id": "drive-1",
-                    "title": "Kickoff Notes",
-                    "modifiedTime": "2026-06-01T00:00:00Z",
-                },
-            },
-        ]
-        with patch.object(pipeline, "retrieve_chunks", return_value=chunks), patch.object(pipeline, "chat_completion") as chat_completion:
-            result = pipeline.run_pipeline("킥오프", sources=["drive"])
-
-        self.assertEqual(result["status"], "success")
-        self.assertTrue(result["requires_evidence_set"])
-        self.assertTrue(result["deprecated_direct_generation"])
-        self.assertIn("정보 묶음", result["answer"])
-        self.assertEqual(len(result["sources"]), 1)
-        self.assertEqual(result["sources"][0]["chunk_count"], 2)
-        chat_completion.assert_not_called()
-
     def test_wiki_artifact_prompt_requires_structured_grounded_sections(self):
         with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
             evidence_set = evidence_module.create_evidence_set(

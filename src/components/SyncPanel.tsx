@@ -50,8 +50,6 @@ export default function SyncPanel() {
     gmailLabelsLoading,
     loadGmailLabels,
     isGwsAuthenticated,
-    handleGmailSync,
-    handleDriveSync,
   } = useApp();
 
   const [draft, setDraft] = useState<WikiConditionDraft>(emptyDraft);
@@ -163,11 +161,6 @@ export default function SyncPanel() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const onLegacySync = () => {
-    void handleGmailSync(draft.keyword, null, draft.gmailLabelIds);
-    void handleDriveSync(draft.keyword);
   };
 
   return (
@@ -327,7 +320,7 @@ export default function SyncPanel() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div>
             <button
               type="button"
               onClick={saveCondition}
@@ -335,14 +328,6 @@ export default function SyncPanel() {
               className="rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-on-primary hover:bg-[#094cb3] disabled:bg-surface-variant disabled:text-text-secondary/60"
             >
               조건 저장
-            </button>
-            <button
-              type="button"
-              onClick={onLegacySync}
-              disabled={controlsDisabled}
-              className="rounded-full border border-surface-variant bg-white px-5 py-2.5 text-sm font-medium text-text-primary hover:border-primary/30 hover:bg-primary-container/20 disabled:opacity-50"
-            >
-              기존 동기화로 실행
             </button>
           </div>
         </div>

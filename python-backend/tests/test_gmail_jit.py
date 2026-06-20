@@ -440,24 +440,6 @@ class GmailJitEndpointTests(unittest.TestCase):
         index_selected.assert_called_once_with(["m1", "m2"])
         rebuild_bm25_index.assert_called_once()
 
-    def test_process_uses_vectorized_chunks_without_gmail_api(self):
-        chunks = [{
-            "id": "gmail_m1_0",
-            "content": "Subject: Hello\nBody content",
-            "metadata": {"doc_id": "m1", "title": "Hello", "sender": "a@example.com", "date": "2026-01-01"},
-            "source": "gmail",
-        }]
-        with patch("src.processor.pipeline.get_gmail_chunks_by_message_ids", return_value=chunks) as get_chunks, \
-             patch("src.processor.pipeline.chat_completion", return_value={"content": "# Markdown"}) as chat_completion, \
-             patch("src.gws.gmail.get_message") as get_message:
-            result = main.gmail_process(main.GmailProcessRequest(message_ids=[" m1 "], instruction="summarize"))
-
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(result["markdown"], "# Markdown")
-        get_chunks.assert_called_once_with(["m1"])
-        chat_completion.assert_called_once()
-        get_message.assert_not_called()
-
     def test_legacy_rag_index_rejects_gmail_full_body_indexing(self):
         with patch("src.rag.indexer.is_authenticated", return_value=True), \
              patch("src.rag.indexer.list_messages") as list_messages, \

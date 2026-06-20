@@ -18,4 +18,3 @@ rank_bm25>=0.2.2
 # 중복 제거 (MinHash-LSH)
 datasketch>=1.6.0
 # SSE 스트리밍 (에이전트 루프 실시간 전달)
-sse-starlette>=2.0.0

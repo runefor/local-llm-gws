@@ -13,7 +13,6 @@ python-backend/
 │   ├── gws/          # Google auth, Gmail, Drive clients
 │   ├── rag/          # ChromaDB/BM25 indexing and retrieval
 │   ├── llm/          # local server detection, inference, model management
-│   ├── harness/      # agent loop/state/tools/rendering
 │   ├── processor/    # RAG/LLM pipelines
 │   ├── sink/         # Obsidian/Notion export
 │   ├── evidence.py   # evidence sets, artifacts, citation maps
@@ -33,7 +32,6 @@ python-backend/
 | RAG retrieval | `src/rag/retriever.py` | Fusion/filtering and evidence record conversion. |
 | LLM config/inference | `src/llm/inference.py`, `src/llm/detector.py` | OpenAI-compatible endpoints. |
 | Model/server lifecycle | `src/llm/manager.py`, `src/llm/server.py` | GGUF downloads and llama.cpp server control. |
-| Agent harness | `src/harness/` | SSE turn stream and externalized state. |
 | Export sinks | `src/sink/obsidian.py`, `src/sink/notion.py` | User-configured destinations. |
 
 ## CONVENTIONS
@@ -52,7 +50,6 @@ python-backend/
 - Do not allow legacy full Gmail body indexing through `/api/rag/index` for Gmail; selected-message vectorization is the safe path.
 - Do not broaden local boundary middleware to arbitrary browser origins.
 - Do not treat `.env`, `data/`, `.venv/`, `venv/`, or `__pycache__/` as source files.
-- Do not change harness low-turn finalization behavior without checking `src/harness/renderer.py` caution/warning/note text.
 
 ## COMMANDS
 ```bash

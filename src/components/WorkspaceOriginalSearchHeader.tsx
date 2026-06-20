@@ -1,25 +1,17 @@
 import type { FormEvent } from "react";
 
-type ViewMode = "list" | "timeline";
-
 type WorkspaceOriginalSearchHeaderProps = {
-  readonly workspaceCount: number;
-  readonly viewMode: ViewMode;
   readonly query: string;
   readonly disabled: boolean;
   readonly isSyncing: boolean;
-  readonly onViewModeChange: (viewMode: ViewMode) => void;
   readonly onQueryChange: (query: string) => void;
   readonly onSubmit: (event: FormEvent) => void;
 };
 
 export function WorkspaceOriginalSearchHeader({
-  workspaceCount,
-  viewMode,
   query,
   disabled,
   isSyncing,
-  onViewModeChange,
   onQueryChange,
   onSubmit,
 }: WorkspaceOriginalSearchHeaderProps) {
@@ -30,27 +22,6 @@ export function WorkspaceOriginalSearchHeader({
           <span className="material-symbols-rounded mr-2 text-[#0b57d0]">hub</span>
           Gmail · Drive 원본 검색
         </h2>
-
-        {workspaceCount > 0 && (
-          <div className="flex bg-[#f8fafd] p-1 rounded-full border border-[#e1e3e1] text-xs">
-            <button
-              type="button"
-              onClick={() => onViewModeChange("list")}
-              className={`px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer flex items-center space-x-1 ${viewMode === "list" ? "bg-[#d3e3fd] text-[#0b57d0] shadow-sm" : "text-[#444746] hover:text-[#1f1f1f]"}`}
-            >
-              <span className="material-symbols-rounded text-sm">list</span>
-              <span>리스트 뷰</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange("timeline")}
-              className={`px-4 py-1.5 rounded-full font-medium transition-all cursor-pointer flex items-center space-x-1 ${viewMode === "timeline" ? "bg-[#d3e3fd] text-[#0b57d0] shadow-sm" : "text-[#444746] hover:text-[#1f1f1f]"}`}
-            >
-              <span className="material-symbols-rounded text-sm">timeline</span>
-              <span>타임라인 뷰</span>
-            </button>
-          </div>
-        )}
       </div>
 
       <form onSubmit={onSubmit} className="flex flex-col space-y-2">
