@@ -100,9 +100,23 @@ class Artifact(BaseModel):
     approved_at: Optional[str] = None
 
 
+class RelevanceFeedback(BaseModel):
+    id: str
+    query: str = ""
+    evidence_id: str
+    chunk_id: str
+    doc_id: str
+    source: Literal["gmail", "drive", "unknown"] = "unknown"
+    feedback: Literal["relevant", "irrelevant"]
+    title: str = ""
+    match_reason: str = ""
+    created_at: str
+
+
 class EvidenceStore(BaseModel):
     evidence_sets: List[EvidenceSet] = Field(default_factory=list)
     artifacts: List[Artifact] = Field(default_factory=list)
+    relevance_feedback: List[RelevanceFeedback] = Field(default_factory=list)
 
 
 STORE_PATH: Path = config.DATA_DIR / "evidence_store.json"
@@ -195,6 +209,34 @@ def delete_evidence_set(evidence_set_id: str) -> bool:
         return False
     _save_store(store)
     return True
+
+
+def record_relevance_feedback(
+    query: str,
+    evidence_id: str,
+    chunk_id: str,
+    doc_id: str,
+    source: Literal["gmail", "drive", "unknown"],
+    feedback: Literal["relevant", "irrelevant"],
+    title: str = "",
+    match_reason: str = "",
+) -> RelevanceFeedback:
+    store = _load_store()
+    feedback_item = RelevanceFeedback(
+        id=_new_id("fb"),
+        query=query,
+        evidence_id=evidence_id,
+        chunk_id=chunk_id,
+        doc_id=doc_id,
+        source=source,
+        feedback=feedback,
+        title=title,
+        match_reason=match_reason,
+        created_at=_now_iso(),
+    )
+    store.relevance_feedback.append(feedback_item)
+    _save_store(store)
+    return feedback_item
 
 
 def list_artifacts(evidence_set_id: Optional[str] = None) -> List[Dict[str, Any]]:

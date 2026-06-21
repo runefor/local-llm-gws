@@ -150,6 +150,18 @@ git diff --check
 
 ## Run Log
 
+### 2026-06-22
+
+- Automated checks: passed.
+  - `npm run build`: passed.
+  - `cd python-backend && .\.venv\Scripts\python.exe -m unittest tests.test_wiki_artifacts.WikiArtifactContractTests.test_relevance_feedback_api_persists_search_signal`: passed, 1 test.
+  - `cd python-backend && .\.venv\Scripts\python.exe -m unittest discover -s tests`: passed, 50 tests.
+  - `git diff --check`: passed, with LF/CRLF working-copy warnings only.
+- Feedback coverage: passed.
+  - `/api/rag/feedback` stores `query`, `evidence_id`, `chunk_id`, `doc_id`, `source`, `feedback`, title, and match reason in the evidence store.
+  - Search result cards expose `관련 있음` / `관련 없음` controls next to match-reason details.
+- Manual UI smoke: not run. This pass verified build/type safety and API persistence, not an interactive desktop session.
+
 ### 2026-06-18
 
 - Automated checks: passed.

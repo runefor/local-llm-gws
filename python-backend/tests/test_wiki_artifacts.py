@@ -32,6 +32,9 @@ def _evidence_item(evidence_id: str = "ev_contract_0"):
             "location_label": "Drive: 계약 일정",
             "provider_item_id": "drive-contract",
         },
+        "metadata": {
+            "match_reason": "제목/본문에서 계약 일정이 일치했습니다.",
+        },
     }
 
 
@@ -52,6 +55,44 @@ VALID_WIKI = """# 계약 일정 Wiki
 
 
 class WikiArtifactContractTests(unittest.TestCase):
+    def test_relevance_feedback_api_persists_search_signal(self):
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            client = TestClient(main.app)
+
+            response = client.post(
+                "/api/rag/feedback",
+                headers=HEADERS,
+                json={
+                    "query": "계약 일정",
+                    "evidence_id": "ev_contract_0",
+                    "chunk_id": "drive-contract-0",
+                    "doc_id": "drive-contract",
+                    "source": "drive",
+                    "feedback": "relevant",
+                    "title": "계약 일정",
+                    "match_reason": "제목/본문에서 계약 일정이 일치했습니다.",
+                },
+            ).json()
+
+            self.assertEqual(response["status"], "success")
+            feedback = response["feedback"]
+            self.assertEqual(feedback["query"], "계약 일정")
+            self.assertEqual(feedback["evidence_id"], "ev_contract_0")
+            self.assertEqual(feedback["chunk_id"], "drive-contract-0")
+            self.assertEqual(feedback["doc_id"], "drive-contract")
+            self.assertEqual(feedback["source"], "drive")
+            self.assertEqual(feedback["feedback"], "relevant")
+            self.assertEqual(feedback["title"], "계약 일정")
+            self.assertEqual(feedback["match_reason"], "제목/본문에서 계약 일정이 일치했습니다.")
+            self.assertTrue(feedback["created_at"])
+
+            saved = evidence_module._load_store()
+            self.assertEqual(len(saved.relevance_feedback), 1)
+            self.assertEqual(saved.relevance_feedback[0].feedback, "relevant")
+            self.assertEqual(saved.relevance_feedback[0].doc_id, "drive-contract")
+            self.assertEqual(saved.relevance_feedback[0].title, "계약 일정")
+            self.assertEqual(saved.relevance_feedback[0].match_reason, "제목/본문에서 계약 일정이 일치했습니다.")
+
     def test_wiki_artifact_gets_schema_lint_and_approval_state(self):
         with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
             evidence_set = evidence_module.create_evidence_set(

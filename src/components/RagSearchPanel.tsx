@@ -81,6 +81,7 @@ interface IndexStatus {
 type NotificationType = "success" | "error" | "info" | "warning";
 type RagSource = "gmail" | "drive";
 type DateFilterMode = "all" | "known" | "unknown";
+type RelevanceFeedbackValue = "relevant" | "irrelevant";
 
 const defaultArtifactInstruction = "선택한 자료 근거만 사용해 Wiki 후보를 만들고, 핵심 사실마다 [ev_...] 근거를 붙여 주세요.";
 const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
@@ -353,6 +354,8 @@ export default function RagSearchPanel() {
   const [dateFilter, setDateFilter] = useState<DateFilterMode>("all");
   const [driveFileTypeFilter, setDriveFileTypeFilter] = useState("");
   const [gmailSenderFilter, setGmailSenderFilter] = useState("");
+  const [feedbackByEvidenceId, setFeedbackByEvidenceId] = useState<Record<string, RelevanceFeedbackValue>>({});
+  const [savingFeedbackId, setSavingFeedbackId] = useState<string | null>(null);
 
   const reviewRef = useRef<HTMLDivElement>(null);
 
@@ -546,6 +549,7 @@ export default function RagSearchPanel() {
     setLoading(true);
     setEvidence([]);
     setSelectedEvidenceIds([]);
+    setFeedbackByEvidenceId({});
     setLastQuery(trimmedQuery);
     setNotification(null);
     resetArtifactDraft();
@@ -602,6 +606,38 @@ export default function RagSearchPanel() {
     setArtifact(null);
     setDraftContent("");
     setSelectedEvidenceIds(allEvidenceSelected ? [] : filteredEvidence.map((item) => item.id));
+  };
+
+  const submitRelevanceFeedback = async (item: EvidenceRecord, feedback: RelevanceFeedbackValue) => {
+    if (savingFeedbackId || backendStatus !== "online") return;
+    setSavingFeedbackId(item.id);
+    try {
+      const response = await fetch("http://localhost:18731/api/rag/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: lastQuery || query.trim(),
+          evidence_id: item.evidence_id,
+          chunk_id: item.chunk_id,
+          doc_id: item.doc_id,
+          source: item.source,
+          feedback,
+          title: item.title,
+          match_reason: getMatchReason(item),
+        }),
+      });
+      const data = toRecord(await response.json());
+      if (data.status === "success") {
+        setFeedbackByEvidenceId((prev) => ({ ...prev, [item.id]: feedback }));
+        showNotification("success", feedback === "relevant" ? "관련 있음 피드백을 저장했습니다." : "관련 없음 피드백을 저장했습니다.");
+      } else {
+        showNotification("error", `피드백 저장 실패: ${toStringValue(data.message, "알 수 없는 오류")}`);
+      }
+    } catch {
+      showNotification("error", "네트워크 오류로 피드백을 저장하지 못했습니다.");
+    } finally {
+      setSavingFeedbackId(null);
+    }
   };
 
   const handleSaveEvidenceSet = async () => {
@@ -1178,6 +1214,8 @@ export default function RagSearchPanel() {
               const url = getEvidenceUrl(item);
               const relevanceLabel = formatRelevanceScore(item.score);
               const matchReason = getMatchReason(item);
+              const currentFeedback = feedbackByEvidenceId[item.id];
+              const isSavingFeedback = savingFeedbackId === item.id;
               return (
                 <article
                   key={item.id}
@@ -1224,6 +1262,27 @@ export default function RagSearchPanel() {
                         )}
                       </div>
                       <MatchReasonDetails reason={matchReason} snippet={item.snippet} metadata={item.metadata} />
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="text-xs font-bold text-[#444746]">검색 품질 피드백</span>
+                        <button
+                          type="button"
+                          onClick={() => submitRelevanceFeedback(item, "relevant")}
+                          disabled={isSavingFeedback || backendStatus !== "online"}
+                          className={`text-xs font-bold rounded-full border px-2.5 py-1 transition-all flex items-center gap-1 disabled:opacity-50 ${currentFeedback === "relevant" ? "bg-[#d3e3fd] border-[#d3e3fd] text-[#0b57d0]" : "bg-white border-[#e1e3e1] text-[#444746] hover:bg-[#d3e3fd]/40"}`}
+                        >
+                          <span className="material-symbols-rounded text-sm">thumb_up</span>
+                          관련 있음
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitRelevanceFeedback(item, "irrelevant")}
+                          disabled={isSavingFeedback || backendStatus !== "online"}
+                          className={`text-xs font-bold rounded-full border px-2.5 py-1 transition-all flex items-center gap-1 disabled:opacity-50 ${currentFeedback === "irrelevant" ? "bg-[#fce8e6] border-[#fce8e6] text-[#b3261e]" : "bg-white border-[#e1e3e1] text-[#444746] hover:bg-[#fce8e6]/60"}`}
+                        >
+                          <span className="material-symbols-rounded text-sm">thumb_down</span>
+                          관련 없음
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </article>

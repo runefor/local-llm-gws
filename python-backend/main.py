@@ -8,6 +8,7 @@ import uvicorn
 from src.gws.gmail import list_labels, list_message_metadata
 from src.gws.drive import list_drive_files
 from src.gws.originals import router as gws_originals_router
+from src.evidence import record_relevance_feedback
 from src.wiki_conditions import ConditionValidationError, WikiConditionStore
 from src.wiki_condition_runner import run_condition
 
@@ -514,6 +515,16 @@ class EvidenceSetUpdateRequest(BaseModel):
     tags: Optional[List[str]] = None
     evidence_items: Optional[List[Dict[str, Any]]] = None
 
+class RelevanceFeedbackRequest(BaseModel):
+    query: str = Field(default="", max_length=500)
+    evidence_id: str = Field(max_length=120)
+    chunk_id: str = Field(max_length=240)
+    doc_id: str = Field(max_length=240)
+    source: Literal["gmail", "drive", "unknown"] = "unknown"
+    feedback: Literal["relevant", "irrelevant"]
+    title: str = Field(default="", max_length=500)
+    match_reason: str = Field(default="", max_length=2000)
+
 class ArtifactCreateRequest(BaseModel):
     artifact_type: str = "summary"
     instruction: str = ""
@@ -587,6 +598,23 @@ def evidence_sets_delete(evidence_set_id: str):
         if not delete_evidence_set(evidence_set_id):
             return {"status": "error", "message": "정보 묶음을 찾을 수 없습니다."}
         return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/rag/feedback")
+def rag_feedback(req: RelevanceFeedbackRequest):
+    try:
+        feedback = record_relevance_feedback(
+            query=req.query,
+            evidence_id=req.evidence_id,
+            chunk_id=req.chunk_id,
+            doc_id=req.doc_id,
+            source=req.source,
+            feedback=req.feedback,
+            title=req.title,
+            match_reason=req.match_reason,
+        )
+        return {"status": "success", "feedback": feedback.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
