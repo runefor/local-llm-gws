@@ -155,6 +155,40 @@ class _FakeSearchClient:
         raise KeyError(name)
 
 
+class _FakeGmailListRequest:
+    def __init__(self, response):
+        self.response = response
+
+    def execute(self):
+        return self.response
+
+
+class _FakeGmailMessagesResource:
+    def __init__(self, response):
+        self.response = response
+        self.list_calls: list[dict[str, Any]] = []
+
+    def list(self, **kwargs):
+        self.list_calls.append(kwargs)
+        return _FakeGmailListRequest(self.response)
+
+
+class _FakeGmailUsersResource:
+    def __init__(self, messages_resource):
+        self.messages_resource = messages_resource
+
+    def messages(self):
+        return self.messages_resource
+
+
+class _FakeGmailService:
+    def __init__(self, messages_resource):
+        self.messages_resource = messages_resource
+
+    def users(self):
+        return _FakeGmailUsersResource(self.messages_resource)
+
+
 class GmailJitEndpointTests(unittest.TestCase):
     def test_retriever_expands_domain_query_hints(self):
         expansions = retriever.expand_query("지난번 계약 일정")
@@ -395,6 +429,20 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertEqual(messages[0]["subject"], "Hello")
         list_messages.assert_called_once_with(max_results=5, page_token=None, query="newer_than:1d", label_ids=["INBOX"])
         get_message.assert_called_once_with("m1", format="metadata", metadata_headers=["Subject", "From", "Date", "Message-ID"])
+
+    def test_label_only_metadata_search_does_not_add_hidden_date_filter(self):
+        messages_resource = _FakeGmailMessagesResource({"messages": [{"id": "m1"}]})
+        service = _FakeGmailService(messages_resource)
+
+        with patch("src.gws.gmail.get_credentials", return_value=object()), \
+             patch("src.gws.gmail.build", return_value=service):
+            messages, next_token = gmail.list_messages(max_results=25, query=None, label_ids=["Label_123"])
+
+        self.assertEqual(messages, [{"id": "m1"}])
+        self.assertIsNone(next_token)
+        self.assertEqual(messages_resource.list_calls[0]["maxResults"], 25)
+        self.assertEqual(messages_resource.list_calls[0]["labelIds"], ["Label_123"])
+        self.assertIsNone(messages_resource.list_calls[0]["q"])
 
     def test_metadata_search_does_not_fetch_full_body_or_index(self):
         metadata = [{"id": "m1", "subject": "Subject", "from": "a@example.com", "snippet": "hello", "date": "2026-01-01T00:00:00Z", "labelIds": []}]

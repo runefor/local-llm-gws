@@ -33,20 +33,7 @@ def list_messages(max_results=None, page_token=None, query=None, label_ids: Opti
     """
     creds = get_credentials()
     service = build('gmail', 'v1', credentials=creds)
-    
-    import datetime
-    seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
-    default_after = f"after:{seven_days_ago.year}/{seven_days_ago.month:02d}/{seven_days_ago.day:02d}"
-    
-    actual_query = None
-    if query:
-        # 기간 관련 키워드가 없으면 기본 7일 전 필터 추가
-        if not any(k in query for k in ["newer_than:", "after:", "before:", "older_than:"]):
-            actual_query = f"{query} {default_after}"
-        else:
-            actual_query = query
-    else:
-        actual_query = default_after
+    actual_query = query.strip() if query else None
     
     messages = []
     next_page_token = page_token
