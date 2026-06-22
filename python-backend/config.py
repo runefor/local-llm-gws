@@ -5,9 +5,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA_DIR = BASE_DIR / "data" / "test-runtime" if "unittest" in sys.modules else BASE_DIR / "data"
+IS_UNITTEST_COMMAND = any(part == "discover" or part.endswith("unittest") or part == "tests" for part in sys.argv)
+DEFAULT_DATA_DIR = BASE_DIR / "data" / "test-runtime" if IS_UNITTEST_COMMAND else BASE_DIR / "data"
 DATA_DIR = Path(os.getenv("LOCAL_LLM_GWS_DATA_DIR", DEFAULT_DATA_DIR)).resolve()
-DEFAULT_VECTOR_DB_DIR = DATA_DIR / ("test-vectordb" if "unittest" in sys.modules else "vectordb")
+DEFAULT_VECTOR_DB_DIR = DATA_DIR / ("test-vectordb" if IS_UNITTEST_COMMAND else "vectordb")
 VECTOR_DB_DIR = Path(os.getenv("LOCAL_LLM_GWS_CHROMA_DB_PATH", DEFAULT_VECTOR_DB_DIR)).resolve()
 
 # 필수 폴더 자동 생성
