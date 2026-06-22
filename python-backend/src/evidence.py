@@ -16,6 +16,7 @@ from src.wiki_artifacts import (
     lint_artifact_content,
     status_for_lint,
 )
+from src.wiki_fallback import build_grounded_wiki_fallback
 
 
 def _now_iso() -> str:
@@ -412,9 +413,16 @@ def create_artifact(evidence_set_id: str, artifact_type: str, instruction: str =
         temperature=0.2,
     )
     if "error" in llm_resp:
-        content = f"Artifact 생성 중 오류: {llm_resp['error']}"
+        error_message = str(llm_resp["error"])
+        content = (
+            build_grounded_wiki_fallback(evidence_set, error_message)
+            if is_wiki_artifact_type(artifact_type)
+            else f"Artifact 생성 중 오류: {error_message}"
+        )
     else:
-        content = llm_resp.get("content", "")
+        content = str(llm_resp.get("content", "") or "")
+        if is_wiki_artifact_type(artifact_type) and not content.strip():
+            content = build_grounded_wiki_fallback(evidence_set, "empty LLM response")
 
     artifact = _build_artifact_from_content(
         artifact_id=artifact_id,

@@ -386,6 +386,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addLog(`벡터 인덱스 갱신 실패: ${message}`);
       return { status: "error", message };
     }
+    if (sources.includes("drive") && driveItems.length === 0) {
+      const message = "Drive 원본 검색 결과가 없습니다. 자료 준비에서 관련 Drive 원본을 먼저 검색하세요.";
+      addLog(`Drive 벡터 인덱스 갱신 보류: ${message}`);
+      return { status: "error", message };
+    }
     if (vectorizationProgress.status === "running") {
       const message = "이미 벡터화 작업이 실행 중입니다.";
       addLog(`벡터 인덱스 갱신 보류: ${message}`);
@@ -399,7 +404,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch("http://localhost:18731/api/rag/index", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sources }),
+        body: JSON.stringify({ sources, drive_files: sources.includes("drive") ? driveItems : [] }),
       });
       const data = await response.json() as Record<string, unknown>;
       if (data.status === "success") {

@@ -446,13 +446,14 @@ def update_llm_config_route(req: LLMConfigRequest):
 
 class RagIndexRequest(BaseModel):
     sources: Optional[List[str]] = None
+    drive_files: List[Dict[str, Any]] = Field(default_factory=list, max_length=100)
 
 @app.post("/api/rag/index")
 def rag_index(req: Optional[RagIndexRequest] = None):
-    """동기화된 Gmail/Drive 데이터를 ChromaDB에 인덱싱합니다."""
+    """선택된 Gmail/Drive 자료를 ChromaDB에 인덱싱합니다."""
     try:
         from src.rag.indexer import index_all
-        result = index_all(req.sources if req else None)
+        result = index_all(req.sources if req else None, req.drive_files if req else None)
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -907,4 +908,3 @@ def list_notion_pages():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=18731)
-

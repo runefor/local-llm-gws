@@ -156,6 +156,30 @@ class WikiArtifactContractTests(unittest.TestCase):
             self.assertTrue(any(issue["code"] == "source_missing" for issue in artifact.lint["issues"]))
             chat_completion.assert_not_called()
 
+    def test_wiki_artifact_falls_back_to_grounded_markdown_when_llm_fails(self):
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            evidence_set = evidence_module.create_evidence_set(
+                title="계약 자료",
+                original_query="계약 일정",
+                evidence_items=[_evidence_item()],
+            )
+            client = TestClient(main.app)
+            with patch("src.llm.inference.chat_completion", return_value={"error": "server offline"}):
+                response = client.post(
+                    f"/api/evidence-sets/{evidence_set.id}/artifacts",
+                    headers=HEADERS,
+                    json={"artifact_type": "wiki", "instruction": "Wiki 후보 작성"},
+                ).json()
+
+            self.assertEqual(response["status"], "success")
+            artifact = response["artifact"]
+            self.assertEqual(artifact["status"], "candidate")
+            self.assertEqual(artifact["lint"]["status"], "passed")
+            self.assertIn("# 계약 자료 Wiki", artifact["content"])
+            self.assertIn("[ev_contract_0]", artifact["content"])
+            self.assertIn("https://drive.google.com/file/d/drive-contract", artifact["content"])
+            self.assertEqual(len(artifact["citation_map"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

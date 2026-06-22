@@ -81,11 +81,13 @@ class _FakeModel:
 
 
 class _FakeCollection:
-    def __init__(self):
+    def __init__(self, existing=None):
+        self.existing = existing or {"ids": []}
         self.upsert_payload: dict[str, Any] | None = None
+        self.deleted_ids = None
 
     def get(self, where=None, include=None):
-        return {"ids": []}
+        return self.existing
 
     def upsert(self, ids, embeddings, documents, metadatas):
         self.upsert_payload = {
@@ -94,6 +96,9 @@ class _FakeCollection:
             "documents": documents,
             "metadatas": metadatas,
         }
+
+    def delete(self, ids):
+        self.deleted_ids = ids
 
 
 class _FakeClient:
@@ -506,15 +511,42 @@ class GmailJitEndpointTests(unittest.TestCase):
 
     def test_legacy_rag_index_rejects_gmail_full_body_indexing(self):
         with patch("src.rag.indexer.is_authenticated", return_value=True), \
-             patch("src.rag.indexer.list_messages") as list_messages, \
              patch("src.rag.indexer.get_message") as get_message:
             result = indexer.index_all(["gmail"])
 
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["gmail_indexed"], 0)
         self.assertIn("선택 메일 벡터화", result["message"])
-        list_messages.assert_not_called()
         get_message.assert_not_called()
+
+    def test_drive_index_requires_search_results(self):
+        with patch("src.rag.indexer.is_authenticated", return_value=True), \
+             patch("src.rag.indexer.index_drive_raw") as index_drive_raw:
+            result = indexer.index_all(["drive"])
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["drive_indexed"], 0)
+        self.assertIn("Drive 원본 검색 결과", result["message"])
+        index_drive_raw.assert_not_called()
+
+    def test_drive_index_uses_search_result_files_only(self):
+        drive_files = [{"id": "d1", "name": "관련 문서", "mimeType": "text/plain"}]
+        with patch("src.rag.indexer.is_authenticated", return_value=True), \
+             patch("src.rag.indexer.index_drive_raw", return_value=1) as index_drive_raw, \
+             patch("src.rag.indexer.rebuild_bm25_index", return_value={"status": "success"}):
+            result = indexer.index_all(["drive"], drive_files=drive_files)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["drive_indexed"], 1)
+        index_drive_raw.assert_called_once_with(drive_files)
+
+    def test_rag_index_api_forwards_drive_search_results(self):
+        drive_files = [{"id": "d1", "name": "관련 문서", "mimeType": "text/plain"}]
+        with patch("src.rag.indexer.index_all", return_value={"status": "success"}) as index_all:
+            result = main.rag_index(main.RagIndexRequest(sources=["drive"], drive_files=drive_files))
+
+        self.assertEqual(result["status"], "success")
+        index_all.assert_called_once_with(["drive"], drive_files)
 
     def test_selected_gmail_index_persists_label_ids_metadata(self):
         collection = _FakeCollection()
@@ -579,6 +611,30 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertNotIn("<script", document)
         self.assertNotIn("noise()", document)
 
+    def test_selected_gmail_index_skips_unchanged_message(self):
+        message = {
+            "id": "m1",
+            "threadId": "t1",
+            "internalDate": "1767225600000",
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Hello"},
+                    {"name": "From", "value": "a@example.com"},
+                ],
+                "mimeType": "text/plain",
+                "body": {"data": "Qm9keQ=="},
+            },
+        }
+        document_hash = indexer._content_hash("Subject: Hello\nFrom: a@example.com\n\nBody")
+        collection = _FakeCollection({"ids": ["gmail_m1_0"], "metadatas": [{"document_hash": document_hash}]})
+        with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(collection)), \
+             patch("src.rag.indexer.get_embedding_model") as get_embedding_model:
+            indexed = indexer.index_gmail_raw([message])
+
+        self.assertEqual(indexed, 0)
+        self.assertIsNone(collection.upsert_payload)
+        get_embedding_model.assert_not_called()
+
     def test_drive_index_persists_owner_creator_metadata(self):
         collection = _FakeCollection()
         drive_file = {
@@ -606,6 +662,24 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertEqual(metadata["creator"], "Owner <owner@example.com>")
         self.assertEqual(metadata["last_modifying_user"], "Editor <editor@example.com>")
         self.assertEqual(metadata["created_time"], "2026-01-01T00:00:00Z")
+
+    def test_drive_index_skips_unchanged_file(self):
+        collection = _FakeCollection({"ids": ["drive_f1_0"], "metadatas": [{"document_hash": indexer._content_hash("Drive body")}]})
+        drive_file = {
+            "id": "f1",
+            "name": "Doc",
+            "mimeType": "text/plain",
+            "modifiedTime": "2026-01-02T00:00:00Z",
+        }
+        with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(collection)), \
+             patch("src.rag.indexer.get_embedding_model") as get_embedding_model, \
+             patch("src.rag.indexer.fetch_drive_file_content", return_value="Drive body"):
+            indexed = indexer.index_drive_raw([drive_file])
+
+        self.assertEqual(indexed, 0)
+        self.assertIsNone(collection.upsert_payload)
+        get_embedding_model.assert_not_called()
+
     def test_settings_api_partial_update_preserves_existing_values(self):
         settings_path = BACKEND_ROOT / "data" / "test-settings-api-preserve.json"
         if settings_path.exists():

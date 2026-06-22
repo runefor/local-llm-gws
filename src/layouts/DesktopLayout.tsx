@@ -8,7 +8,6 @@ import MultiViewWorkspace from "../components/MultiViewWorkspace";
 import LlmConfigPanel from "../components/LlmConfigPanel";
 import ServiceConfigPanel from "../components/ServiceConfigPanel";
 import RagSearchPanel from "../components/RagSearchPanel";
-import KnowledgePipelinePanel from "../components/KnowledgePipelinePanel";
 import LogConsole from "../components/LogConsole";
 import { menuSections, type DesktopMenu } from "./desktopMenu";
 
@@ -230,7 +229,7 @@ export default function DesktopLayout() {
 
           {activeMenu === "pipeline" && (
             <div className="h-full min-h-0 space-y-6 overflow-y-auto pr-1">
-              <KnowledgePipelinePanel />
+              <RagSearchPanel />
             </div>
           )}
 

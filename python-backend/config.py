@@ -1,16 +1,19 @@
 import os
 import json
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 포터블 환경 구성을 위해 프로젝트 루트의 data 폴더를 기본으로 사용
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+DEFAULT_DATA_DIR = BASE_DIR / "data" / "test-runtime" if "unittest" in sys.modules else BASE_DIR / "data"
+DATA_DIR = Path(os.getenv("LOCAL_LLM_GWS_DATA_DIR", DEFAULT_DATA_DIR)).resolve()
+DEFAULT_VECTOR_DB_DIR = DATA_DIR / ("test-vectordb" if "unittest" in sys.modules else "vectordb")
+VECTOR_DB_DIR = Path(os.getenv("LOCAL_LLM_GWS_CHROMA_DB_PATH", DEFAULT_VECTOR_DB_DIR)).resolve()
 
 # 필수 폴더 자동 생성
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "raw").mkdir(parents=True, exist_ok=True)
-(DATA_DIR / "vectordb").mkdir(parents=True, exist_ok=True)
+VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "models").mkdir(parents=True, exist_ok=True)
 
 # 환경 변수 로드
@@ -19,7 +22,7 @@ load_dotenv(dotenv_path=env_path)
 
 class Config:
     DATA_DIR = DATA_DIR
-    VECTOR_DB_PATH = DATA_DIR / "vectordb"
+    VECTOR_DB_PATH = VECTOR_DB_DIR
     CREDENTIALS_PATH = DATA_DIR / "client_secrets.json"
     TOKEN_PATH = DATA_DIR / "token.json"
     MODELS_DIR = DATA_DIR / "models"
@@ -91,7 +94,7 @@ class Config:
     # -------------------------------------------------------------------
     # ChromaDB 설정
     # -------------------------------------------------------------------
-    CHROMA_DB_PATH = DATA_DIR / "vectordb"
+    CHROMA_DB_PATH = VECTOR_DB_DIR
     CHROMA_COLLECTION_GMAIL: str = "gws_gmail"
     CHROMA_COLLECTION_DRIVE: str = "gws_drive"
 

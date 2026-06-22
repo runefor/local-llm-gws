@@ -14,8 +14,7 @@ from urllib.parse import quote
 
 from config import config
 from src.gws.auth import is_authenticated
-from src.gws.gmail import list_messages, get_message
-from src.gws.drive import list_drive_files
+from src.gws.gmail import get_message
 from src.gws.text_cleaner import clean_original_markdown
 
 logger = logging.getLogger(__name__)
@@ -105,6 +104,12 @@ def _existing_ids_for_doc(collection, doc_id: str) -> List[str]:
     if not existing:
         return []
     return list(existing.get("ids") or [])
+
+def _doc_has_same_hash(collection, doc_id: str, document_hash: str) -> bool:
+    existing = collection.get(where={"doc_id": doc_id}, include=["metadatas"])
+    ids = list((existing or {}).get("ids") or [])
+    metadatas = list((existing or {}).get("metadatas") or [])
+    return bool(ids) and bool(metadatas) and all((metadata or {}).get("document_hash") == document_hash for metadata in metadatas)
 
 def _replace_doc_chunks(collection, doc_id: str, ids: List[str], embeddings: List[Any], documents: List[str], metadatas: List[Dict[str, Any]]) -> None:
     existing_ids = _existing_ids_for_doc(collection, doc_id)
@@ -282,7 +287,7 @@ def rebuild_bm25_index() -> Dict[str, Any]:
 def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
     """주어진 Gmail 상세 메시지 리스트를 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
-    model = get_embedding_model()
+    model = None
     gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
     
     gmail_indexed = 0
@@ -310,7 +315,12 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
         
         if chunks:
             document_hash = _content_hash(full_text)
+            if _doc_has_same_hash(gmail_col, msg_id, document_hash):
+                logger.info("변경 없는 Gmail 메시지 벡터화 건너뜀: %s", msg_id)
+                continue
             # E5 모델 접두사 추가
+            if model is None:
+                model = get_embedding_model()
             prefixed_chunks = [f"passage: {c}" for c in chunks]
             embeddings = model.encode(prefixed_chunks).tolist()
             ids = [f"gmail_{msg_id}_{i}" for i in range(len(chunks))]
@@ -353,7 +363,7 @@ def index_gmail_message_ids(message_ids: List[str]) -> int:
 def index_drive_raw(files: List[Dict[str, Any]]) -> int:
     """주어진 Google Drive 파일 리스트를 다운로드 및 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
-    model = get_embedding_model()
+    model = None
     drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
     
     drive_indexed = 0
@@ -373,7 +383,12 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
         chunks = chunk_text(content)
         if chunks:
             document_hash = _content_hash(content)
+            if _doc_has_same_hash(drive_col, file_id, document_hash):
+                logger.info("변경 없는 Drive 파일 벡터화 건너뜀: %s", file_id)
+                continue
             # E5 모델 접두사 추가
+            if model is None:
+                model = get_embedding_model()
             prefixed_chunks = [f"passage: {c}" for c in chunks]
             embeddings = model.encode(prefixed_chunks).tolist()
             ids = [f"drive_{file_id}_{i}" for i in range(len(chunks))]
@@ -405,8 +420,8 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
             
     return drive_indexed
 
-def index_all(sources: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Google Drive 최신 데이터를 ChromaDB에 인덱싱합니다.
+def index_all(sources: Optional[List[str]] = None, drive_files: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """사용자가 Drive 원본 검색으로 좁힌 파일만 ChromaDB에 인덱싱합니다.
 
     Gmail 본문 인덱싱은 선택 메일 JIT 벡터화 API에서만 수행합니다.
     """
@@ -429,14 +444,18 @@ def index_all(sources: Optional[List[str]] = None) -> Dict[str, Any]:
                 "timestamp": datetime.now().isoformat(),
             }
         
-    # 2. Drive 인덱싱 (최근 30개 대상)
     drive_indexed = 0
     if "drive" in selected_sources:
-        try:
-            files, _ = list_drive_files(max_results=30)
-            drive_indexed = index_drive_raw(files)
-        except Exception as e:
-            logger.error(f"Drive 인덱싱 중 오류 발생: {e}")
+        if not drive_files:
+            return {
+                "status": "error",
+                "message": "Drive 원본 검색 결과가 없습니다. 자료 준비에서 관련 Drive 원본을 먼저 검색한 뒤 인덱싱하세요.",
+                "gmail_indexed": 0,
+                "drive_indexed": 0,
+                "sources": selected_sources,
+                "timestamp": datetime.now().isoformat(),
+            }
+        drive_indexed = index_drive_raw(drive_files)
         
     # BM25 인덱스 자동 갱신
     try:

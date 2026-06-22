@@ -58,9 +58,9 @@ export const menuSections = [
       },
       {
         id: "pipeline",
-        icon: "insights",
-        label: "Wiki 저장 안내",
-        description: "정보 묶음 기반 저장 흐름",
+        icon: "auto_stories",
+        label: "LLM Wiki 만들기",
+        description: "정보 묶음으로 Wiki 생성",
       },
     ],
   },
