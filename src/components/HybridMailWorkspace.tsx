@@ -192,7 +192,7 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
 
   return (
     <div className={`bg-white rounded-2xl border border-surface-variant shadow-[0_1px_2px_rgba(0,0,0,0.05)] flex flex-col ${isDesktop ? "h-full min-h-0 overflow-hidden" : "min-h-[680px]"}`}>
-      <div className="p-6 border-b border-surface-variant flex items-start justify-between gap-4 flex-wrap">
+      <div className={`${isDesktop ? "p-4" : "p-6"} border-b border-surface-variant flex items-start justify-between gap-4 flex-wrap`}>
         <div className="flex flex-col gap-1">
           <h2 className="text-text-primary text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-primary">view_sidebar</span>
@@ -210,7 +210,7 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
       </div>
 
       {notice && (
-        <div className={`mx-6 mt-5 flex items-start gap-2 rounded-xl border p-3 text-xs font-medium ${noticeClassName}`}>
+        <div className={`${isDesktop ? "mx-4 mt-3" : "mx-6 mt-5"} flex items-start gap-2 rounded-xl border p-3 text-xs font-medium ${noticeClassName}`}>
           <span className="material-symbols-rounded text-base mt-0.5">{notice.type === "success" ? "check_circle" : notice.type === "error" ? "error" : "info"}</span>
           <span className="flex-1 leading-relaxed">{notice.text}</span>
           <button type="button" onClick={() => setNotice(null)} className="opacity-70 hover:opacity-100 transition-opacity">
@@ -220,14 +220,15 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
       )}
 
       {!canUseGmail && (
-        <div className="mx-6 mt-5 bg-surface border border-surface-variant rounded-xl p-3 text-xs text-text-secondary flex items-start gap-2">
+        <div className={`${isDesktop ? "mx-4 mt-3" : "mx-6 mt-5"} bg-surface border border-surface-variant rounded-xl p-3 text-xs text-text-secondary flex items-start gap-2`}>
           <span className="material-symbols-rounded text-primary text-base mt-0.5">lock</span>
           <span className="leading-relaxed">{disabledReason}</span>
         </div>
       )}
 
-      <div className={`grid grid-cols-1 min-[1140px]:grid-cols-[minmax(320px,0.78fr)_minmax(560px,1.22fr)] gap-5 p-6 ${isDesktop ? "flex-1 min-h-0 overflow-hidden" : ""}`}>
+      <div className={`grid grid-cols-1 min-[1140px]:grid-cols-[minmax(360px,0.86fr)_minmax(520px,1.14fr)] ${isDesktop ? "flex-1 min-h-0 gap-4 overflow-hidden p-4" : "gap-5 p-6"}`}>
         <HybridMailSearchPanel
+          isDesktop={isDesktop}
           canUseGmail={canUseGmail}
           searching={searching}
           vectorizing={vectorizing}

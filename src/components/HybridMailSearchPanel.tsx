@@ -6,6 +6,7 @@ import type { MetadataPeriod } from "./hybridMailHelpers";
 import type { SavedSearchCondition } from "./savedSearchConditions";
 
 type HybridMailSearchPanelProps = {
+  readonly isDesktop: boolean;
   readonly canUseGmail: boolean;
   readonly searching: boolean;
   readonly vectorizing: boolean;
@@ -44,6 +45,7 @@ type HybridMailSearchPanelProps = {
 };
 
 export function HybridMailSearchPanel({
+  isDesktop,
   canUseGmail,
   searching,
   vectorizing,
@@ -88,8 +90,8 @@ export function HybridMailSearchPanel({
 
   return (
     <>
-    <section className="bg-surface rounded-2xl border border-surface-variant p-3 flex flex-col gap-3 min-h-0 overflow-visible">
-      <form onSubmit={onSubmit} className="flex flex-col gap-2.5">
+    <section className={`bg-surface rounded-2xl border border-surface-variant flex flex-col min-h-0 overflow-visible ${isDesktop ? "gap-2 p-2" : "gap-3 p-3"}`}>
+      <form onSubmit={onSubmit} className={`flex flex-col ${isDesktop ? "gap-2" : "gap-2.5"}`}>
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
             <span className="material-symbols-rounded text-primary text-sm">mail</span>
@@ -102,7 +104,7 @@ export function HybridMailSearchPanel({
           )}
         </div>
 
-        <div className="relative rounded-2xl border border-surface-variant bg-white px-3 py-2">
+        <div className={`relative rounded-2xl border border-surface-variant bg-white px-3 ${isDesktop ? "py-1.5" : "py-2"}`}>
           <button
             type="button"
             onClick={() => setQuickExamplesExpanded((current) => !current)}
@@ -140,28 +142,28 @@ export function HybridMailSearchPanel({
           )}
         </div>
 
-        <div className="rounded-2xl border border-surface-variant bg-white p-3">
-          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-text-primary">
+        <div className={`rounded-2xl border border-surface-variant bg-white ${isDesktop ? "p-2" : "p-3"}`}>
+          <div className={`${isDesktop ? "mb-1.5" : "mb-2"} flex items-center gap-1.5 text-[11px] font-semibold text-text-primary`}>
             <span className="material-symbols-rounded text-sm text-primary">bookmark</span>
             저장 조건
           </div>
-          <div className="grid grid-cols-1 gap-2">
-            <input type="text" value={conditionName} onChange={(event) => onConditionNameChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="조건 이름" className="w-full rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary transition-all placeholder:text-text-secondary/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50" />
+          <div className={`grid grid-cols-1 ${isDesktop ? "gap-1.5" : "gap-2"}`}>
+            <input type="text" value={conditionName} onChange={(event) => onConditionNameChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="조건 이름" className={`w-full rounded-full border border-surface-variant bg-surface px-3 text-xs text-text-primary transition-all placeholder:text-text-secondary/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`} />
             <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-              <select value={selectedConditionId} onChange={(event) => onSelectedConditionChange(event.target.value)} disabled={!canUseGmail || searching || savedConditions.length === 0} className="min-w-0 rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50">
+              <select value={selectedConditionId} onChange={(event) => onSelectedConditionChange(event.target.value)} disabled={!canUseGmail || searching || savedConditions.length === 0} className={`min-w-0 rounded-full border border-surface-variant bg-surface px-3 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`}>
                 <option value="">불러올 조건 선택</option>
                 {savedConditions.map((condition) => (
                   <option key={condition.id} value={condition.id}>{condition.name}</option>
                 ))}
               </select>
-              <button type="button" onClick={onSaveCondition} disabled={!canUseGmail || searching} className="rounded-full border border-surface-variant bg-surface px-3 py-2 text-[11px] font-semibold text-text-primary hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50">
+              <button type="button" onClick={onSaveCondition} disabled={!canUseGmail || searching} className={`rounded-full border border-surface-variant bg-surface px-3 text-[11px] font-semibold text-text-primary hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`}>
                 저장
               </button>
-              <button type="button" onClick={onApplyCondition} disabled={!canUseGmail || searching || savedConditions.length === 0} className="rounded-full bg-primary px-3 py-2 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40">
+              <button type="button" onClick={onApplyCondition} disabled={!canUseGmail || searching || savedConditions.length === 0} className={`rounded-full bg-primary px-3 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 ${isDesktop ? "py-1.5" : "py-2"}`}>
                 적용
               </button>
             </div>
-            <p className="text-[11px] leading-relaxed text-text-secondary">적용은 입력값만 채우고 검색은 실행하지 않습니다.</p>
+            {!isDesktop && <p className="text-[11px] leading-relaxed text-text-secondary">적용은 입력값만 채우고 검색은 실행하지 않습니다.</p>}
           </div>
         </div>
 
@@ -170,19 +172,19 @@ export function HybridMailSearchPanel({
             <span className="text-[11px] font-semibold text-text-secondary">키워드</span>
             <div className="relative">
               <span className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary text-lg">search</span>
-              <input type="text" value={metadataKeyword} onChange={(event) => onKeywordChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="예: 계약서, paper, 지원" className="w-full bg-white border border-surface-variant rounded-full pl-10 pr-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/55" />
+              <input type="text" value={metadataKeyword} onChange={(event) => onKeywordChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="예: 계약서, paper, 지원" className={`w-full bg-white border border-surface-variant rounded-full pl-10 pr-4 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/55 ${isDesktop ? "py-2" : "py-2.5"}`} />
             </div>
           </label>
           <label className="space-y-1.5">
             <span className="text-[11px] font-semibold text-text-secondary">보낸 사람</span>
             <div className="relative">
               <span className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary text-lg">alternate_email</span>
-              <input type="text" value={metadataSender} onChange={(event) => onSenderChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="예: name@company.com" className="w-full bg-white border border-surface-variant rounded-full pl-10 pr-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/55" />
+              <input type="text" value={metadataSender} onChange={(event) => onSenderChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="예: name@company.com" className={`w-full bg-white border border-surface-variant rounded-full pl-10 pr-4 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/55 ${isDesktop ? "py-2" : "py-2.5"}`} />
             </div>
           </label>
         </div>
 
-        <div className="rounded-2xl border border-surface-variant bg-white px-3 py-2">
+        <div className={`rounded-2xl border border-surface-variant bg-white px-3 ${isDesktop ? "py-1.5" : "py-2"}`}>
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <span className="text-[11px] font-semibold text-text-secondary">태그/라벨</span>
@@ -196,7 +198,7 @@ export function HybridMailSearchPanel({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className={isDesktop ? "space-y-1.5" : "space-y-2"}>
           <span className="text-[11px] font-semibold text-text-secondary">기간</span>
           <div className="flex flex-wrap gap-2">
             {metadataPeriodOptions.map((option) => (
@@ -207,35 +209,47 @@ export function HybridMailSearchPanel({
           </div>
         </div>
 
-        <label className="flex items-center gap-2 rounded-2xl border border-surface-variant bg-white px-3 py-2 text-[11px] font-semibold text-text-primary">
+        <label className={`flex items-center gap-2 rounded-2xl border border-surface-variant bg-white px-3 text-[11px] font-semibold text-text-primary ${isDesktop ? "py-1.5" : "py-2"}`}>
           <input type="checkbox" checked={metadataHasAttachment} onChange={(event) => onHasAttachmentChange(event.target.checked)} disabled={!canUseGmail || searching} className="h-4 w-4 accent-primary" />
           첨부파일 있는 메일만
         </label>
 
         <div className="grid grid-cols-[110px_1fr] gap-2">
-          <input type="number" min="1" max="200" value={maxEmails} onChange={(event) => onMaxEmailsChange(event.target.value)} disabled={!canUseGmail || searching} aria-label="최대 검색 메일 수" className="bg-white border border-surface-variant rounded-full px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50" />
-          <button type="submit" disabled={!canUseGmail || searching} className="bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white text-xs font-semibold px-5 py-2 rounded-full transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5">
+          <input type="number" min="1" max="200" value={maxEmails} onChange={(event) => onMaxEmailsChange(event.target.value)} disabled={!canUseGmail || searching} aria-label="최대 검색 메일 수" className={`bg-white border border-surface-variant rounded-full px-3 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`} />
+          <button type="submit" disabled={!canUseGmail || searching} className={`bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white text-xs font-semibold px-5 rounded-full transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5 ${isDesktop ? "py-1.5" : "py-2"}`}>
             <span className={`material-symbols-rounded text-sm ${searching ? "animate-spin" : ""}`}>{searching ? "sync" : "travel_explore"}</span>
             <span>{searching ? "검색 중..." : "메타데이터 검색"}</span>
           </button>
         </div>
       </form>
 
-      <div className="rounded-2xl border border-surface-variant bg-white p-2.5 text-[11px] text-text-secondary">
+      <div className={`rounded-2xl border border-surface-variant bg-white text-[11px] text-text-secondary ${isDesktop ? "p-2" : "p-2.5"}`}>
         <div className="flex items-center justify-between gap-3">
-          <span>검색 결과 <strong className="text-text-primary">{gmailItems.length}</strong>개</span>
-          <span>선택 <strong className="text-primary">{selectedIds.length}</strong>개</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <span>검색 결과 <strong className="text-text-primary">{gmailItems.length}</strong>개</span>
+              <span>선택 <strong className="text-primary">{selectedIds.length}</strong>개</span>
+            </div>
+            <div className="mt-1.5 h-2 rounded-full bg-surface overflow-hidden">
+              <div className="h-full bg-primary transition-all" style={{ width: selectedIds.length === 0 ? "0%" : `${Math.round((vectorizedSelectedCount / selectedIds.length) * 100)}%` }} />
+            </div>
+          </div>
+          {isDesktop && (
+            <button type="button" onClick={onVectorize} disabled={!canUseGmail || selectedIds.length === 0 || vectorizing} className="shrink-0 bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white font-semibold px-4 py-1.5 rounded-full text-[11px] transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1">
+              <span className={`material-symbols-rounded text-sm ${vectorizing ? "animate-spin" : ""}`}>{vectorizing ? "sync" : "conversion_path"}</span>
+              <span>{vectorizing ? "벡터화 중" : `선택 ${selectedIds.length}개`}</span>
+            </button>
+          )}
         </div>
-        <div className="mt-1.5 h-2 rounded-full bg-surface overflow-hidden">
-          <div className="h-full bg-primary transition-all" style={{ width: selectedIds.length === 0 ? "0%" : `${Math.round((vectorizedSelectedCount / selectedIds.length) * 100)}%` }} />
-        </div>
-        <p className="mt-1.5 leading-relaxed">오른쪽 목록에서 필요한 원본 메일만 선택해 벡터 검색 대상으로 만드세요.</p>
+        {!isDesktop && <p className="mt-1.5 leading-relaxed">오른쪽 목록에서 필요한 원본 메일만 선택해 벡터 검색 대상으로 만드세요.</p>}
       </div>
 
-      <button type="button" onClick={onVectorize} disabled={!canUseGmail || selectedIds.length === 0 || vectorizing} className="bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white font-semibold py-2.5 px-5 rounded-full text-xs transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5">
-        <span className={`material-symbols-rounded text-sm ${vectorizing ? "animate-spin" : ""}`}>{vectorizing ? "sync" : "conversion_path"}</span>
-        <span>{vectorizing ? "벡터화 중..." : `선택 ${selectedIds.length}개 벡터화`}</span>
-      </button>
+      {!isDesktop && (
+        <button type="button" onClick={onVectorize} disabled={!canUseGmail || selectedIds.length === 0 || vectorizing} className="bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white font-semibold py-2.5 px-5 rounded-full text-xs transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5">
+          <span className={`material-symbols-rounded text-sm ${vectorizing ? "animate-spin" : ""}`}>{vectorizing ? "sync" : "conversion_path"}</span>
+          <span>{vectorizing ? "벡터화 중..." : `선택 ${selectedIds.length}개 벡터화`}</span>
+        </button>
+      )}
     </section>
     {labelPickerOpen && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-6">
