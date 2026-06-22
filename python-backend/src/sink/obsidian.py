@@ -11,6 +11,11 @@ def sanitize_filename(filename: str) -> str:
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned if cleaned else "untitled_note"
 
+def yaml_quote(value: str) -> str:
+    """Obsidian frontmatter에서 안전한 YAML 문자열로 감쌉니다."""
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
+
 def export_to_obsidian(vault_path: str, title: str, content: str, tags: Optional[List[str]] = None) -> Dict[str, Any]:
     """주어진 Obsidian Vault 경로에 Markdown 노트를 생성합니다.
     
@@ -40,7 +45,7 @@ def export_to_obsidian(vault_path: str, title: str, content: str, tags: Optional
 
     # YAML Frontmatter 구성
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    frontmatter = f"---\ntitle: {title}\ndate: {now_str}\n"
+    frontmatter = f"---\ntitle: {yaml_quote(title)}\ndate: {now_str}\n"
     if tags:
         # YAML list 형식으로 변환
         frontmatter += f"tags:\n"

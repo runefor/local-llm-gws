@@ -527,7 +527,7 @@ class RelevanceFeedbackRequest(BaseModel):
     match_reason: str = Field(default="", max_length=2000)
 
 class ArtifactCreateRequest(BaseModel):
-    artifact_type: str = "summary"
+    artifact_type: str = "wiki"
     instruction: str = ""
 
 class ArtifactUpdateRequest(BaseModel):

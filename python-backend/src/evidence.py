@@ -409,7 +409,7 @@ def create_artifact(evidence_set_id: str, artifact_type: str, instruction: str =
 
     llm_resp = chat_completion(
         messages=[{"role": "system", "content": system_prompt}],
-        max_tokens=2048,
+        max_tokens=4096,
         temperature=0.2,
     )
     if "error" in llm_resp:
@@ -422,7 +422,17 @@ def create_artifact(evidence_set_id: str, artifact_type: str, instruction: str =
     else:
         content = str(llm_resp.get("content", "") or "")
         if is_wiki_artifact_type(artifact_type) and not content.strip():
-            content = build_grounded_wiki_fallback(evidence_set, "empty LLM response")
+            retry_resp = chat_completion(
+                messages=[{"role": "system", "content": system_prompt}],
+                max_tokens=8192,
+                temperature=0.2,
+            )
+            if "error" in retry_resp:
+                content = build_grounded_wiki_fallback(evidence_set, f"empty LLM response; retry failed: {retry_resp['error']}")
+            else:
+                content = str(retry_resp.get("content", "") or "")
+            if not content.strip():
+                content = build_grounded_wiki_fallback(evidence_set, "empty LLM response")
 
     artifact = _build_artifact_from_content(
         artifact_id=artifact_id,

@@ -793,14 +793,14 @@ export default function RagSearchPanel() {
 
     setGeneratingArtifact(true);
     showNotification("info", "저장된 정보 묶음에서 Wiki 후보를 생성하는 중입니다...");
-    addLog(`Wiki 후보 생성 요청: 정보 묶음 ${savedEvidenceSet.id}, type=${artifactType}`);
+    addLog(`Wiki 후보 생성 요청: 정보 묶음 ${savedEvidenceSet.id}, type=wiki`);
 
     try {
       const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          artifact_type: artifactType,
+          artifact_type: "wiki",
           instruction: artifactInstruction.trim(),
         }),
       });
@@ -1451,9 +1451,6 @@ export default function RagSearchPanel() {
                 className="w-full bg-white border border-[#e1e3e1] rounded-xl px-3 py-2.5 text-xs text-[#1f1f1f] font-semibold focus:outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] transition-all"
               >
                 <option value="wiki">wiki 후보</option>
-                <option value="summary">summary</option>
-                <option value="brief">brief</option>
-                <option value="memo">memo</option>
               </select>
             </div>
             <div className="flex flex-col gap-1.5">

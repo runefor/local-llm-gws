@@ -180,6 +180,28 @@ class WikiArtifactContractTests(unittest.TestCase):
             self.assertIn("https://drive.google.com/file/d/drive-contract", artifact["content"])
             self.assertEqual(len(artifact["citation_map"]), 1)
 
+    def test_artifact_api_defaults_to_wiki_when_type_is_omitted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            evidence_set = evidence_module.create_evidence_set(
+                title="계약 자료",
+                original_query="계약 일정",
+                evidence_items=[_evidence_item()],
+            )
+            client = TestClient(main.app)
+            with patch("src.llm.inference.chat_completion", return_value={"content": ""}):
+                response = client.post(
+                    f"/api/evidence-sets/{evidence_set.id}/artifacts",
+                    headers=HEADERS,
+                    json={"instruction": "Wiki 후보 작성"},
+                ).json()
+
+            self.assertEqual(response["status"], "success")
+            artifact = response["artifact"]
+            self.assertEqual(artifact["artifact_type"], "wiki")
+            self.assertEqual(artifact["status"], "candidate")
+            self.assertEqual(artifact["lint"]["status"], "passed")
+            self.assertIn("[ev_contract_0]", artifact["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

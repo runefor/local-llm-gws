@@ -46,6 +46,13 @@ def _parse_think(text: str) -> tuple[str, Optional[str]]:
     return text.strip(), None
 
 
+def _message_text(message: Dict[str, Any]) -> tuple[str, Optional[str]]:
+    raw_text = str(message.get("content") or "")
+    content, thought = _parse_think(raw_text)
+    reasoning = str(message.get("reasoning") or message.get("reasoning_content") or "").strip()
+    return content, thought or reasoning or None
+
+
 def chat_completion(
     messages: List[Dict[str, str]],
     model: Optional[str] = None,
@@ -89,6 +96,8 @@ def chat_completion(
         payload["model"] = target_model
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    if config.LLM_SERVE_MODE == "ollama":
+        payload["reasoning"] = {"effort": "none"}
 
     headers = {
         "Content-Type": "application/json",
@@ -101,8 +110,8 @@ def chat_completion(
             resp.raise_for_status()
             data = resp.json()
 
-        raw_text: str = data["choices"][0]["message"]["content"]
-        content, thought = _parse_think(raw_text)
+        message = data["choices"][0]["message"]
+        content, thought = _message_text(message)
 
         return {
             "content": content,
