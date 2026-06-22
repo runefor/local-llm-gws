@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { classifyLlmEndpoint } from "../utils/llmEndpoint";
+import type { WorkspaceItem } from "../context/AppContext";
+import { OriginalDetailModal, OriginalErrorToast } from "./OriginalDetailModal";
+import { fetchOriginalDetail, type OriginalDetail } from "./originalDetail";
 import { ArtifactStatusPanel, type ArtifactLintResult, type ArtifactStatus } from "./rag/ArtifactStatusPanel";
 import { MatchReasonDetails } from "./rag/MatchReasonDetails";
+import { RagEvidenceDetailModal } from "./rag/RagEvidenceDetailModal";
 
 interface CitationMapEntry {
   evidence_id: string;
@@ -40,9 +44,16 @@ interface EvidenceRecord {
   url?: string;
   date?: string;
   score?: number;
+  scores?: EvidenceScores;
   source_location?: SourceLocation;
   citation_map?: CitationMapEntry[];
   metadata?: Record<string, string | number | boolean | null>;
+}
+
+interface EvidenceScores {
+  vector_distance?: number;
+  rrf_score?: number;
+  rank?: number;
 }
 
 interface EvidenceSet {
@@ -185,9 +196,26 @@ const normalizeSourceLocation = (value: unknown): SourceLocation | undefined => 
   };
 };
 
-const formatRelevanceScore = (score?: number): string | undefined => {
-  if (score === undefined || !Number.isFinite(score)) return undefined;
-  return `관련도 점수 ${score.toFixed(score >= 10 ? 0 : 2)}`;
+const normalizeScores = (value: unknown): EvidenceScores | undefined => {
+  const record = toRecord(value);
+  const scores = {
+    vector_distance: toNumberValue(record.vector_distance),
+    rrf_score: toNumberValue(record.rrf_score),
+    rank: toNumberValue(record.rank),
+  };
+  return scores.vector_distance !== undefined || scores.rrf_score !== undefined || scores.rank !== undefined ? scores : undefined;
+};
+
+const formatRelevanceScore = (item: EvidenceRecord): string => {
+  const rank = item.scores?.rank;
+  if (rank !== undefined && Number.isFinite(rank)) {
+    const percent = Math.max(45, 100 - (rank - 1) * 5);
+    return `관련도 ${percent}% · ${rank}위`;
+  }
+  if (item.score !== undefined && Number.isFinite(item.score)) {
+    return `관련도 참고값 ${item.score.toFixed(item.score >= 10 ? 0 : 2)}`;
+  }
+  return "관련도 정보 없음";
 };
 
 const getMetadataString = (item: EvidenceRecord, key: string): string => {
@@ -246,6 +274,7 @@ const normalizeEvidenceRecord = (value: unknown, index: number): EvidenceRecord 
     url: maybeString(record.url),
     date: maybeString(record.date) || maybeString(record.created_at),
     score: toNumberValue(record.score) ?? toNumberValue(scores.rrf_score) ?? toNumberValue(scores.vector_distance),
+    scores: normalizeScores(record.scores),
     source_location: sourceLocation,
     citation_map: normalizeCitationMap(record.citation_map),
     metadata: normalizeMetadata(record.metadata),
@@ -356,6 +385,10 @@ export default function RagSearchPanel() {
   const [gmailSenderFilter, setGmailSenderFilter] = useState("");
   const [feedbackByEvidenceId, setFeedbackByEvidenceId] = useState<Record<string, RelevanceFeedbackValue>>({});
   const [savingFeedbackId, setSavingFeedbackId] = useState<string | null>(null);
+  const [focusedEvidence, setFocusedEvidence] = useState<EvidenceRecord | null>(null);
+  const [originalDetail, setOriginalDetail] = useState<OriginalDetail | null>(null);
+  const [originalLoadingId, setOriginalLoadingId] = useState<string | null>(null);
+  const [originalError, setOriginalError] = useState<string | null>(null);
 
   const reviewRef = useRef<HTMLDivElement>(null);
 
@@ -468,8 +501,42 @@ export default function RagSearchPanel() {
     return `[정보 묶음] ${searchQuery.slice(0, 24)}${searchQuery.length > 24 ? "..." : ""} (${dateStr})`;
   };
 
-  const getEvidenceUrl = (item: EvidenceRecord) => {
-    return item.open_url || item.original_url || item.url || "";
+  const evidenceToWorkspaceItem = (item: EvidenceRecord): WorkspaceItem | null => {
+    if (item.source !== "gmail" && item.source !== "drive") return null;
+
+    const sourceLocation = item.source_location;
+    const id = item.source === "gmail"
+      ? sourceLocation?.message_id || sourceLocation?.provider_item_id || item.doc_id || ""
+      : sourceLocation?.file_id || sourceLocation?.provider_item_id || item.doc_id || "";
+    if (!id) return null;
+
+    return {
+      id,
+      type: item.source,
+      title: item.title,
+      subtitle: item.source === "drive" ? getDriveFileType(item) : getGmailSender(item),
+      snippet: item.snippet,
+      resourceKey: sourceLocation?.resource_key || getMetadataString(item, "resourceKey"),
+      timestamp: item.date || new Date().toISOString(),
+    };
+  };
+
+  const handleOpenOriginal = async (item: EvidenceRecord) => {
+    const workspaceItem = evidenceToWorkspaceItem(item);
+    if (!workspaceItem) {
+      setOriginalError("원문 ID가 없어 전체 원문을 불러올 수 없습니다.");
+      return;
+    }
+
+    setOriginalLoadingId(item.id);
+    setOriginalError(null);
+    try {
+      setOriginalDetail(await fetchOriginalDetail(workspaceItem));
+    } catch (error) {
+      setOriginalError(error instanceof Error ? error.message : "네트워크 오류로 원문을 불러오지 못했습니다.");
+    } finally {
+      setOriginalLoadingId(null);
+    }
   };
 
   const getSourceIcon = (source: string) => {
@@ -549,6 +616,8 @@ export default function RagSearchPanel() {
     setLoading(true);
     setEvidence([]);
     setSelectedEvidenceIds([]);
+    setFocusedEvidence(null);
+    setOriginalDetail(null);
     setFeedbackByEvidenceId({});
     setLastQuery(trimmedQuery);
     setNotification(null);
@@ -1211,8 +1280,7 @@ export default function RagSearchPanel() {
           <div className="grid grid-cols-1 gap-3">
             {filteredEvidence.map((item) => {
               const selected = selectedEvidenceIds.includes(item.id);
-              const url = getEvidenceUrl(item);
-              const relevanceLabel = formatRelevanceScore(item.score);
+              const relevanceLabel = formatRelevanceScore(item);
               const matchReason = getMatchReason(item);
               const currentFeedback = feedbackByEvidenceId[item.id];
               const isSavingFeedback = savingFeedbackId === item.id;
@@ -1242,26 +1310,21 @@ export default function RagSearchPanel() {
                             </span>
                             {item.location_label && <span title={item.location_label} className="max-w-full bg-[#f8fafd] border border-[#e1e3e1] px-2 py-0.5 rounded-full break-words">{item.location_label}</span>}
                             <span>{item.date || "날짜 없음"}</span>
-                            {relevanceLabel && (
-                              <span className="bg-[#f8fafd] border border-[#e1e3e1] px-2 py-0.5 rounded-full font-semibold text-[#1f1f1f]">
-                                {relevanceLabel}
-                              </span>
-                            )}
+                            <span className="bg-[#f8fafd] border border-[#e1e3e1] px-2 py-0.5 rounded-full font-semibold text-[#1f1f1f]">
+                              {relevanceLabel}
+                            </span>
                           </div>
                         </div>
-                        {url && (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[10px] text-[#0b57d0] font-bold hover:underline flex items-center gap-0.5 flex-shrink-0"
-                          >
-                            원문 열기
-                            <span className="material-symbols-rounded text-[13px]">open_in_new</span>
-                          </a>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setFocusedEvidence(item)}
+                          className="text-[10px] text-[#0b57d0] font-bold hover:underline flex items-center gap-0.5 flex-shrink-0"
+                        >
+                          자료 보기
+                          <span className="material-symbols-rounded text-[13px]">open_in_new</span>
+                        </button>
                       </div>
-                      <MatchReasonDetails reason={matchReason} snippet={item.snippet} metadata={item.metadata} />
+                      <MatchReasonDetails reason={matchReason} snippet={item.snippet} metadata={item.metadata} showSnippet={false} />
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <span className="text-xs font-bold text-[#444746]">검색 품질 피드백</span>
                         <button
@@ -1567,6 +1630,25 @@ export default function RagSearchPanel() {
             </button>
           </div>
         </div>
+      )}
+
+      {focusedEvidence && (
+        <RagEvidenceDetailModal
+          item={focusedEvidence}
+          matchReason={getMatchReason(focusedEvidence)}
+          relevanceLabel={formatRelevanceScore(focusedEvidence)}
+          isOriginalLoading={originalLoadingId === focusedEvidence.id}
+          onOpenOriginal={() => { void handleOpenOriginal(focusedEvidence); }}
+          onClose={() => setFocusedEvidence(null)}
+        />
+      )}
+
+      {originalError && (
+        <OriginalErrorToast message={originalError} onClose={() => setOriginalError(null)} />
+      )}
+
+      {originalDetail && (
+        <OriginalDetailModal detail={originalDetail} onClose={() => setOriginalDetail(null)} />
       )}
 
       {showExternalLlmWarning && (

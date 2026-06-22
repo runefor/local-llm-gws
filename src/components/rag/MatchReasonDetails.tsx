@@ -2,6 +2,7 @@ interface MatchReasonDetailsProps {
   reason: string;
   snippet: string;
   metadata?: Record<string, string | number | boolean | null>;
+  showSnippet?: boolean;
 }
 
 const splitMetadataList = (value: string): string[] => {
@@ -13,7 +14,7 @@ const metadataString = (metadata: MatchReasonDetailsProps["metadata"], key: stri
   return typeof value === "string" ? value : "";
 };
 
-export function MatchReasonDetails({ reason, snippet, metadata }: MatchReasonDetailsProps) {
+export function MatchReasonDetails({ reason, snippet, metadata, showSnippet = true }: MatchReasonDetailsProps) {
   const fields = splitMetadataList(metadataString(metadata, "matched_fields"));
   const expandedTerms = splitMetadataList(metadataString(metadata, "expanded_terms"));
   const channels = splitMetadataList(metadataString(metadata, "match_channels"));
@@ -42,7 +43,7 @@ export function MatchReasonDetails({ reason, snippet, metadata }: MatchReasonDet
           ))}
         </div>
       )}
-      {reason && (
+      {reason && showSnippet && (
         <p className="text-[11px] leading-relaxed text-[#444746] whitespace-pre-wrap rounded-xl border border-[#e1e3e1] bg-[#f8fafd] px-3 py-2">
           {snippet}
         </p>
