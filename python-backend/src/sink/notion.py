@@ -1,6 +1,29 @@
 import re
 import httpx
 
+def _rich_text_chunks(content: str) -> list:
+    text = content or ""
+    if not text:
+        return [{"type": "text", "text": {"content": ""}}]
+    return [
+        {"type": "text", "text": {"content": text[index:index + 1900]}}
+        for index in range(0, len(text), 1900)
+    ]
+
+def replace_source_links(content: str, links: list[dict]) -> str:
+    if not links:
+        return content
+
+    lines = [
+        f"- [{link['evidence_id']}] {link['title']}: {link['target']}"
+        for link in links
+    ]
+    section = "## 원문 링크\n" + "\n".join(lines)
+    pattern = r"^## 원문 링크\s*\n.*?(?=^##\s+|\Z)"
+    if re.search(pattern, content, flags=re.MULTILINE | re.DOTALL):
+        return re.sub(pattern, section + "\n\n", content, flags=re.MULTILINE | re.DOTALL).rstrip()
+    return content.rstrip() + "\n\n" + section
+
 def parse_markdown_to_notion_blocks(markdown_text: str) -> list:
     """간단한 Markdown 텍스트를 Notion API 규격에 맞는 Block 리스트로 변환합니다."""
     blocks = []
@@ -11,9 +34,8 @@ def parse_markdown_to_notion_blocks(markdown_text: str) -> list:
         if not line_strip:
             continue
             
-        # rich text 글자 수 제한 (Notion API 한계인 2000자 초과 시 잘라냄)
         def make_rich_text(content: str):
-            return [{"type": "text", "text": {"content": content[:1900]}}]
+            return _rich_text_chunks(content)
 
         # Heading 1
         if line_strip.startswith("# "):
@@ -169,3 +191,75 @@ def export_to_notion(api_key: str, page_id: str, title: str, markdown_content: s
             "status": "error",
             "message": f"Notion 전송 오류: {str(e)}"
         }
+
+def export_to_notion_with_originals(api_key: str, page_id: str, title: str, markdown_content: str, originals: list[dict] | None = None) -> dict:
+    """원문을 별도 하위 페이지로 만들고 LLM Wiki의 원문 링크를 그 페이지 URL로 연결합니다."""
+    if not originals:
+        return export_to_notion(api_key, page_id, title, markdown_content)
+    if not api_key:
+        return {"status": "error", "message": "Notion API Key가 설정되지 않았습니다."}
+    if not page_id:
+        return {"status": "error", "message": "Notion Page ID가 설정되지 않았습니다."}
+
+    formatted_page_id = page_id.strip().replace("-", "")
+    if len(formatted_page_id) == 32:
+        formatted_page_id = (
+            f"{formatted_page_id[:8]}-{formatted_page_id[8:12]}-{formatted_page_id[12:16]}-"
+            f"{formatted_page_id[16:20]}-{formatted_page_id[20:]}"
+        )
+    else:
+        formatted_page_id = page_id.strip()
+
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+    }
+
+    links = []
+    try:
+        for original in originals:
+            evidence_id = original.get("evidence_id", "")
+            original_title = original.get("title", evidence_id or "원문")
+            body = "\n".join(
+                part for part in [
+                    f"- 출처: {original.get('source_line', '')}" if original.get("source_line") else "",
+                    f"- 원문 열기: {original.get('open_url', '')}" if original.get("open_url") else "",
+                    "",
+                    original.get("content", ""),
+                ] if part != ""
+            )
+            body_blocks = parse_markdown_to_notion_blocks(body)
+            page_response = httpx.post(
+                "https://api.notion.com/v1/pages",
+                headers=headers,
+                json={
+                    "parent": {"page_id": formatted_page_id},
+                    "properties": {
+                        "title": {
+                            "title": [{"type": "text", "text": {"content": f"원문 - {original_title}"[:1900]}}]
+                        }
+                    },
+                    "children": body_blocks[:100],
+                },
+                timeout=15.0,
+            )
+            if page_response.status_code != 200:
+                return {"status": "error", "message": f"Notion 원문 페이지 생성 에러 ({page_response.status_code}): {page_response.text}"}
+            data = page_response.json()
+            original_page_id = data.get("id", "")
+            if len(body_blocks) > 100 and original_page_id:
+                children_url = f"https://api.notion.com/v1/blocks/{original_page_id}/children"
+                for index in range(100, len(body_blocks), 100):
+                    chunk_response = httpx.patch(children_url, headers=headers, json={"children": body_blocks[index:index + 100]}, timeout=15.0)
+                    if chunk_response.status_code != 200:
+                        return {"status": "error", "message": f"Notion 원문 본문 추가 에러 ({chunk_response.status_code}): {chunk_response.text}"}
+            links.append({
+                "evidence_id": evidence_id,
+                "title": original_title,
+                "target": data.get("url", ""),
+            })
+
+        return export_to_notion(api_key, formatted_page_id, title, replace_source_links(markdown_content, links))
+    except Exception as e:
+        return {"status": "error", "message": f"Notion 원문 저장 오류: {str(e)}"}

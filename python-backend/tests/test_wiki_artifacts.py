@@ -180,6 +180,156 @@ class WikiArtifactContractTests(unittest.TestCase):
             self.assertIn("https://drive.google.com/file/d/drive-contract", artifact["content"])
             self.assertEqual(len(artifact["citation_map"]), 1)
 
+    def test_wiki_artifact_adds_missing_source_link_and_shortage_sections(self):
+        llm_content = """# 계약 일정 Wiki
+
+## 요약
+- 계약서 최종 검토 마감은 6월 30일이다. [ev_contract_0]
+
+## 핵심 사실
+- 마감 일정은 Drive 원문에서 확인된다. [ev_contract_0]
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            evidence_set = evidence_module.create_evidence_set(
+                title="계약 자료",
+                original_query="계약 일정",
+                evidence_items=[_evidence_item()],
+            )
+            with patch("src.llm.inference.chat_completion", return_value={"content": llm_content}):
+                artifact = evidence_module.create_artifact(evidence_set.id, "wiki", "Wiki 후보 작성")
+
+            self.assertIsNotNone(artifact)
+            assert artifact is not None
+            self.assertEqual(artifact.status, "candidate")
+            self.assertEqual(artifact.lint["status"], "passed")
+            self.assertIn("## 원문 링크", artifact.content)
+            self.assertIn("[ev_contract_0] 계약 일정", artifact.content)
+            self.assertIn("https://drive.google.com/file/d/drive-contract", artifact.content)
+            self.assertIn("## 근거 부족", artifact.content)
+
+    def test_wiki_artifact_adds_review_sections_and_source_map(self):
+        llm_content = """# 계약 일정 Wiki
+
+## 한 줄 결론
+계약 일정을 검토해야 한다. [ev_contract_0]
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            evidence_set = evidence_module.create_evidence_set(
+                title="계약 자료",
+                original_query="계약 일정",
+                evidence_items=[_evidence_item()],
+            )
+            with patch("src.llm.inference.chat_completion", return_value={"content": llm_content}):
+                artifact = evidence_module.create_artifact(evidence_set.id, "wiki", "Wiki 후보 작성")
+
+            self.assertIsNotNone(artifact)
+            assert artifact is not None
+            self.assertEqual(artifact.lint["status"], "passed")
+            self.assertIn("## 확정에 가까운 사실", artifact.content)
+            self.assertIn("## 주장/평가", artifact.content)
+            self.assertIn("## 검증 필요", artifact.content)
+            self.assertIn("## 우리 앱에 주는 의미", artifact.content)
+            self.assertIn("## 관련 페이지", artifact.content)
+            self.assertIn("## 출처 지도", artifact.content)
+            self.assertIn("| 근거 | 출처 | 날짜 | 위치 | 왜 중요한가 |", artifact.content)
+            self.assertIn("제목/본문에서 계약 일정이 일치했습니다.", artifact.content)
+
+    def test_wiki_artifact_flags_subjective_claims_in_confirmed_facts(self):
+        llm_content = """# 계약 일정 Wiki
+
+## 한 줄 결론
+계약 일정을 검토해야 한다. [ev_contract_0]
+
+## 확정에 가까운 사실
+- 이 자료가 가장 좋은 계약 근거다. [ev_contract_0]
+
+## 주장/평가
+- 없음
+
+## 검증 필요
+- 없음
+
+## 우리 앱에 주는 의미
+- 정보 묶음에서 검토한다.
+
+## 관련 페이지
+- [[계약]]
+
+## 출처 지도
+| 근거 | 출처 | 날짜 | 위치 | 왜 중요한가 |
+|---|---|---|---|---|
+| [ev_contract_0] | 계약 일정 | 2026-06-01 | Drive | 계약 일정 |
+
+## 원문 링크
+- [ev_contract_0] 계약 일정: https://drive.google.com/file/d/drive-contract
+
+## 근거 부족
+- 없음
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            evidence_set = evidence_module.create_evidence_set(
+                title="계약 자료",
+                original_query="계약 일정",
+                evidence_items=[_evidence_item()],
+            )
+            with patch("src.llm.inference.chat_completion", return_value={"content": llm_content}):
+                artifact = evidence_module.create_artifact(evidence_set.id, "wiki", "Wiki 후보 작성")
+
+            self.assertIsNotNone(artifact)
+            assert artifact is not None
+            self.assertEqual(artifact.status, "needs_review")
+            self.assertTrue(
+                any(issue["code"] == "subjective_claim_in_confirmed_facts" for issue in artifact.lint["issues"])
+            )
+
+    def test_wiki_artifact_replaces_generic_review_sections_and_dedupes_source_location(self):
+        evidence = _evidence_item()
+        evidence["source_location"] = {
+            "original_url": "https://mail.google.com/mail/u/0/#search/rfc822msgid%3Aabc",
+            "location_label": "Gmail: PyTorchKR",
+            "provider_item_id": "gmail-1",
+            "message_id": "gmail-1",
+            "thread_id": "gmail-1",
+        }
+        llm_content = """# LLM Wiki
+
+## 한 줄 결론
+LLM Wiki를 검토한다. [ev_contract_0]
+
+## 확정에 가까운 사실
+- LLM Wiki 자료가 있다. [ev_contract_0]
+
+## 주장/평가
+- OpenKB는 긍정적으로 평가된다. [ev_contract_0]
+
+## 검증 필요
+- 단일 근거이거나 평가성 표현은 원문 재확인이 필요합니다.
+
+## 우리 앱에 주는 의미
+- 검색 결과를 정보 묶음으로 검토한 뒤 승인 Wiki로 전환합니다.
+
+## 관련 페이지
+- [[Evidence Set]]
+- [[RAG]]
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
+            evidence_set = evidence_module.create_evidence_set(
+                title="LLM Wiki",
+                original_query="llm wiki",
+                evidence_items=[evidence],
+            )
+            with patch("src.llm.inference.chat_completion", return_value={"content": llm_content}):
+                artifact = evidence_module.create_artifact(evidence_set.id, "wiki", "Wiki 후보 작성")
+
+            self.assertIsNotNone(artifact)
+            assert artifact is not None
+            self.assertEqual(artifact.lint["status"], "passed")
+            self.assertNotIn("단일 근거이거나 평가성 표현은 원문 재확인이 필요합니다.", artifact.content)
+            self.assertIn("평가성 표현과 단일 출처 주장은 원문에서 재확인해야 합니다: [ev_contract_0]", artifact.content)
+            self.assertIn("정보 묶음 1개 근거", artifact.content)
+            self.assertIn("Gmail: PyTorchKR / https://mail.google.com", artifact.content)
+            self.assertNotIn("gmail-1 | gmail-1", artifact.content)
+
     def test_artifact_api_defaults_to_wiki_when_type_is_omitted(self):
         with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
             evidence_set = evidence_module.create_evidence_set(

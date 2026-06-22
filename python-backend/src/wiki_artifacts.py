@@ -6,8 +6,19 @@ from pydantic import BaseModel, Field
 
 ArtifactStatus = Literal["candidate", "needs_review", "approved", "source_missing"]
 WIKI_ARTIFACT_TYPES = {"wiki", "llm_wiki", "llm-wiki"}
-REQUIRED_WIKI_SECTIONS = ["요약", "핵심 사실", "원문 링크", "근거 부족"]
+REQUIRED_WIKI_SECTIONS = [
+    "한 줄 결론",
+    "확정에 가까운 사실",
+    "주장/평가",
+    "검증 필요",
+    "우리 앱에 주는 의미",
+    "관련 페이지",
+    "출처 지도",
+    "원문 링크",
+    "근거 부족",
+]
 CITATION_RE = re.compile(r"\[ev_[A-Za-z0-9_\-]+\]")
+SUBJECTIVE_CLAIM_RE = re.compile(r"(가장|최고|최선|나은|좋은|우수|언급|추정|보임|것으로 보)")
 
 
 class ArtifactLintIssue(BaseModel):
@@ -79,6 +90,15 @@ def _has_heading(content: str, heading: str, level: Optional[int] = None) -> boo
     return re.search(pattern, content or "", flags=re.MULTILINE) is not None
 
 
+def _section_text(content: str, heading: str) -> str:
+    match = re.search(
+        r"^##\s+" + re.escape(heading) + r"\s*\n(.*?)(?=^##\s+|\Z)",
+        content or "",
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    return match.group(1) if match else ""
+
+
 def lint_artifact_content(content: str, evidence_set: Any, artifact_type: str) -> ArtifactLintResult:
     issues: List[ArtifactLintIssue] = []
     evidence_items = list(getattr(evidence_set, "evidence_items", []))
@@ -109,6 +129,14 @@ def lint_artifact_content(content: str, evidence_set: Any, artifact_type: str) -
                     message="근거가 있는 Wiki 후보에는 최소 1개 이상의 [ev_...] 인용이 필요합니다.",
                 )
             )
+        for fact_heading in ("확정에 가까운 사실", "핵심 사실"):
+            if SUBJECTIVE_CLAIM_RE.search(_section_text(content, fact_heading)):
+                issues.append(
+                    ArtifactLintIssue(
+                        code="subjective_claim_in_confirmed_facts",
+                        message=f"평가성 표현은 ## {fact_heading}가 아니라 ## 주장/평가 또는 ## 검증 필요에 분리해야 합니다.",
+                    )
+                )
 
     for marker in citation_markers_for_content(content):
         marker_id = marker.strip("[]")

@@ -1,5 +1,6 @@
 import json
 import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -254,24 +255,154 @@ def _artifact_prompt_guidance(artifact_type: str) -> str:
         return "선택된 근거를 바탕으로 유용한 마크다운 산출물을 작성하십시오."
     return (
         "Wiki 산출물 작성 규칙:\n"
-        "- 가능한 범위에서 다음 섹션을 사용하십시오: # 제목, ## 요약, ## 핵심 사실, "
-        "## 관련 사람/프로젝트, ## 결정사항, ## 할 일, ## 원문 링크, ## 근거 부족.\n"
-        "- 각 핵심 사실, 결정사항, 할 일에는 반드시 근거 ID를 붙이십시오.\n"
-        "- 원문 링크 섹션에는 근거 ID, 제목, 위치 라벨 또는 원문 URL을 함께 남기십시오.\n"
-        "- 근거로 확인되지 않는 추론은 작성하지 말고 근거 부족 섹션에 분리하십시오."
+        "- 다음 섹션을 사용하십시오: # 제목, ## 한 줄 결론, ## 확정에 가까운 사실, "
+        "## 주장/평가, ## 검증 필요, ## 우리 앱에 주는 의미, ## 관련 페이지, ## 출처 지도, ## 원문 링크, ## 근거 부족.\n"
+        "- 사실 주장 끝에는 반드시 근거 ID를 붙이십시오. 예: [ev_abcd1234]\n"
+        "- '가장 좋다', '나은 것으로 보인다' 같은 평가성 표현은 ## 주장/평가 또는 ## 검증 필요에만 쓰십시오.\n"
+        "- ## 출처 지도는 근거 ID, 출처 제목, 날짜, 위치, 왜 중요한지를 표로 남기십시오.\n"
+        "- 근거로 확인되지 않는 추론은 작성하지 말고 ## 근거 부족에 분리하십시오."
     )
 
 
 def _format_source_location(location: SourceLocation) -> str:
-    parts = [
+    parts = _unique_parts([
         location.location_label,
         location.original_url,
         location.provider_item_id,
         location.message_id,
         location.thread_id,
         location.file_id,
-    ]
+    ])
     return " | ".join(part for part in parts if part) or "위치 정보 없음"
+
+
+def _unique_parts(parts: List[str]) -> List[str]:
+    seen: set[str] = set()
+    unique: List[str] = []
+    for part in parts:
+        value = str(part or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _primary_source_location(location: SourceLocation) -> str:
+    visible = _unique_parts([location.location_label, location.original_url])
+    if visible:
+        return " / ".join(visible)
+    fallback = _unique_parts([location.file_id, location.message_id, location.provider_item_id, location.thread_id])
+    return fallback[0] if fallback else "위치 정보 없음"
+
+
+def _has_markdown_heading(content: str, heading: str) -> bool:
+    return re.search(r"^##\s+" + re.escape(heading) + r"\s*$", content or "", flags=re.MULTILINE) is not None
+
+
+def _section_text(content: str, heading: str) -> str:
+    match = re.search(
+        r"^##\s+" + re.escape(heading) + r"\s*\n(.*?)(?=^##\s+|\Z)",
+        content or "",
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _replace_section(content: str, heading: str, body: str) -> str:
+    section = f"## {heading}\n{body}"
+    pattern = r"^##\s+" + re.escape(heading) + r"\s*\n.*?(?=^##\s+|\Z)"
+    if re.search(pattern, content, flags=re.MULTILINE | re.DOTALL):
+        return re.sub(pattern, section + "\n\n", content, flags=re.MULTILINE | re.DOTALL).rstrip()
+    return content.rstrip() + "\n\n" + section
+
+
+def _table_cell(value: str) -> str:
+    return " ".join((value or "-").replace("|", "/").split())
+
+
+def _evidence_marker_list(evidence_set: EvidenceSet) -> str:
+    return ", ".join(f"[{evidence.evidence_id}]" for evidence in evidence_set.evidence_items)
+
+
+def _verification_body(evidence_set: EvidenceSet) -> str:
+    markers = _evidence_marker_list(evidence_set)
+    title_counts = Counter(evidence.title for evidence in evidence_set.evidence_items)
+    lines = [f"- 평가성 표현과 단일 출처 주장은 원문에서 재확인해야 합니다: {markers}"]
+    if any(count > 1 for count in title_counts.values()):
+        lines.append("- 같은 제목의 검색 결과가 여러 조각으로 들어왔습니다. 중복 근거를 줄이면 Wiki 품질이 좋아집니다.")
+    return "\n".join(lines)
+
+
+def _app_meaning_body(evidence_set: EvidenceSet) -> str:
+    count = len(evidence_set.evidence_items)
+    return (
+        f"- 이 Wiki는 정보 묶음 {count}개 근거로 만든 후보입니다.\n"
+        "- 출처 지도에서 원문을 열어 평가성 주장과 중복 근거를 확인한 뒤 승인 Wiki로 전환합니다."
+    )
+
+
+def _replace_placeholder_sections(content: str, evidence_set: EvidenceSet) -> str:
+    verification_placeholder = "- 단일 근거이거나 평가성 표현은 원문 재확인이 필요합니다."
+    app_placeholder = "- 검색 결과를 정보 묶음으로 검토한 뒤 승인 Wiki로 전환합니다."
+    updated = content
+    if _section_text(updated, "검증 필요") == verification_placeholder:
+        updated = _replace_section(updated, "검증 필요", _verification_body(evidence_set))
+    if _section_text(updated, "우리 앱에 주는 의미") == app_placeholder:
+        updated = _replace_section(updated, "우리 앱에 주는 의미", _app_meaning_body(evidence_set))
+    return updated
+
+
+def _ensure_wiki_required_sections(content: str, evidence_set: EvidenceSet) -> str:
+    content = _replace_placeholder_sections(content, evidence_set)
+    additions: List[str] = []
+    if not _has_markdown_heading(content, "한 줄 결론"):
+        additions.append("## 한 줄 결론\n저장된 근거를 바탕으로 검토가 필요한 Wiki 후보입니다.")
+    if not _has_markdown_heading(content, "확정에 가까운 사실"):
+        facts = [
+            f"- {evidence.content_snapshot or evidence.snippet or evidence.title} [{evidence.evidence_id}]"
+            for evidence in evidence_set.evidence_items
+        ]
+        additions.append("## 확정에 가까운 사실\n" + ("\n".join(facts) if facts else "- 확인된 근거가 없습니다."))
+    if not _has_markdown_heading(content, "주장/평가"):
+        additions.append("## 주장/평가\n- 저장된 근거만으로 분리된 평가성 주장은 없습니다.")
+    if not _has_markdown_heading(content, "검증 필요"):
+        additions.append("## 검증 필요\n" + _verification_body(evidence_set))
+    if not _has_markdown_heading(content, "우리 앱에 주는 의미"):
+        additions.append("## 우리 앱에 주는 의미\n" + _app_meaning_body(evidence_set))
+    if not _has_markdown_heading(content, "관련 페이지"):
+        additions.append("## 관련 페이지\n- [[Evidence Set]]\n- [[RAG]]")
+    if not _has_markdown_heading(content, "출처 지도"):
+        rows = [
+            "| 근거 | 출처 | 날짜 | 위치 | 왜 중요한가 |",
+            "|---|---|---|---|---|",
+        ]
+        rows.extend(
+            "| "
+            + " | ".join(
+                [
+                    f"[{evidence.evidence_id}]",
+                    _table_cell(evidence.title),
+                    _table_cell(evidence.date),
+                    _table_cell(_primary_source_location(evidence.source_location)),
+                    _table_cell(str(evidence.metadata.get("match_reason") or evidence.snippet or "선택된 근거")),
+                ]
+            )
+            + " |"
+            for evidence in evidence_set.evidence_items
+        )
+        additions.append("## 출처 지도\n" + "\n".join(rows))
+    if not _has_markdown_heading(content, "원문 링크"):
+        links = [
+            f"- [{evidence.evidence_id}] {evidence.title}: {_primary_source_location(evidence.source_location)}"
+            for evidence in evidence_set.evidence_items
+        ]
+        additions.append("## 원문 링크\n" + ("\n".join(links) if links else "- 원문 링크 없음"))
+    if not _has_markdown_heading(content, "근거 부족"):
+        additions.append("## 근거 부족\n- 저장된 근거 밖의 내용은 확인하지 않았습니다.")
+    if not additions:
+        return content
+    return content.rstrip() + "\n\n" + "\n\n".join(additions)
 
 
 def _build_citation_map(content: str, evidence_set: EvidenceSet) -> List[CitationMapEntry]:
@@ -433,6 +564,9 @@ def create_artifact(evidence_set_id: str, artifact_type: str, instruction: str =
                 content = str(retry_resp.get("content", "") or "")
             if not content.strip():
                 content = build_grounded_wiki_fallback(evidence_set, "empty LLM response")
+
+    if is_wiki_artifact_type(artifact_type) and evidence_set.evidence_items:
+        content = _ensure_wiki_required_sections(content, evidence_set)
 
     artifact = _build_artifact_from_content(
         artifact_id=artifact_id,

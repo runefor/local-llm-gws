@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { classifyLlmEndpoint } from "../utils/llmEndpoint";
-import type { WorkspaceItem } from "../context/AppContext";
+import type { OriginalExportDocument, WorkspaceItem } from "../context/AppContext";
 import { OriginalDetailModal, OriginalErrorToast } from "./OriginalDetailModal";
 import { fetchOriginalDetail, type OriginalDetail } from "./originalDetail";
 import { ArtifactStatusPanel, type ArtifactLintResult, type ArtifactStatus } from "./rag/ArtifactStatusPanel";
@@ -94,7 +94,7 @@ type RagSource = "gmail" | "drive";
 type DateFilterMode = "all" | "known" | "unknown";
 type RelevanceFeedbackValue = "relevant" | "irrelevant";
 
-const defaultArtifactInstruction = "선택한 자료 근거만 사용해 Wiki 후보를 만들고, 핵심 사실마다 [ev_...] 근거를 붙여 주세요.";
+const defaultArtifactInstruction = "선택한 자료 근거만 사용해 확정 사실/주장·평가/검증 필요를 분리하고, 출처 지도와 [ev_...] 근거를 붙여 주세요.";
 const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
   { id: "gmail", label: "Gmail", description: "선택 벡터화된 메일 본문에서 찾기", icon: "mail" },
   { id: "drive", label: "Drive", description: "벡터 인덱싱된 문서와 시트에서 찾기", icon: "description" },
@@ -233,6 +233,17 @@ const getGmailSender = (item: EvidenceRecord): string => {
 
 const getMatchReason = (item: EvidenceRecord): string => {
   return getMetadataString(item, "match_reason");
+};
+
+const formatEvidenceSourceLine = (item: EvidenceRecord): string => {
+  const location = item.source_location;
+  return [
+    item.source,
+    item.date,
+    item.location_label || location?.location_label,
+    item.original_url || location?.original_url,
+    location?.provider_item_id || location?.message_id || location?.file_id,
+  ].filter(Boolean).join(" | ");
 };
 
 const formatFileTypeLabel = (mimeType: string): string => {
@@ -510,6 +521,40 @@ export default function RagSearchPanel() {
     };
   };
 
+  const loadExportOriginals = async (): Promise<OriginalExportDocument[]> => {
+    if (!savedEvidenceSet?.evidence_items.length) return [];
+
+    return Promise.all(savedEvidenceSet.evidence_items.map(async (item): Promise<OriginalExportDocument> => {
+      const workspaceItem = evidenceToWorkspaceItem(item);
+      const sourceLine = formatEvidenceSourceLine(item);
+      if (!workspaceItem) {
+        return {
+          evidence_id: item.evidence_id,
+          title: item.title,
+          content: `전체 원문 불러오기 실패: 원문 ID 없음\n\n${item.content_snapshot}`,
+          source_line: sourceLine,
+        };
+      }
+      try {
+        const detail = await fetchOriginalDetail(workspaceItem);
+        return {
+          evidence_id: item.evidence_id,
+          title: detail.title || item.title,
+          content: detail.content,
+          source_line: sourceLine,
+          open_url: detail.open_url,
+        };
+      } catch (error) {
+        return {
+          evidence_id: item.evidence_id,
+          title: item.title,
+          content: `전체 원문 불러오기 실패: ${error instanceof Error ? error.message : "네트워크 오류"}\n\n${item.content_snapshot}`,
+          source_line: sourceLine,
+        };
+      }
+    }));
+  };
+
   const handleOpenOriginal = async (item: EvidenceRecord) => {
     const workspaceItem = evidenceToWorkspaceItem(item);
     if (!workspaceItem) {
@@ -560,7 +605,7 @@ export default function RagSearchPanel() {
     setDraftTitle(set.title);
     setDraftContent("");
     setArtifactInstruction(defaultArtifactInstruction);
-    setArtifactType("summary");
+    setArtifactType("wiki");
   };
 
   const fetchSavedEvidenceSets = useCallback(async () => {
@@ -589,7 +634,7 @@ export default function RagSearchPanel() {
     setDraftTitle("");
     setDraftContent("");
     setArtifactInstruction(defaultArtifactInstruction);
-    setArtifactType("summary");
+    setArtifactType("wiki");
   };
 
   const clearGeneratedArtifact = () => {
@@ -937,10 +982,10 @@ export default function RagSearchPanel() {
     }
 
     setExportingObsidian(true);
-    showNotification("info", "Obsidian Vault에 마크다운 파일을 생성하는 중입니다...");
+    showNotification("info", "전체 원문을 불러와 Obsidian Vault에 저장하는 중입니다...");
 
     try {
-      const res = await exportToObsidian(draftTitle, draftContent, parseTags());
+      const res = await exportToObsidian(draftTitle, draftContent, parseTags(), await loadExportOriginals());
       if (res.status === "success") {
         showNotification("success", `Obsidian 저장 성공! 생성된 노트: ${res.filename}`);
         addLog(`Obsidian 내보내기 완료: ${res.filename}`);
@@ -966,10 +1011,10 @@ export default function RagSearchPanel() {
     }
 
     setExportingNotion(true);
-    showNotification("info", "Notion 페이지로 Wiki 후보를 전송하는 중입니다...");
+    showNotification("info", "전체 원문을 불러와 Notion 페이지로 전송하는 중입니다...");
 
     try {
-      const res = await exportToNotion(draftTitle, draftContent);
+      const res = await exportToNotion(draftTitle, draftContent, await loadExportOriginals());
       if (res.status === "success") {
         showNotification("success", "Notion 페이지에 성공적으로 Wiki 후보가 작성되었습니다.");
         addLog("Notion 내보내기 성공");

@@ -41,8 +41,9 @@ class PipelineContractTests(unittest.TestCase):
         self.assertIsNotNone(artifact)
         assert artifact is not None
         prompt = chat_completion.call_args.kwargs["messages"][0]["content"]
-        self.assertIn("## 핵심 사실", prompt)
-        self.assertIn("## 원문 링크", prompt)
+        self.assertIn("## 확정에 가까운 사실", prompt)
+        self.assertIn("## 주장/평가", prompt)
+        self.assertIn("## 출처 지도", prompt)
         self.assertIn("https://drive.google.com/file/d/doc-1", prompt)
         self.assertEqual(len(artifact.citation_map), 1)
         self.assertEqual(artifact.citation_map[0].evidence_id, "ev_test1234")

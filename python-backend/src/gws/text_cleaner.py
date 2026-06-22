@@ -139,6 +139,18 @@ def _raw_html_to_markdown(text: str) -> str:
         return text
 
     converted = re.sub(r"<(?:script|style|iframe|object|embed|form)\b[^>]*>.*?</(?:script|style|iframe|object|embed|form)>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    converted = re.sub(
+        r"<pre\b[^>]*>\s*(?:<code\b[^>]*>)?(.*?)(?:</code>)?\s*</pre>",
+        lambda match: "\n```\n" + html.unescape(re.sub(r"<[^>]+>", "", match.group(1))).strip("\n") + "\n```\n",
+        converted,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    converted = re.sub(
+        r"<code\b[^>]*>(.*?)</code>",
+        lambda match: "`" + html.unescape(re.sub(r"<[^>]+>", "", match.group(1))).strip() + "`",
+        converted,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     converted = re.sub(r"<img\b[^>]*>", "", converted, flags=re.IGNORECASE)
     converted = re.sub(r"<h1\b[^>]*>(.*?)</h1>", r"\n# \1\n", converted, flags=re.IGNORECASE | re.DOTALL)
     converted = re.sub(r"<h2\b[^>]*>(.*?)</h2>", r"\n## \1\n", converted, flags=re.IGNORECASE | re.DOTALL)
@@ -405,8 +417,18 @@ def clean_original_markdown(markdown: str) -> str:
     lines = _normalize_setext_headings(lines)
     cleaned_lines: list[str] = []
     previous_blank = True
+    in_code_block = False
     for line in lines:
         stripped = line.strip()
+        if stripped == "```":
+            cleaned_lines.append("```")
+            in_code_block = not in_code_block
+            previous_blank = False
+            continue
+        if in_code_block:
+            cleaned_lines.append(line.rstrip())
+            previous_blank = False
+            continue
         if _is_noise_line(stripped):
             continue
         if not stripped:

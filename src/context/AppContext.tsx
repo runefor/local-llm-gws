@@ -120,11 +120,19 @@ interface AppContextType {
   loadPipelineSettings: () => Promise<void>;
   savePipelineSettings: (vaultPath: string, apiKey: string, pageId: string) => Promise<boolean>;
   saveExternalLlmWarningPreference: (suppress: boolean) => Promise<boolean>;
-  exportToObsidian: (title: string, content: string, tags?: string[]) => Promise<{ status: string; message: string; filename?: string; filepath?: string }>;
-  exportToNotion: (title: string, content: string) => Promise<{ status: string; message: string }>;
+  exportToObsidian: (title: string, content: string, tags?: string[], originals?: OriginalExportDocument[]) => Promise<{ status: string; message: string; filename?: string; filepath?: string }>;
+  exportToNotion: (title: string, content: string, originals?: OriginalExportDocument[]) => Promise<{ status: string; message: string }>;
   triggerNotionLogin: () => Promise<void>;
   fetchNotionPages: () => Promise<{ id: string; title: string; url: string }[]>;
 }
+
+export type OriginalExportDocument = {
+  readonly evidence_id: string;
+  readonly title: string;
+  readonly content: string;
+  readonly source_line?: string;
+  readonly open_url?: string;
+};
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -666,13 +674,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Obsidian 내보내기
-  const exportToObsidian = async (title: string, content: string, tags?: string[]) => {
+  const exportToObsidian = async (title: string, content: string, tags?: string[], originals: OriginalExportDocument[] = []) => {
     try {
       addLog(`Obsidian으로 내보내는 중... 제목: "${title}"`);
       const response = await fetch("http://localhost:18731/api/export/obsidian", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content, tags: tags || ["workspace"] })
+        body: JSON.stringify({ title, content, tags: tags || ["workspace"], originals })
       });
       const data = await response.json();
       if (data.status === "success") {
@@ -689,13 +697,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Notion 내보내기
-  const exportToNotion = async (title: string, content: string) => {
+  const exportToNotion = async (title: string, content: string, originals: OriginalExportDocument[] = []) => {
     try {
       addLog(`Notion으로 내보내는 중... 제목: "${title}"`);
       const response = await fetch("http://localhost:18731/api/export/notion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content })
+        body: JSON.stringify({ title, content, originals })
       });
       const data = await response.json();
       if (data.status === "success") {
