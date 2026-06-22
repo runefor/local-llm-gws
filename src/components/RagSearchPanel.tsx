@@ -426,11 +426,14 @@ export default function RagSearchPanel() {
   const filteredSelectedCount = filteredEvidence.filter((item) => selectedEvidenceIds.includes(item.id)).length;
   const allEvidenceSelected = filteredEvidence.length > 0 && filteredSelectedCount === filteredEvidence.length;
   const selectedSourceLabel = selectedSources.map((source) => source === "gmail" ? "Gmail" : "Drive").join(" + ");
-  const indexing = vectorizationProgress.status === "running" && vectorizationProgress.kind === "drive";
+  const vectorizationRunning = vectorizationProgress.status === "running";
+  const gmailVectorizing = vectorizationRunning && vectorizationProgress.kind === "gmail";
+  const indexing = vectorizationRunning && vectorizationProgress.kind === "drive";
   const llmServeMode = llmMode === "internal" ? "llamacpp" : "external";
   const llmEndpointClassification = classifyLlmEndpoint(llmEndpoint, llmServeMode);
   const shouldWarnBeforeExternalGeneration =
     llmEndpointClassification === "external-remote" && !suppressExternalLlmSensitiveWarning;
+  const previousVectorizationStatusRef = useRef(vectorizationProgress.status);
 
   useEffect(() => {
     if (notification) {
@@ -622,6 +625,9 @@ export default function RagSearchPanel() {
         const evidenceItems = Array.isArray(data.evidence)
           ? data.evidence.map((item, index) => normalizeEvidenceRecord(item, index))
           : [];
+        const emptyGmailReason = selectedSources.includes("gmail") && indexStatus?.gmail_chunks === 0
+          ? " Gmail 자료는 Gmail 원본 검색 탭에서 필요한 메일을 선택 벡터화한 뒤 다시 검색하세요."
+          : "";
         setEvidence(evidenceItems);
         setSelectedEvidenceIds([]);
         setEvidenceSetTitle(buildDefaultEvidenceSetTitle(trimmedQuery));
@@ -631,7 +637,7 @@ export default function RagSearchPanel() {
           evidenceItems.length > 0 ? "success" : "warning",
           evidenceItems.length > 0
             ? "자료 찾기가 완료되었습니다. 사용할 자료를 선택한 뒤 정보 묶음으로 저장하세요."
-            : "검색은 완료되었지만 저장할 근거가 없습니다. 다른 검색어를 시도해 주세요."
+            : `검색은 완료되었지만 저장할 근거가 없습니다.${emptyGmailReason || " 다른 검색어를 시도해 주세요."}`
         );
         setTimeout(() => {
           reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -999,6 +1005,13 @@ export default function RagSearchPanel() {
     }
   }, [backendStatus, fetchIndexStatus, fetchSavedEvidenceSets]);
 
+  useEffect(() => {
+    if (previousVectorizationStatusRef.current === "running" && vectorizationProgress.status !== "running" && backendStatus === "online") {
+      fetchIndexStatus();
+    }
+    previousVectorizationStatusRef.current = vectorizationProgress.status;
+  }, [backendStatus, fetchIndexStatus, vectorizationProgress.status]);
+
   return (
     <div className="bg-white rounded-2xl p-6 border border-[#e1e3e1] shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] flex flex-col gap-6 w-full">
       <div className="flex items-center justify-between border-b border-[#e1e3e1] pb-4 flex-wrap gap-3">
@@ -1015,15 +1028,15 @@ export default function RagSearchPanel() {
         <button
           type="button"
           onClick={handleIndexing}
-          disabled={indexing || backendStatus !== "online"}
+          disabled={vectorizationRunning || backendStatus !== "online"}
           className="text-xs bg-[#d3e3fd] hover:bg-[#c0d8fc] text-[#0b57d0] font-semibold py-1.5 px-4 rounded-full cursor-pointer disabled:cursor-default disabled:opacity-50 transition-all flex items-center gap-1.5"
         >
-          <span className={`material-symbols-rounded text-sm ${indexing ? "animate-spin" : ""}`}>sync</span>
-          {indexing ? "갱신 중..." : "벡터 인덱스 갱신"}
+          <span className={`material-symbols-rounded text-sm ${vectorizationRunning ? "animate-spin" : ""}`}>sync</span>
+          {gmailVectorizing ? "Gmail 벡터화 중..." : indexing ? "갱신 중..." : "벡터 인덱스 갱신"}
         </button>
       </div>
 
-      {indexing && (
+      {vectorizationRunning && (
         <div className="rounded-2xl border border-primary/15 bg-primary-container/35 p-3 text-xs text-primary">
           <div className="flex items-center justify-between gap-3 font-semibold">
             <span>{vectorizationProgress.label}</span>
@@ -1032,7 +1045,11 @@ export default function RagSearchPanel() {
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${vectorizationProgress.progress}%` }} />
           </div>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-text-secondary">다른 탭으로 이동해도 백그라운드에서 계속 처리됩니다.</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-text-secondary">
+            {gmailVectorizing
+              ? "Gmail 벡터화는 Gmail 원본 검색 탭에서 시작한 작업입니다. 완료되면 이 탭의 근거 수를 자동으로 다시 확인합니다."
+              : "다른 탭으로 이동해도 백그라운드에서 계속 처리됩니다."}
+          </p>
         </div>
       )}
 
@@ -1141,7 +1158,7 @@ export default function RagSearchPanel() {
                 <input
                   type="checkbox"
                   checked={selected}
-                  disabled={isLastSelected || indexing || loading || backendStatus !== "online"}
+                  disabled={isLastSelected || vectorizationRunning || loading || backendStatus !== "online"}
                   onChange={() => toggleSource(option.id)}
                   className="mt-0.5 h-4 w-4 rounded border-[#e1e3e1] accent-[#0b57d0] disabled:opacity-60"
                   aria-label={`${option.label} 검색 재료 선택`}
