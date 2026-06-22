@@ -11,6 +11,22 @@ $BackendDir = Join-Path $RepoRoot "python-backend"
 $TauriBinDir = Join-Path $RepoRoot "src-tauri\bin"
 $SidecarBaseName = "gws-backend"
 
+if (-not $env:UV_CACHE_DIR) {
+    $env:UV_CACHE_DIR = Join-Path $RepoRoot ".uv-cache"
+}
+
+function Invoke-CheckedNative {
+    param(
+        [scriptblock]$Command,
+        [string]$Label
+    )
+
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Resolve-TargetTriple {
     if ($TargetTriple.Trim().Length -gt 0) {
         return $TargetTriple.Trim()
@@ -56,14 +72,14 @@ Push-Location $BackendDir
 try {
     if (-not $SkipInstall) {
         if (-not (Test-Path -LiteralPath ".venv")) {
-            uv venv
+            Invoke-CheckedNative { uv venv } "uv venv"
         }
 
-        uv pip install -r requirements.txt
-        uv pip install pyinstaller
+        Invoke-CheckedNative { uv pip install -r requirements.txt } "uv pip install requirements"
+        Invoke-CheckedNative { uv pip install pyinstaller } "uv pip install pyinstaller"
     }
 
-    uv run pyinstaller --noconfirm --clean --onefile --name $SidecarBaseName main.py
+    Invoke-CheckedNative { uv run pyinstaller --noconfirm --clean --onefile --collect-all chromadb --name $SidecarBaseName main.py } "PyInstaller"
 }
 finally {
     Pop-Location

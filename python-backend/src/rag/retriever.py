@@ -2,10 +2,9 @@ import logging
 import pickle
 import re
 from typing import Dict, Any, List, Optional
-import chromadb
 from config import config
 from src.llm.inference import chat_completion
-from src.rag.indexer import clean_rag_text, get_embedding_model, get_chroma_client, normalize_sources
+from src.rag.indexer import clean_rag_text, get_embedding_model, get_chroma_client, get_chroma_collection, normalize_sources
 from src.evidence import EvidenceRecord, EvidenceScores, SourceLocation
 from src.rag.match_reason import (
     MAX_MATCH_TERMS,
@@ -190,7 +189,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
         # Gmail 벡터 검색
         if "gmail" in selected_sources:
             try:
-                gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+                gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
                 gmail_res = gmail_col.query(
                     query_embeddings=[query_vector],
                     n_results=pool_size
@@ -210,7 +209,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
         # Drive 벡터 검색
         if "drive" in selected_sources:
             try:
-                drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+                drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
                 drive_res = drive_col.query(
                     query_embeddings=[query_vector],
                     n_results=pool_size
@@ -287,7 +286,7 @@ def get_gmail_chunks_by_message_ids(message_ids: List[str]) -> List[Dict[str, An
 
     selected = set(normalized_ids)
     client = get_chroma_client()
-    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+    gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
     data = gmail_col.get(limit=10000, include=["documents", "metadatas"])
     chunks = []
     if not data or not data.get("ids"):

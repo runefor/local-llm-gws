@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
+name = "local-llm-gws"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Local LLM Google Workspace desktop app"
+authors = ["fkjy1"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,4 +30,3 @@ opt-level = 0
 
 [profile.dev.package."*"]
 opt-level = 3
-

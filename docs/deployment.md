@@ -6,14 +6,14 @@
 
 ## 1. 배포 빌드 워크플로우 개요
 
-전체 배포판을 빌드하는 흐름은 다음과 같습니다.
+Windows 피드백 배포판을 빌드하는 흐름은 다음과 같습니다.
 
 ```mermaid
 graph TD
     A[1. Frontend 빌드: npm run build] --> B[2. Python 백엔드 바이너리 컴파일: PyInstaller]
     B --> C[3. 바이너리를 Tauri Sidecar 규격에 맞춰 이름 변경 및 이동]
-    C --> D[4. Tauri 최종 앱 빌드: npm run tauri build]
-    D --> E[5. 플랫폼별 설치 파일 배포: MSI/DMG/DEB]
+    C --> D[4. Tauri 최종 앱 빌드: npm run build:desktop]
+    D --> E[5. NSIS 설치 파일 배포]
 ```
 
 ---
@@ -57,15 +57,30 @@ Tauri는 크로스 플랫폼 빌드를 위해, sidecar 바이너리 파일명 �
    * **macOS 예시**: `python-backend/dist/gws-backend` -> `src-tauri/bin/gws-backend-aarch64-apple-darwin`
 
 ### [4단계] Tauri 최종 패키징 빌드
-모든 리소스와 백엔드 바이너리가 준비되었으므로, Tauri CLI를 사용하여 최종 플랫폼별 배포 설치 파일(예: `.msi`, `.dmg`)을 빌드합니다.
+모든 리소스와 백엔드 바이너리가 준비되었으므로, Tauri CLI를 사용하여 최종 Windows NSIS 설치 파일을 빌드합니다.
 ```bash
-npm run tauri build
+npm run build:desktop
 ```
-* 빌드가 완료되면 `src-tauri/target/release/bundle/` 경로 아래에 각 OS에 맞는 설치 파일 패키지가 최종 생성됩니다.
+* 빌드가 완료되면 `src-tauri/target/release/bundle/nsis/` 경로 아래에 설치 파일이 생성됩니다.
+
+## 3. 피드백 배포 전 Windows smoke
+
+피드백 사용자에게 보내기 전에는 아래만 확인합니다.
+
+```powershell
+npm run build:desktop
+src-tauri\target\release\local-llm-gws.exe
+Invoke-RestMethod http://127.0.0.1:18731/
+Get-Process gws-backend -ErrorAction SilentlyContinue
+```
+
+- 첫 실행 후 화면 제목이 `Local LLM GWS`로 보이는지 확인합니다.
+- 앱 종료 뒤 `gws-backend` 프로세스와 `18731` 리스너가 남지 않아야 합니다.
+- Google 로그인/Drive 검색/RAG 상태 중 하나라도 실제 계정으로 한 번 눌러 봅니다.
 
 ---
 
-## 3. 배포 설정 관리 (tauri.conf.json)
+## 4. 배포 설정 관리 (tauri.conf.json)
 
 배포 빌드 시 sidecar가 제대로 포함되도록 `src-tauri/tauri.conf.json`의 `bundle` 설정을 확인해야 합니다.
 

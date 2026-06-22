@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Local LLM GWS",
   "version": "0.1.0",
-  "identifier": "com.fkjy1.tauri-app",
+  "identifier": "com.fkjy1.localllmgws",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:18732",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "tauri-app",
+        "title": "Local LLM GWS",
         "width": 1280,
         "height": 860,
         "minWidth": 1180,
@@ -28,7 +28,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "externalBin": [
       "bin/gws-backend"
     ],

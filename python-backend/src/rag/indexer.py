@@ -3,8 +3,6 @@ import hashlib
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-import chromadb
-from sentence_transformers import SentenceTransformer
 from markdownify import markdownify as md
 import os
 import re
@@ -43,16 +41,32 @@ def clean_rag_text(text: str) -> str:
 def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer
+
         logger.info("SentenceTransformer 모델 로드 중...")
         _embedding_model = SentenceTransformer("intfloat/multilingual-e5-small")
     return _embedding_model
 
 def get_chroma_client():
+    import chromadb
+    import chromadb.utils.embedding_functions as embedding_functions
     from chromadb.config import Settings
+
+    if not hasattr(embedding_functions, "ONNXMiniLM_L6_V2"):
+        from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+
+        embedding_functions.ONNXMiniLM_L6_V2 = ONNXMiniLM_L6_V2
+
     return chromadb.PersistentClient(
         path=str(config.CHROMA_DB_PATH),
         settings=Settings(anonymized_telemetry=False)
     )
+
+def get_chroma_collection(client, name: str):
+    try:
+        return client.get_or_create_collection(name, embedding_function=None)
+    except TypeError:
+        return client.get_or_create_collection(name)
 
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
     """텍스트를 청크 단위로 분할합니다."""
@@ -225,8 +239,8 @@ def rebuild_bm25_index() -> Dict[str, Any]:
     """ChromaDB의 전체 문서를 읽어 BM25 인덱스를 생성하고 파일로 저장합니다."""
     logger.info("BM25 인덱스 생성 시작...")
     client = get_chroma_client()
-    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
-    drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+    gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
+    drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
     
     # ChromaDB에서 모든 문서 가져오기 (충분히 큰 한계값 설정)
     gmail_data = gmail_col.get(limit=10000, include=["documents", "metadatas"])
@@ -288,7 +302,7 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
     """주어진 Gmail 상세 메시지 리스트를 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
     model = None
-    gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
+    gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
     
     gmail_indexed = 0
     for msg_detail in msg_details:
@@ -364,7 +378,7 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
     """주어진 Google Drive 파일 리스트를 다운로드 및 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
     model = None
-    drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+    drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
     
     drive_indexed = 0
     for f in files:
@@ -476,8 +490,8 @@ def get_index_status() -> Dict[str, Any]:
     """현재 ChromaDB 인덱스 상태 정보를 조회합니다."""
     try:
         client = get_chroma_client()
-        gmail_col = client.get_or_create_collection(config.CHROMA_COLLECTION_GMAIL)
-        drive_col = client.get_or_create_collection(config.CHROMA_COLLECTION_DRIVE)
+        gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
+        drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
         
         gmail_count = gmail_col.count()
         drive_count = drive_col.count()
