@@ -14,6 +14,7 @@ from src.rag.match_reason import (
     _unique_strings,
     _with_match_metadata,
 )
+from src.rag.personalization import apply_relevance_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +261,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
     else:
         hybrid_results = vector_pool
         
-    return hybrid_results[:top_k]
+    return apply_relevance_feedback(query, hybrid_results)[:top_k]
 
 def search_evidence(query: str, top_k: int = 8, sources: Optional[List[str]] = None) -> Dict[str, Any]:
     selected_sources = normalize_sources(sources)
