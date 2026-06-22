@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 
 export interface GmailItem {
   id: string;
@@ -15,6 +15,14 @@ export interface GmailVectorizeResult {
   status: string;
   message?: string;
   indexed?: number;
+}
+
+export interface VectorizationProgress {
+  status: "idle" | "running" | "done" | "error";
+  kind: "gmail" | "drive";
+  label: string;
+  progress: number;
+  message?: string;
 }
 
 interface GmailSearchResponse {
@@ -86,12 +94,15 @@ interface AppContextType {
   syncProgress: number;
   syncLog: string[];
   setSyncLog: React.Dispatch<React.SetStateAction<string[]>>;
+  vectorizationProgress: VectorizationProgress;
+  recentVectorizedGmailIds: string[];
   checkBackend: () => Promise<void>;
   checkGwsAuth: () => Promise<void>;
   loadGmailLabels: () => Promise<void>;
   searchGmailMetadata: (query?: string, maxEmails?: number | null, labelIds?: string[]) => Promise<void>;
   searchDriveMetadata: (query?: string, maxItems?: number | null) => Promise<boolean>;
   vectorizeGmailMessages: (messageIds: string[]) => Promise<GmailVectorizeResult>;
+  indexRagSources: (sources: string[]) => Promise<Record<string, unknown>>;
   searchWorkspaceOriginals: (query?: string, maxItems?: number | null) => Promise<void>;
   handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
   addLog: (msg: string) => void;
@@ -142,6 +153,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncLog, setSyncLog] = useState<string[]>([]);
+  const [vectorizationProgress, setVectorizationProgress] = useState<VectorizationProgress>({
+    status: "idle",
+    kind: "gmail",
+    label: "",
+    progress: 0,
+  });
+  const [recentVectorizedGmailIds, setRecentVectorizedGmailIds] = useState<string[]>([]);
+  const vectorizationTimerRef = useRef<number | null>(null);
 
   // 지식 파이프라인 연동 설정 상태
   const [obsidianVaultPath, setObsidianVaultPath] = useState("");
@@ -152,6 +171,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
     setSyncLog((prev) => [`[${time}] ${msg}`, ...prev.slice(0, 49)]);
+  };
+
+  const stopVectorizationTicker = () => {
+    if (vectorizationTimerRef.current !== null) {
+      window.clearInterval(vectorizationTimerRef.current);
+      vectorizationTimerRef.current = null;
+    }
+  };
+
+  const startVectorizationTicker = () => {
+    stopVectorizationTicker();
+    vectorizationTimerRef.current = window.setInterval(() => {
+      setVectorizationProgress((current) => {
+        if (current.status !== "running") return current;
+        return { ...current, progress: Math.min(92, current.progress + (current.progress < 60 ? 6 : 2)) };
+      });
+    }, 800);
+  };
+
+  const beginVectorization = (kind: VectorizationProgress["kind"], label: string) => {
+    setVectorizationProgress({ status: "running", kind, label, progress: 3, message: "백그라운드에서 처리 중입니다." });
+    startVectorizationTicker();
+  };
+
+  const finishVectorization = (status: "done" | "error", message: string) => {
+    stopVectorizationTicker();
+    setVectorizationProgress((current) => ({ ...current, status, progress: status === "done" ? 100 : current.progress, message }));
   };
 
   // 백엔드 연결 확인 (Ping)
@@ -302,7 +348,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addLog(`Gmail 선택 메일 벡터화 실패: ${message}`);
       return { status: "error", message };
     }
+    if (vectorizationProgress.status === "running") {
+      const message = "이미 벡터화 작업이 실행 중입니다.";
+      addLog(`Gmail 선택 메일 벡터화 보류: ${message}`);
+      return { status: "error", message };
+    }
 
+    beginVectorization("gmail", `Gmail 선택 메일 ${messageIds.length}개 벡터화`);
     addLog(`Gmail 선택 메일 벡터화 시작: ${messageIds.length}개`);
     try {
       const response = await fetch("http://localhost:18731/api/gmail/vectorize", {
@@ -313,13 +365,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const data: GmailVectorizeResult = await response.json();
       if (data.status === "success") {
         addLog(`Gmail 선택 메일 벡터화 완료: ${data.indexed ?? messageIds.length}개 인덱싱`);
+        setRecentVectorizedGmailIds((prev) => Array.from(new Set([...prev, ...messageIds])));
+        finishVectorization("done", data.message || `${data.indexed ?? messageIds.length}개 메일 벡터화 완료`);
       } else {
         addLog(`Gmail 선택 메일 벡터화 실패: ${data.message || "알 수 없는 오류"}`);
+        finishVectorization("error", data.message || "선택 메일 벡터화에 실패했습니다.");
       }
       return data;
     } catch (error) {
       const message = error instanceof Error ? error.message : "네트워크 오류";
       addLog(`Gmail 선택 메일 벡터화 오류: ${message}`);
+      finishVectorization("error", message);
+      return { status: "error", message };
+    }
+  };
+
+  const indexRagSources = async (sources: string[]): Promise<Record<string, unknown>> => {
+    if (backendStatus !== "online") {
+      const message = "백엔드 서버가 오프라인입니다.";
+      addLog(`벡터 인덱스 갱신 실패: ${message}`);
+      return { status: "error", message };
+    }
+    if (vectorizationProgress.status === "running") {
+      const message = "이미 벡터화 작업이 실행 중입니다.";
+      addLog(`벡터 인덱스 갱신 보류: ${message}`);
+      return { status: "error", message };
+    }
+
+    const label = sources.includes("drive") ? "Drive 벡터 인덱스 갱신" : "벡터 인덱스 갱신";
+    beginVectorization("drive", label);
+    addLog(`${label} 작업 실행 중...`);
+    try {
+      const response = await fetch("http://localhost:18731/api/rag/index", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sources }),
+      });
+      const data = await response.json() as Record<string, unknown>;
+      if (data.status === "success") {
+        const driveIndexed = typeof data.drive_indexed === "number" ? data.drive_indexed : 0;
+        addLog(`벡터 인덱스 갱신 완료: Drive ${driveIndexed}개 처리`);
+        finishVectorization("done", `Drive ${driveIndexed}개 인덱스 갱신 완료`);
+      } else {
+        const message = typeof data.message === "string" ? data.message : "알 수 없는 오류";
+        addLog(`벡터 인덱스 갱신 실패: ${message}`);
+        finishVectorization("error", message);
+      }
+      return data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "네트워크 오류";
+      addLog(`벡터 인덱스 갱신 오류: ${message}`);
+      finishVectorization("error", message);
       return { status: "error", message };
     }
   };
@@ -721,6 +817,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [backendStatus, isGwsAuthenticated]);
 
+  useEffect(() => {
+    return () => stopVectorizationTicker();
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -747,12 +847,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         syncProgress,
         syncLog,
         setSyncLog,
+        vectorizationProgress,
+        recentVectorizedGmailIds,
         checkBackend,
         checkGwsAuth,
         loadGmailLabels,
         searchGmailMetadata,
         searchDriveMetadata,
         vectorizeGmailMessages,
+        indexRagSources,
         searchWorkspaceOriginals,
         handleLlmTest,
         addLog,

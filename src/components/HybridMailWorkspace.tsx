@@ -36,6 +36,8 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
     loadGmailLabels,
     gmailItems,
     syncStatus,
+    vectorizationProgress,
+    recentVectorizedGmailIds,
     searchGmailMetadata,
     vectorizeGmailMessages,
   } = useApp();
@@ -51,13 +53,13 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
   const [selectedConditionId, setSelectedConditionId] = useState("");
   const [savedConditions, setSavedConditions] = useState<SavedSearchCondition<GmailSearchConditionValues>[]>(() => loadSavedSearchConditions<GmailSearchConditionValues>(gmailSearchConditionKey));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [vectorizedIds, setVectorizedIds] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
-  const [vectorizing, setVectorizing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const messageIdSet = useMemo(() => new Set(gmailItems.map(getMessageId)), [gmailItems]);
+  const vectorizedIds = useMemo(() => recentVectorizedGmailIds.filter((id) => messageIdSet.has(id)), [messageIdSet, recentVectorizedGmailIds]);
   const vectorizedSelectedCount = selectedIds.filter((id) => vectorizedIds.includes(id)).length;
+  const vectorizing = vectorizationProgress.status === "running" && vectorizationProgress.kind === "gmail";
   const isBusy = searching || vectorizing || syncStatus === "syncing";
   const canUseGmail = backendStatus === "online" && isGwsAuthenticated;
   const generatedMetadataQuery = buildMetadataQuery({
@@ -77,7 +79,6 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
 
   useEffect(() => {
     setSelectedIds((prev) => prev.filter((id) => messageIdSet.has(id)));
-    setVectorizedIds((prev) => prev.filter((id) => messageIdSet.has(id)));
   }, [messageIdSet]);
 
   const showNotice = (type: Notice["type"], text: string) => {
@@ -116,7 +117,6 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
     setSearching(true);
     setNotice(null);
     setSelectedIds([]);
-    setVectorizedIds([]);
     try {
       const parsedMaxEmails = Number.parseInt(maxEmails, 10);
       await searchGmailMetadata(generatedMetadataQuery || undefined, Number.isNaN(parsedMaxEmails) ? 25 : parsedMaxEmails, selectedLabelIds);
@@ -164,13 +164,10 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
   const handleVectorize = async () => {
     if (!canUseGmail || selectedIds.length === 0) return;
 
-    setVectorizing(true);
     setNotice(null);
     const result = await vectorizeGmailMessages(selectedIds);
-    setVectorizing(false);
 
     if (result.status === "success") {
-      setVectorizedIds((prev) => Array.from(new Set([...prev, ...selectedIds])));
       showNotice("success", result.message || `${result.indexed ?? selectedIds.length}개의 선택 메일이 벡터화되었습니다.`);
       return;
     }
@@ -239,6 +236,7 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
           gmailItems={gmailItems}
           selectedIds={selectedIds}
           vectorizedSelectedCount={vectorizedSelectedCount}
+          vectorizationProgress={vectorizing ? vectorizationProgress.progress : 0}
           metadataKeyword={metadataKeyword}
           metadataSender={metadataSender}
           metadataPeriod={metadataPeriod}

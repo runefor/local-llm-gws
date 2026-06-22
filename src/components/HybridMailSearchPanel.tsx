@@ -17,6 +17,7 @@ type HybridMailSearchPanelProps = {
   readonly gmailItems: readonly GmailItem[];
   readonly selectedIds: readonly string[];
   readonly vectorizedSelectedCount: number;
+  readonly vectorizationProgress: number;
   readonly metadataKeyword: string;
   readonly metadataSender: string;
   readonly metadataPeriod: MetadataPeriod;
@@ -56,6 +57,7 @@ export function HybridMailSearchPanel({
   gmailItems,
   selectedIds,
   vectorizedSelectedCount,
+  vectorizationProgress,
   metadataKeyword,
   metadataSender,
   metadataPeriod,
@@ -87,6 +89,11 @@ export function HybridMailSearchPanel({
   const selectedLabelNames = gmailLabels
     .filter((label) => selectedLabelIds.includes(label.id))
     .map((label) => label.name);
+  const progressValue = vectorizing
+    ? vectorizationProgress
+    : selectedIds.length === 0
+      ? 0
+      : Math.round((vectorizedSelectedCount / selectedIds.length) * 100);
 
   return (
     <>
@@ -231,8 +238,11 @@ export function HybridMailSearchPanel({
               <span>선택 <strong className="text-primary">{selectedIds.length}</strong>개</span>
             </div>
             <div className="mt-1.5 h-2 rounded-full bg-surface overflow-hidden">
-              <div className="h-full bg-primary transition-all" style={{ width: selectedIds.length === 0 ? "0%" : `${Math.round((vectorizedSelectedCount / selectedIds.length) * 100)}%` }} />
+              <div className="h-full bg-primary transition-all" style={{ width: `${progressValue}%` }} />
             </div>
+            {vectorizing && (
+              <p className="mt-1 text-[10px] font-semibold text-primary">백그라운드 벡터화 {progressValue}%</p>
+            )}
           </div>
           {isDesktop && (
             <button type="button" onClick={onVectorize} disabled={!canUseGmail || selectedIds.length === 0 || vectorizing} className="shrink-0 bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white font-semibold px-4 py-1.5 rounded-full text-[11px] transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1">

@@ -341,7 +341,9 @@ export default function RagSearchPanel() {
     llmEndpoint,
     llmMode,
     suppressExternalLlmSensitiveWarning,
-    saveExternalLlmWarningPreference
+    saveExternalLlmWarningPreference,
+    vectorizationProgress,
+    indexRagSources
   } = useApp();
 
   const [query, setQuery] = useState("");
@@ -378,7 +380,6 @@ export default function RagSearchPanel() {
   } | null>(null);
 
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
-  const [indexing, setIndexing] = useState(false);
   const [selectedSources, setSelectedSources] = useState<RagSource[]>(["gmail", "drive"]);
   const [dateFilter, setDateFilter] = useState<DateFilterMode>("all");
   const [driveFileTypeFilter, setDriveFileTypeFilter] = useState("");
@@ -425,6 +426,7 @@ export default function RagSearchPanel() {
   const filteredSelectedCount = filteredEvidence.filter((item) => selectedEvidenceIds.includes(item.id)).length;
   const allEvidenceSelected = filteredEvidence.length > 0 && filteredSelectedCount === filteredEvidence.length;
   const selectedSourceLabel = selectedSources.map((source) => source === "gmail" ? "Gmail" : "Drive").join(" + ");
+  const indexing = vectorizationProgress.status === "running" && vectorizationProgress.kind === "drive";
   const llmServeMode = llmMode === "internal" ? "llamacpp" : "external";
   const llmEndpointClassification = classifyLlmEndpoint(llmEndpoint, llmServeMode);
   const shouldWarnBeforeExternalGeneration =
@@ -469,30 +471,14 @@ export default function RagSearchPanel() {
   };
 
   const handleIndexing = async () => {
-    setIndexing(true);
-    addLog("ChromaDB 지식베이스 인덱싱 작업 실행 중...");
     showNotification("info", "선택한 출처의 벡터 인덱스를 갱신하는 중입니다...");
-    try {
-        const response = await fetch("http://localhost:18731/api/rag/index", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sources: selectedSources }),
-        });
-      const data = toRecord(await response.json());
-      if (data.status === "success") {
-        addLog(`인덱싱 완료! ${selectedSourceLabel} 기준으로 Gmail ${toNumberValue(data.gmail_indexed) ?? 0}개, Drive ${toNumberValue(data.drive_indexed) ?? 0}개 처리.`);
-        showNotification("success", "벡터 인덱스 갱신이 완료되었습니다.");
-        fetchIndexStatus();
-      } else {
-        const message = toStringValue(data.message, "알 수 없는 오류");
-        addLog(`인덱싱 실패: ${message}`);
-        showNotification("error", `인덱싱 실패: ${message}`);
-      }
-    } catch (err) {
-      addLog("인덱싱 실패: 네트워크 에러");
-      showNotification("error", "네트워크 에러로 인덱싱에 실패했습니다.");
-    } finally {
-      setIndexing(false);
+    const data = await indexRagSources(selectedSources);
+    if (data.status === "success") {
+      showNotification("success", `${selectedSourceLabel} 벡터 인덱스 갱신이 완료되었습니다.`);
+      fetchIndexStatus();
+    } else {
+      const message = toStringValue(data.message, "알 수 없는 오류");
+      showNotification("error", `인덱싱 실패: ${message}`);
     }
   };
 
@@ -1036,6 +1022,19 @@ export default function RagSearchPanel() {
           {indexing ? "갱신 중..." : "벡터 인덱스 갱신"}
         </button>
       </div>
+
+      {indexing && (
+        <div className="rounded-2xl border border-primary/15 bg-primary-container/35 p-3 text-xs text-primary">
+          <div className="flex items-center justify-between gap-3 font-semibold">
+            <span>{vectorizationProgress.label}</span>
+            <span>{Math.round(vectorizationProgress.progress)}%</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${vectorizationProgress.progress}%` }} />
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-text-secondary">다른 탭으로 이동해도 백그라운드에서 계속 처리됩니다.</p>
+        </div>
+      )}
 
       {indexStatus && (
         <div className="flex flex-wrap gap-4 text-xs bg-[#f8fafd] border border-[#e1e3e1] p-3.5 rounded-2xl text-[#444746] font-medium">
