@@ -30,8 +30,8 @@ class NotionExportTests(unittest.TestCase):
 ## 원문 링크
 - [ev_contract_0] 기존 링크
 
-## 근거 부족
-- 없음
+## 확인 범위
+- 저장된 정보 묶음 밖의 자료는 별도로 확인하지 않았습니다.
 """
         patches = []
 

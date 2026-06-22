@@ -15,7 +15,7 @@ REQUIRED_WIKI_SECTIONS = [
     "관련 페이지",
     "출처 지도",
     "원문 링크",
-    "근거 부족",
+    "확인 범위",
 ]
 CITATION_RE = re.compile(r"\[ev_[A-Za-z0-9_\-]+\]")
 SUBJECTIVE_CLAIM_RE = re.compile(r"(가장|최고|최선|나은|좋은|우수|언급|추정|보임|것으로 보)")

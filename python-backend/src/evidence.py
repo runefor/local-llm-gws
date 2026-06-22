@@ -256,11 +256,11 @@ def _artifact_prompt_guidance(artifact_type: str) -> str:
     return (
         "Wiki 산출물 작성 규칙:\n"
         "- 다음 섹션을 사용하십시오: # 제목, ## 한 줄 결론, ## 확정에 가까운 사실, "
-        "## 주장/평가, ## 검증 필요, ## 우리 앱에 주는 의미, ## 관련 페이지, ## 출처 지도, ## 원문 링크, ## 근거 부족.\n"
+        "## 주장/평가, ## 검증 필요, ## 우리 앱에 주는 의미, ## 관련 페이지, ## 출처 지도, ## 원문 링크, ## 확인 범위.\n"
         "- 사실 주장 끝에는 반드시 근거 ID를 붙이십시오. 예: [ev_abcd1234]\n"
         "- '가장 좋다', '나은 것으로 보인다' 같은 평가성 표현은 ## 주장/평가 또는 ## 검증 필요에만 쓰십시오.\n"
         "- ## 출처 지도는 근거 ID, 출처 제목, 날짜, 위치, 왜 중요한지를 표로 남기십시오.\n"
-        "- 근거로 확인되지 않는 추론은 작성하지 말고 ## 근거 부족에 분리하십시오."
+        "- 저장된 정보 묶음 밖의 자료는 별도로 확인했다고 쓰지 마십시오."
     )
 
 
@@ -398,8 +398,12 @@ def _ensure_wiki_required_sections(content: str, evidence_set: EvidenceSet) -> s
             for evidence in evidence_set.evidence_items
         ]
         additions.append("## 원문 링크\n" + ("\n".join(links) if links else "- 원문 링크 없음"))
-    if not _has_markdown_heading(content, "근거 부족"):
-        additions.append("## 근거 부족\n- 저장된 근거 밖의 내용은 확인하지 않았습니다.")
+    if not _has_markdown_heading(content, "확인 범위"):
+        additions.append(
+            "## 확인 범위\n"
+            "- 이 Wiki는 저장된 정보 묶음의 근거만 기준으로 작성했습니다.\n"
+            "- 저장된 정보 묶음 밖의 자료는 별도로 확인하지 않았습니다."
+        )
     if not additions:
         return content
     return content.rstrip() + "\n\n" + "\n\n".join(additions)
@@ -502,7 +506,7 @@ def create_artifact(evidence_set_id: str, artifact_type: str, instruction: str =
             "## 요약\n원문 근거가 없어 Wiki 후보를 만들 수 없습니다.\n\n"
             "## 핵심 사실\n- 확인 가능한 원문 근거가 없습니다.\n\n"
             "## 원문 링크\n- 원문 링크 없음\n\n"
-            "## 근거 부족\n- 검색 결과 또는 선택 근거를 먼저 정보 묶음으로 저장해야 합니다."
+            "## 확인 범위\n- 검색 결과 또는 선택 근거를 먼저 정보 묶음으로 저장해야 합니다."
         )
         artifact = _build_artifact_from_content(
             artifact_id=artifact_id,
@@ -530,7 +534,7 @@ def create_artifact(evidence_set_id: str, artifact_type: str, instruction: str =
         "아래 근거 밖의 내용은 추측하지 마십시오.\n"
         "사실 주장이나 요약 항목 끝에는 반드시 해당 근거 ID를 대괄호로 인용하십시오. "
         "예: [ev_abcd1234]\n"
-        "근거가 부족한 내용은 '근거 부족'이라고 명시하십시오.\n"
+        "저장된 정보 묶음 밖의 자료는 별도로 확인했다고 쓰지 마십시오.\n"
         f"산출물 유형: {artifact_type}\n"
         f"사용자 지시: {instruction or '선택된 근거를 바탕으로 유용한 마크다운 산출물을 작성'}\n"
         f"{_artifact_prompt_guidance(artifact_type)}\n\n"

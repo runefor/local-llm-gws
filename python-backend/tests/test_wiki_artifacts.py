@@ -49,8 +49,8 @@ VALID_WIKI = """# 계약 일정 Wiki
 ## 원문 링크
 - [ev_contract_0] 계약 일정: https://drive.google.com/file/d/drive-contract
 
-## 근거 부족
-- 추가 의사결정자는 확인되지 않았다.
+## 확인 범위
+- 저장된 정보 묶음 밖의 자료는 별도로 확인하지 않았습니다.
 """
 
 
@@ -180,7 +180,7 @@ class WikiArtifactContractTests(unittest.TestCase):
             self.assertIn("https://drive.google.com/file/d/drive-contract", artifact["content"])
             self.assertEqual(len(artifact["citation_map"]), 1)
 
-    def test_wiki_artifact_adds_missing_source_link_and_shortage_sections(self):
+    def test_wiki_artifact_adds_missing_source_link_and_scope_sections(self):
         llm_content = """# 계약 일정 Wiki
 
 ## 요약
@@ -205,7 +205,8 @@ class WikiArtifactContractTests(unittest.TestCase):
             self.assertIn("## 원문 링크", artifact.content)
             self.assertIn("[ev_contract_0] 계약 일정", artifact.content)
             self.assertIn("https://drive.google.com/file/d/drive-contract", artifact.content)
-            self.assertIn("## 근거 부족", artifact.content)
+            self.assertIn("## 확인 범위", artifact.content)
+            self.assertIn("저장된 정보 묶음의 근거만 기준으로 작성했습니다.", artifact.content)
 
     def test_wiki_artifact_adds_review_sections_and_source_map(self):
         llm_content = """# 계약 일정 Wiki
@@ -263,8 +264,8 @@ class WikiArtifactContractTests(unittest.TestCase):
 ## 원문 링크
 - [ev_contract_0] 계약 일정: https://drive.google.com/file/d/drive-contract
 
-## 근거 부족
-- 없음
+## 확인 범위
+- 저장된 정보 묶음 밖의 자료는 별도로 확인하지 않았습니다.
 """
         with tempfile.TemporaryDirectory() as tmp_dir, patch.object(evidence_module, "STORE_PATH", Path(tmp_dir) / "evidence_store.json"):
             evidence_set = evidence_module.create_evidence_set(

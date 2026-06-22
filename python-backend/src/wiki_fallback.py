@@ -70,9 +70,9 @@ def build_grounded_wiki_fallback(evidence_set: WikiEvidenceSet, error: str = "")
             f"{_table_cell(_format_source_location(evidence.source_location))} | {_table_cell(snapshot)} |"
         )
 
-    shortage = "- LLM 응답을 받지 못해 저장된 근거를 인용한 로컬 Wiki 초안으로 대체했습니다."
+    scope_note = "- 이 Wiki는 저장된 정보 묶음의 근거만 기준으로 작성했습니다."
     if error:
-        shortage += f" 원인: {error}"
+        scope_note += f" LLM 응답을 받지 못해 로컬 초안으로 대체했습니다. 원인: {error}"
 
     return (
         f"# {evidence_set.title} Wiki\n\n"
@@ -93,6 +93,7 @@ def build_grounded_wiki_fallback(evidence_set: WikiEvidenceSet, error: str = "")
         + "\n\n"
         "## 원문 링크\n"
         + "\n".join(link_lines)
-        + "\n\n## 근거 부족\n"
-        + shortage
+        + "\n\n## 확인 범위\n"
+        + scope_note
+        + "\n- 저장된 정보 묶음 밖의 자료는 별도로 확인하지 않았습니다."
     )
