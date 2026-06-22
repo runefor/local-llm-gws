@@ -90,6 +90,7 @@ interface AppContextType {
   checkGwsAuth: () => Promise<void>;
   loadGmailLabels: () => Promise<void>;
   searchGmailMetadata: (query?: string, maxEmails?: number | null, labelIds?: string[]) => Promise<void>;
+  searchDriveMetadata: (query?: string, maxItems?: number | null) => Promise<boolean>;
   vectorizeGmailMessages: (messageIds: string[]) => Promise<GmailVectorizeResult>;
   searchWorkspaceOriginals: (query?: string, maxItems?: number | null) => Promise<void>;
   handleLlmTest: (overrideEndpoint?: string, overrideModel?: string) => Promise<void>;
@@ -320,6 +321,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const message = error instanceof Error ? error.message : "네트워크 오류";
       addLog(`Gmail 선택 메일 벡터화 오류: ${message}`);
       return { status: "error", message };
+    }
+  };
+
+  const searchDriveMetadata = async (query?: string, maxItems?: number | null) => {
+    if (backendStatus !== "online") {
+      addLog("오류: 백엔드 서버가 오프라인입니다.");
+      return false;
+    }
+
+    setSyncStatus("syncing");
+    setSyncProgress(0);
+    addLog(query ? `Drive 원본 검색 시작 (검색어: "${query}")...` : "Drive 원본 검색 시작...");
+
+    try {
+      const response = await fetch("http://localhost:18731/api/sync/drive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          max_emails: maxItems === null ? undefined : maxItems ?? 30,
+          query: query || undefined,
+        })
+      });
+      const data: OriginalSearchResponse = await response.json();
+
+      if (data.status === "success") {
+        setDriveItems(data.files || []);
+        setSyncProgress(100);
+        setSyncStatus("done");
+        addLog(`Drive 원본 검색 완료: ${data.count ?? data.files?.length ?? 0}개`);
+        return true;
+      } else {
+        setSyncStatus("error");
+        addLog(`Drive 원본 검색 실패: ${data.message || "알 수 없는 오류"}`);
+        return false;
+      }
+    } catch (error) {
+      setSyncStatus("error");
+      addLog(`Drive 원본 검색 중 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
+      return false;
     }
   };
 
@@ -711,6 +751,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         checkGwsAuth,
         loadGmailLabels,
         searchGmailMetadata,
+        searchDriveMetadata,
         vectorizeGmailMessages,
         searchWorkspaceOriginals,
         handleLlmTest,

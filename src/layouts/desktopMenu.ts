@@ -1,4 +1,4 @@
-export type DesktopMenu = "hybrid" | "sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs";
+export type DesktopMenu = "hybrid" | "drive" | "sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs";
 
 type MenuItem = {
   readonly id: DesktopMenu;
@@ -21,6 +21,12 @@ export const menuSections = [
         icon: "mail",
         label: "Gmail 원본 검색",
         description: "GWS 메일을 찾고 선택 벡터화",
+      },
+      {
+        id: "drive",
+        icon: "folder_special",
+        label: "Drive 원본 검색",
+        description: "Drive 문서를 상세 조건으로 찾기",
       },
       {
         id: "workspace",

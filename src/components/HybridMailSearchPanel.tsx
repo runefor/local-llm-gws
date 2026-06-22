@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import type { GmailItem, GmailLabel } from "../context/AppContext";
 import { metadataExampleChips, metadataPeriodOptions } from "./hybridMailHelpers";
 import type { MetadataPeriod } from "./hybridMailHelpers";
+import type { SavedSearchCondition } from "./savedSearchConditions";
 
 type HybridMailSearchPanelProps = {
   readonly canUseGmail: boolean;
@@ -21,6 +22,9 @@ type HybridMailSearchPanelProps = {
   readonly metadataHasAttachment: boolean;
   readonly labelSearch: string;
   readonly maxEmails: string;
+  readonly conditionName: string;
+  readonly selectedConditionId: string;
+  readonly savedConditions: readonly SavedSearchCondition<unknown>[];
   readonly isGwsAuthenticated: boolean;
   readonly onSubmit: (event: FormEvent) => void;
   readonly onToggleAll: () => void;
@@ -30,6 +34,10 @@ type HybridMailSearchPanelProps = {
   readonly onHasAttachmentChange: (value: boolean) => void;
   readonly onLabelSearchChange: (value: string) => void;
   readonly onMaxEmailsChange: (value: string) => void;
+  readonly onConditionNameChange: (value: string) => void;
+  readonly onSelectedConditionChange: (value: string) => void;
+  readonly onSaveCondition: () => void;
+  readonly onApplyCondition: () => void;
   readonly onToggleLabel: (labelId: string) => void;
   readonly onLoadGmailLabels: () => void;
   readonly onVectorize: () => void;
@@ -52,6 +60,9 @@ export function HybridMailSearchPanel({
   metadataHasAttachment,
   labelSearch,
   maxEmails,
+  conditionName,
+  selectedConditionId,
+  savedConditions,
   isGwsAuthenticated,
   onSubmit,
   onToggleAll,
@@ -61,6 +72,10 @@ export function HybridMailSearchPanel({
   onHasAttachmentChange,
   onLabelSearchChange,
   onMaxEmailsChange,
+  onConditionNameChange,
+  onSelectedConditionChange,
+  onSaveCondition,
+  onApplyCondition,
   onToggleLabel,
   onLoadGmailLabels,
   onVectorize,
@@ -123,6 +138,31 @@ export function HybridMailSearchPanel({
               ))}
             </div>
           )}
+        </div>
+
+        <div className="rounded-2xl border border-surface-variant bg-white p-3">
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-text-primary">
+            <span className="material-symbols-rounded text-sm text-primary">bookmark</span>
+            저장 조건
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <input type="text" value={conditionName} onChange={(event) => onConditionNameChange(event.target.value)} disabled={!canUseGmail || searching} placeholder="조건 이름" className="w-full rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary transition-all placeholder:text-text-secondary/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50" />
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+              <select value={selectedConditionId} onChange={(event) => onSelectedConditionChange(event.target.value)} disabled={!canUseGmail || searching || savedConditions.length === 0} className="min-w-0 rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50">
+                <option value="">불러올 조건 선택</option>
+                {savedConditions.map((condition) => (
+                  <option key={condition.id} value={condition.id}>{condition.name}</option>
+                ))}
+              </select>
+              <button type="button" onClick={onSaveCondition} disabled={!canUseGmail || searching} className="rounded-full border border-surface-variant bg-surface px-3 py-2 text-[11px] font-semibold text-text-primary hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50">
+                저장
+              </button>
+              <button type="button" onClick={onApplyCondition} disabled={!canUseGmail || searching || savedConditions.length === 0} className="rounded-full bg-primary px-3 py-2 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40">
+                적용
+              </button>
+            </div>
+            <p className="text-[11px] leading-relaxed text-text-secondary">적용은 입력값만 채우고 검색은 실행하지 않습니다.</p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

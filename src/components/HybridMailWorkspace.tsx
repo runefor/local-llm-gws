@@ -5,6 +5,7 @@ import { HybridMailResultsPanel } from "./HybridMailResultsPanel";
 import { HybridMailSearchPanel } from "./HybridMailSearchPanel";
 import { buildMetadataQuery, getMessageId } from "./hybridMailHelpers";
 import type { MetadataPeriod } from "./hybridMailHelpers";
+import { loadSavedSearchConditions, saveSearchCondition, type SavedSearchCondition } from "./savedSearchConditions";
 
 interface HybridMailWorkspaceProps {
   isDesktop?: boolean;
@@ -14,6 +15,17 @@ type Notice = {
   type: "success" | "error" | "info";
   text: string;
 };
+
+type GmailSearchConditionValues = {
+  readonly keyword: string;
+  readonly sender: string;
+  readonly period: MetadataPeriod;
+  readonly hasAttachment: boolean;
+  readonly labelIds: string[];
+  readonly maxEmails: string;
+};
+
+const gmailSearchConditionKey = "local-llm-gws:gmail-original-search-conditions:v1";
 
 export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWorkspaceProps) {
   const {
@@ -35,6 +47,9 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
   const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
   const [labelSearch, setLabelSearch] = useState("");
   const [maxEmails, setMaxEmails] = useState("25");
+  const [conditionName, setConditionName] = useState("");
+  const [selectedConditionId, setSelectedConditionId] = useState("");
+  const [savedConditions, setSavedConditions] = useState<SavedSearchCondition<GmailSearchConditionValues>[]>(() => loadSavedSearchConditions<GmailSearchConditionValues>(gmailSearchConditionKey));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [vectorizedIds, setVectorizedIds] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
@@ -111,6 +126,39 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
     } finally {
       setSearching(false);
     }
+  };
+
+  const handleSaveCondition = () => {
+    if (!conditionName.trim()) {
+      showNotice("info", "저장할 조건 이름을 먼저 입력하세요.");
+      return;
+    }
+    const nextConditions = saveSearchCondition<GmailSearchConditionValues>(gmailSearchConditionKey, conditionName, {
+      keyword: metadataKeyword,
+      sender: metadataSender,
+      period: metadataPeriod,
+      hasAttachment: metadataHasAttachment,
+      labelIds: selectedLabelIds,
+      maxEmails,
+    });
+    setSavedConditions(nextConditions);
+    setSelectedConditionId(nextConditions[0]?.id ?? "");
+    showNotice("success", "Gmail 검색 조건을 저장했습니다.");
+  };
+
+  const handleApplyCondition = () => {
+    const condition = savedConditions.find((item) => item.id === selectedConditionId);
+    if (!condition) {
+      showNotice("info", "적용할 저장 조건을 선택하세요.");
+      return;
+    }
+    setMetadataKeyword(condition.values.keyword);
+    setMetadataSender(condition.values.sender);
+    setMetadataPeriod(condition.values.period);
+    setMetadataHasAttachment(condition.values.hasAttachment);
+    setSelectedLabelIds(condition.values.labelIds);
+    setMaxEmails(condition.values.maxEmails);
+    showNotice("success", "Gmail 검색 조건을 입력값에 적용했습니다. 검색은 실행하지 않았습니다.");
   };
 
   const handleVectorize = async () => {
@@ -196,6 +244,9 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
           metadataHasAttachment={metadataHasAttachment}
           labelSearch={labelSearch}
           maxEmails={maxEmails}
+          conditionName={conditionName}
+          selectedConditionId={selectedConditionId}
+          savedConditions={savedConditions}
           isGwsAuthenticated={isGwsAuthenticated}
           onSubmit={handleSearch}
           onToggleAll={toggleAll}
@@ -205,6 +256,10 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
           onHasAttachmentChange={setMetadataHasAttachment}
           onLabelSearchChange={setLabelSearch}
           onMaxEmailsChange={setMaxEmails}
+          onConditionNameChange={setConditionName}
+          onSelectedConditionChange={setSelectedConditionId}
+          onSaveCondition={handleSaveCondition}
+          onApplyCondition={handleApplyCondition}
           onToggleLabel={toggleLabel}
           onLoadGmailLabels={loadGmailLabels}
           onVectorize={handleVectorize}

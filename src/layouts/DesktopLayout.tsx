@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import Titlebar from "../components/Titlebar";
 import SyncPanel from "../components/SyncPanel";
+import DriveSearchWorkspace from "../components/DriveSearchWorkspace";
 import HybridMailWorkspace from "../components/HybridMailWorkspace";
 import MultiViewWorkspace from "../components/MultiViewWorkspace";
 import LlmConfigPanel from "../components/LlmConfigPanel";
@@ -179,6 +180,12 @@ export default function DesktopLayout() {
           {activeMenu === "hybrid" && (
             <div className="h-full min-h-0 overflow-hidden">
               <HybridMailWorkspace isDesktop={true} />
+            </div>
+          )}
+
+          {activeMenu === "drive" && (
+            <div className="h-full min-h-0 overflow-hidden">
+              <DriveSearchWorkspace isDesktop={true} />
             </div>
           )}
 
