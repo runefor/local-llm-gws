@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 import chromadb
 from config import config
 from src.llm.inference import chat_completion
-from src.rag.indexer import get_embedding_model, get_chroma_client, normalize_sources
+from src.rag.indexer import clean_rag_text, get_embedding_model, get_chroma_client, normalize_sources
 from src.evidence import EvidenceRecord, EvidenceScores, SourceLocation
 from src.rag.match_reason import (
     MAX_MATCH_TERMS,
@@ -135,7 +135,7 @@ def chunk_to_evidence_record(chunk: Dict[str, Any], rank: int) -> EvidenceRecord
     chunk_id = chunk.get("id") or f"{source_type}_{meta.get('doc_id', 'unknown')}_{rank}"
     doc_id = meta.get("doc_id") or meta.get("provider_item_id") or chunk_id
     title = meta.get("title") or meta.get("name") or "(제목 없음)"
-    content = chunk.get("content") or ""
+    content = clean_rag_text(chunk.get("content") or "")
     snippet = content[:240] + "..." if len(content) > 240 else content
     location = SourceLocation(
         original_url=meta.get("original_url") or meta.get("webViewLink") or "",
@@ -199,7 +199,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
                     for i in range(len(gmail_res["documents"][0])):
                         _add_ranked_result(vector_results, _with_match_metadata({
                             "id": gmail_res["ids"][0][i],
-                            "content": gmail_res["documents"][0][i],
+                            "content": clean_rag_text(gmail_res["documents"][0][i]),
                             "metadata": gmail_res["metadatas"][0][i],
                             "distance": gmail_res["distances"][0][i] if "distances" in gmail_res and gmail_res["distances"] else 0.0,
                             "source": "gmail"
@@ -219,7 +219,7 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
                     for i in range(len(drive_res["documents"][0])):
                         _add_ranked_result(vector_results, _with_match_metadata({
                             "id": drive_res["ids"][0][i],
-                            "content": drive_res["documents"][0][i],
+                            "content": clean_rag_text(drive_res["documents"][0][i]),
                             "metadata": drive_res["metadatas"][0][i],
                             "distance": drive_res["distances"][0][i] if "distances" in drive_res and drive_res["distances"] else 0.0,
                             "source": "drive"
@@ -248,7 +248,8 @@ def retrieve_chunks(query: str, top_k: int = 5, sources: Optional[List[str]] = N
                 valid_res = []
                 for idx, score in enumerate(scores):
                     if score > 0.0 and chunks[idx].get("source") in selected_sources:
-                        valid_res.append((score, _with_match_metadata(chunks[idx], "keyword", query_expansions)))
+                        clean_chunk = {**chunks[idx], "content": clean_rag_text(chunks[idx].get("content") or "")}
+                        valid_res.append((score, _with_match_metadata(clean_chunk, "keyword", query_expansions)))
                 # 점수 역순 정렬
                 valid_res.sort(key=lambda x: x[0], reverse=True)
                 bm25_pool = _filter_low_signal_chunks([item[1] for item in valid_res])[:pool_size]

@@ -138,7 +138,8 @@ def _raw_html_to_markdown(text: str) -> str:
     if "<" not in text or ">" not in text:
         return text
 
-    converted = re.sub(r"<img\b[^>]*>", "", text, flags=re.IGNORECASE)
+    converted = re.sub(r"<(?:script|style|iframe|object|embed|form)\b[^>]*>.*?</(?:script|style|iframe|object|embed|form)>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    converted = re.sub(r"<img\b[^>]*>", "", converted, flags=re.IGNORECASE)
     converted = re.sub(r"<h1\b[^>]*>(.*?)</h1>", r"\n# \1\n", converted, flags=re.IGNORECASE | re.DOTALL)
     converted = re.sub(r"<h2\b[^>]*>(.*?)</h2>", r"\n## \1\n", converted, flags=re.IGNORECASE | re.DOTALL)
     converted = re.sub(r"<h3\b[^>]*>(.*?)</h3>", r"\n### \1\n", converted, flags=re.IGNORECASE | re.DOTALL)

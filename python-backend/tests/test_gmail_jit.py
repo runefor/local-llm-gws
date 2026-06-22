@@ -390,6 +390,22 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertTrue(any("계약서" in expansion for expansion in result["query_expansions"]))
         self.assertEqual(result["evidence"][0]["metadata"]["match_reason"], "의미 검색 매칭: 계약, 일정")
 
+    def test_evidence_record_strips_html_markup_from_existing_vector_content(self):
+        chunk = {
+            "id": "drive_f1_0",
+            "content": '<h1>전략 문서</h1><p>계약 일정 <a href="https://example.com">링크</a></p>',
+            "metadata": {"doc_id": "f1", "title": "전략 문서", "source": "drive"},
+            "distance": 0.2,
+            "source": "drive",
+        }
+
+        evidence = retriever.chunk_to_evidence_record(chunk, rank=1)
+
+        self.assertIn("# 전략 문서", evidence.content_snapshot)
+        self.assertIn("계약 일정", evidence.content_snapshot)
+        self.assertNotIn("<h1", evidence.content_snapshot)
+        self.assertNotIn("<a href", evidence.snippet)
+
     def test_rejects_untrusted_browser_origin(self):
         client = TestClient(main.app)
 
@@ -529,6 +545,39 @@ class GmailJitEndpointTests(unittest.TestCase):
         self.assertEqual(metadata["labelIds"], "INBOX,IMPORTANT")
         self.assertEqual(metadata["label_ids"], "INBOX,IMPORTANT")
         self.assertEqual(metadata["sender"], "a@example.com")
+
+    def test_selected_gmail_index_strips_html_before_vector_storage(self):
+        import base64
+
+        collection = _FakeCollection()
+        html = '<html><body><h1>계약 일정</h1><script>noise()</script><p>본문입니다.</p></body></html>'
+        message = {
+            "id": "m1",
+            "threadId": "t1",
+            "internalDate": "1767225600000",
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Hello"},
+                    {"name": "From", "value": "a@example.com"},
+                ],
+                "mimeType": "text/html",
+                "body": {"data": base64.urlsafe_b64encode(html.encode()).decode().rstrip("=")},
+            },
+        }
+        with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(collection)), \
+             patch("src.rag.indexer.get_embedding_model", return_value=_FakeModel()):
+            indexed = indexer.index_gmail_raw([message])
+
+        self.assertEqual(indexed, 1)
+        payload = collection.upsert_payload
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        document = payload["documents"][0]
+        self.assertIn("# 계약 일정", document)
+        self.assertIn("본문입니다.", document)
+        self.assertNotIn("<h1", document)
+        self.assertNotIn("<script", document)
+        self.assertNotIn("noise()", document)
 
     def test_drive_index_persists_owner_creator_metadata(self):
         collection = _FakeCollection()

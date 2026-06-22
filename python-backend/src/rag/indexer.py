@@ -16,6 +16,7 @@ from config import config
 from src.gws.auth import is_authenticated
 from src.gws.gmail import list_messages, get_message
 from src.gws.drive import list_drive_files
+from src.gws.text_cleaner import clean_original_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,10 @@ def normalize_sources(sources: Optional[List[str]] = None) -> List[str]:
 # 임베딩 모델 캐싱
 _embedding_model = None
 
+def clean_rag_text(text: str) -> str:
+    """Strip HTML/layout noise before vector storage or search display."""
+    return clean_original_markdown(text)
+
 def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
@@ -52,6 +57,7 @@ def get_chroma_client():
 
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
     """텍스트를 청크 단위로 분할합니다."""
+    text = clean_rag_text(text)
     if not text:
         return []
     chunks = []
@@ -90,6 +96,10 @@ def _compact_people(value: Any) -> str:
 def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
 
+def _decode_gmail_body_data(data: str) -> str:
+    padded = data + ("=" * (-len(data) % 4))
+    return base64.urlsafe_b64decode(padded).decode("utf-8", errors="ignore")
+
 def _existing_ids_for_doc(collection, doc_id: str) -> List[str]:
     existing = collection.get(where={"doc_id": doc_id}, include=[])
     if not existing:
@@ -120,14 +130,14 @@ def parse_gmail_body(message_detail: Dict[str, Any]) -> str:
         
         if mime_type == "text/plain" and data:
             try:
-                decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                body_text += decoded + "\n"
+                decoded = _decode_gmail_body_data(data)
+                body_text += clean_rag_text(decoded) + "\n"
             except Exception:
                 pass
         elif mime_type == "text/html" and data and not body_text:
             try:
-                decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                body_text += md(decoded) + "\n"
+                decoded = _decode_gmail_body_data(data)
+                body_text += clean_rag_text(md(decoded)) + "\n"
             except Exception:
                 pass
                 
@@ -141,12 +151,12 @@ def parse_gmail_body(message_detail: Dict[str, Any]) -> str:
     
     if data and mime_type == "text/plain":
         try:
-            body_text = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+            body_text = clean_rag_text(_decode_gmail_body_data(data))
         except Exception:
             pass
     elif data and mime_type == "text/html":
         try:
-            body_text = md(base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore"))
+            body_text = clean_rag_text(md(_decode_gmail_body_data(data)))
         except Exception:
             pass
     else:
@@ -168,7 +178,7 @@ def fetch_drive_file_content(file_id: str, mime_type: str) -> str:
         if mime_type == 'application/vnd.google-apps.document':
             request = service.files().export_media(fileId=file_id, mimeType='text/html')
             html_content = request.execute().decode('utf-8', errors='ignore')
-            return md(html_content)
+            return clean_rag_text(md(html_content))
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
             request = service.files().export_media(fileId=file_id, mimeType='text/csv')
             csv_content = request.execute().decode('utf-8', errors='ignore')
@@ -176,7 +186,7 @@ def fetch_drive_file_content(file_id: str, mime_type: str) -> str:
         elif mime_type == 'text/plain':
             request = service.files().get_media(fileId=file_id)
             text_content = request.execute().decode('utf-8', errors='ignore')
-            return text_content
+            return clean_rag_text(text_content)
     except Exception as e:
         logger.error(f"드라이브 파일 {file_id} 다운로드 실패: {e}")
         
