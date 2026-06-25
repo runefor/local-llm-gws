@@ -105,6 +105,8 @@ export default function LlmConfigPanel() {
         }
       }
     } catch (e) {
+      const detail = e instanceof Error ? e.message : "알 수 없는 오류";
+      addLog(`LLM 설정 데이터 로드 실패: ${detail}`);
       console.error("LLM 데이터 로드 실패", e);
       setBackendOffline(true);
     } finally {
@@ -129,7 +131,6 @@ export default function LlmConfigPanel() {
         fetchServerStatus();
       } else {
         addLog(`내장 서버 기동 실패: ${data.message}`);
-        alert(`서버 기동에 실패했습니다: ${data.message}`);
       }
     } catch (err) {
       addLog("서버 기동 요청 중 에러 발생");
@@ -251,7 +252,6 @@ export default function LlmConfigPanel() {
             setProgress(0);
             const message = data.error || data.message || "알 수 없는 오류";
             addLog(`다운로드 오류: ${message}`);
-            alert(`다운로드 중 오류가 발생했습니다: ${message}`);
           } else if (data.status === "not_found") {
             setDownloading(null);
             setProgress(0);
@@ -286,7 +286,6 @@ export default function LlmConfigPanel() {
       if (!response.ok || data.status !== "success") {
         const message = data.message || "다운로드 시작 실패";
         addLog(`다운로드 요청 실패: ${message}`);
-        alert(`다운로드 요청에 실패했습니다: ${message}`);
         setDownloading(null);
         setProgress(0);
         return;
@@ -321,22 +320,19 @@ export default function LlmConfigPanel() {
 
   if (backendOffline) {
     return (
-      <div className="bg-surface rounded-2xl p-6 border border-red-500/20 shadow-sm bg-red-500/5">
-        <h2 className="text-base font-semibold mb-3 flex items-center text-red-600 dark:text-red-400">
-          <span className="material-symbols-rounded mr-2">wifi_off</span>
-          LLM 백엔드 오프라인
+      <div className="bg-surface rounded-2xl p-6 border border-primary-container/70 shadow-sm">
+        <h2 className="text-base font-semibold mb-3 flex items-center text-text-primary">
+          <span className="material-symbols-rounded mr-2 text-primary">hourglass_empty</span>
+          LLM 설정 준비 중
         </h2>
         <div className="text-sm text-text-secondary leading-relaxed space-y-3">
-          <p>파이썬 백엔드 서버에 연결할 수 없습니다. 백엔드 프로그램이 구동 중인지 확인해 주세요.</p>
-          <div className="bg-gray-100 dark:bg-black/30 p-3 rounded border border-surface-variant text-xs font-mono text-text-primary">
-            대상 API: http://localhost:18731/api/llm/presets
-          </div>
+          <p>로컬 백엔드가 준비되면 모델 목록과 서버 상태가 이곳에 자동으로 표시됩니다. 연결 시도 기록은 실행 로그에 보관됩니다.</p>
           <button 
             type="button"
             onClick={fetchModels}
-            className="mt-2 bg-primary hover:bg-primary/95 text-white px-4 py-2 rounded-full text-xs font-semibold transition cursor-pointer"
+            className="mt-2 bg-primary hover:bg-primary/95 text-white px-4 py-2 rounded-full text-xs font-semibold transition cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            백엔드 다시 연결 시도
+            다시 확인
           </button>
         </div>
       </div>

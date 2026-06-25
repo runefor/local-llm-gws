@@ -634,7 +634,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await saveLlmConfig(targetEndpoint, targetModel, mode);
       } else {
         addLog(`로컬 LLM 연결 실패: ${data.message}`);
-        alert(`연결 테스트 실패: ${data.message}`);
       }
     } catch (error) {
       addLog(`로컬 LLM 연결 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);

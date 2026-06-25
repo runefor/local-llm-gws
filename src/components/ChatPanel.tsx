@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useApp } from "../context/AppContext";
 
 const API_BASE = "http://localhost:18731";
 
@@ -207,18 +208,18 @@ const parseMarkdownBlocks = (content: string): readonly MarkdownBlock[] => {
 
 const renderInlineMarkdown = (text: string): ReactNode[] => {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
-  return parts.map((part, index) => {
+  return parts.map((part) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index} className="font-semibold text-text-primary">{part.slice(2, -2)}</strong>;
+      return <strong key={part} className="font-semibold text-text-primary">{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={index} className="rounded bg-surface px-1 py-0.5 font-mono text-[0.85em] text-text-primary">{part.slice(1, -1)}</code>;
+      return <code key={part} className="rounded bg-surface px-1 py-0.5 font-mono text-[0.85em] text-text-primary">{part.slice(1, -1)}</code>;
     }
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
     if (link) {
       const safeUrl = safeSourceUrl(link[2]);
       return safeUrl ? (
-        <a key={index} href={safeUrl} target="_blank" rel="noreferrer" className="font-semibold text-primary underline-offset-2 hover:underline">
+        <a key={part} href={safeUrl} target="_blank" rel="noreferrer" className="font-semibold text-primary underline-offset-2 hover:underline">
           {link[1]}
         </a>
       ) : link[1];
@@ -243,8 +244,8 @@ function MarkdownAnswer({ content }: { readonly content: string }) {
         if (block.kind === "list") {
           return (
             <ul key={key} className="list-disc space-y-1 pl-5">
-              {block.items.map((item, itemIndex) => (
-                <li key={`${key}-${itemIndex}`}>{renderInlineMarkdown(item)}</li>
+              {block.items.map((item) => (
+                <li key={`${key}-${item}`}>{renderInlineMarkdown(item)}</li>
               ))}
             </ul>
           );
@@ -259,21 +260,27 @@ function MarkdownAnswer({ content }: { readonly content: string }) {
 }
 
 export default function ChatPanel() {
+  const { addLog, backendStatus } = useApp();
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [evidenceSets, setEvidenceSets] = useState<EvidenceSetSummary[]>([]);
   const [options, setOptions] = useState<ChatOptions>(defaultOptions);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState("");
 
   const activeTitle = activeSession?.title || "새 채팅";
   const hasGrounding = options.grounding_enabled;
+  const chatReady = backendStatus === "online";
 
   const selectedSourceText = useMemo(() => {
     if (!hasGrounding) return "일반 LLM 대화";
     return options.source_types.map((source) => sourceLabels[source]).join(", ") || "선택된 자료 없음";
   }, [hasGrounding, options.source_types]);
+
+  const logChatFailure = (action: string, error: unknown) => {
+    const detail = error instanceof Error ? error.message : "알 수 없는 오류";
+    addLog(`채팅 ${action} 실패: ${detail}`);
+  };
 
   const loadSessions = async () => {
     const data = await readJson<{ sessions: ChatSessionSummary[] }>(await fetch(`${API_BASE}/api/chat/sessions`));
@@ -289,6 +296,7 @@ export default function ChatPanel() {
     setOptions({ ...defaultOptions, ...data.session.options });
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 채팅 초기 데이터는 패널 진입 시 한 번만 불러옵니다.
   useEffect(() => {
     const loadInitialData = async () => {
       const [sessionsData, evidenceSetsData] = await Promise.all([
@@ -306,9 +314,7 @@ export default function ChatPanel() {
       }
     };
 
-    loadInitialData().catch((error) => {
-      setNotice(error instanceof Error ? error.message : "채팅 정보를 불러오지 못했습니다.");
-    });
+    loadInitialData().catch((error) => logChatFailure("초기 데이터 로드", error));
   }, []);
 
   const createSession = async (): Promise<ChatSession> => {
@@ -325,9 +331,8 @@ export default function ChatPanel() {
 
   const sendMessage = async () => {
     const message = draft.trim();
-    if (!message || loading) return;
+    if (!message || loading || !chatReady) return;
     setLoading(true);
-    setNotice("");
     try {
       const session = activeSession || await createSession();
       setDraft("");
@@ -340,7 +345,8 @@ export default function ChatPanel() {
       setOptions({ ...defaultOptions, ...data.session.options });
       await loadSessions();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "답변 생성에 실패했습니다.");
+      logChatFailure("답변 생성", error);
+      setDraft(message);
     } finally {
       setLoading(false);
     }
@@ -357,8 +363,8 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="h-full min-h-0 rounded-3xl border border-surface-variant/70 bg-surface shadow-sm flex overflow-hidden">
-      <aside className="w-72 border-r border-surface-variant/70 bg-background p-4 flex flex-col gap-4">
+    <div className="h-full min-h-0 rounded-3xl border border-surface-variant/70 bg-surface shadow-sm flex flex-col xl:flex-row overflow-hidden">
+      <aside className="flex max-h-48 w-full shrink-0 flex-col gap-3 border-b border-surface-variant/70 bg-background p-3 xl:max-h-none xl:w-72 xl:gap-4 xl:border-b-0 xl:border-r xl:p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-text-primary">채팅</h2>
@@ -381,7 +387,7 @@ export default function ChatPanel() {
         <div className="min-h-0 flex-1 overflow-y-auto space-y-2 pr-1">
           {sessions.length === 0 && (
             <div className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-text-secondary">
-              아직 저장된 채팅이 없습니다. 첫 질문을 보내면 로컬에 저장됩니다.
+              {chatReady ? "아직 저장된 채팅이 없습니다. 첫 질문을 보내면 로컬에 저장됩니다." : "백엔드가 준비되면 저장된 채팅을 자동으로 불러옵니다."}
             </div>
           )}
           {sessions.map((session) => (
@@ -390,7 +396,7 @@ export default function ChatPanel() {
               type="button"
               onClick={() => {
                 loadSession(session.id).catch((error) => {
-                  setNotice(error instanceof Error ? error.message : "채팅을 열지 못했습니다.");
+                  logChatFailure("세션 열기", error);
                 });
               }}
               className={`w-full rounded-2xl px-4 py-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
@@ -408,7 +414,7 @@ export default function ChatPanel() {
         </div>
       </aside>
 
-      <section className="min-w-0 flex-1 flex flex-col">
+      <section className="min-h-0 min-w-0 flex-1 flex flex-col">
         <header className="border-b border-surface-variant/70 bg-background px-6 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -430,20 +436,18 @@ export default function ChatPanel() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-4">
-          {notice && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-text-secondary">
-              {notice}
-            </div>
-          )}
-
           {(!activeSession || activeSession.messages.length === 0) && (
             <div className="mx-auto max-w-2xl rounded-3xl border border-primary-container bg-background p-6 text-center shadow-sm">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-container text-primary">
-                <span className="material-symbols-rounded">forum</span>
+                <span className="material-symbols-rounded">{chatReady ? "forum" : "hourglass_empty"}</span>
               </div>
-              <h3 className="text-lg font-semibold text-text-primary">LLM과 바로 대화하거나, 자료 기반 답변으로 전환하세요</h3>
+              <h3 className="text-lg font-semibold text-text-primary">
+                {chatReady ? "LLM과 바로 대화하거나, 자료 기반 답변으로 전환하세요" : "작업 준비 중입니다"}
+              </h3>
               <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                기본은 일반 LLM 대화입니다. RAG/Wiki 근거 사용을 켜면 자료 종류, 기간, 출처 엄격도와 고급 범위를 함께 저장합니다.
+                {chatReady
+                  ? "기본은 일반 LLM 대화입니다. RAG/Wiki 근거 사용을 켜면 자료 종류, 기간, 출처 엄격도와 고급 범위를 함께 저장합니다."
+                  : "데스크톱 앱이 로컬 백엔드와 연결되면 이 영역에서 바로 대화를 시작할 수 있습니다. 연결 기록은 실행 로그에 남습니다."}
               </p>
             </div>
           )}
@@ -517,8 +521,8 @@ export default function ChatPanel() {
           ))}
         </div>
 
-        <div className="border-t border-surface-variant/70 bg-background p-4">
-          <div className="mb-4 rounded-3xl border border-surface-variant/70 bg-surface p-4">
+        <div className="max-h-[52%] shrink-0 overflow-y-auto border-t border-surface-variant/70 bg-background p-4 xl:max-h-none">
+            <div className="mb-4 rounded-3xl border border-surface-variant/70 bg-surface p-4">
             <div className="grid gap-4 lg:grid-cols-3">
               <div>
                 <p className="mb-2 text-xs font-semibold text-text-primary">자료 종류</p>
@@ -532,7 +536,7 @@ export default function ChatPanel() {
                       className={`rounded-full px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                         options.source_types.includes(source) && hasGrounding
                           ? "bg-primary text-white"
-                          : "bg-background text-text-secondary hover:bg-primary-container/40 disabled:opacity-50"
+                          : "bg-background text-text-secondary hover:bg-primary-container/40 disabled:bg-background/60 disabled:text-text-secondary/55"
                       }`}
                     >
                       {sourceLabels[source]}
@@ -614,7 +618,7 @@ export default function ChatPanel() {
           </div>
 
           <div className="flex items-end gap-3">
-            <textarea
+              <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -622,13 +626,14 @@ export default function ChatPanel() {
                   sendMessage();
                 }
               }}
-              placeholder="질문을 입력하세요. Ctrl/⌘ + Enter로 보낼 수 있습니다."
-              className="min-h-24 flex-1 resize-none rounded-3xl border border-surface-variant bg-white px-4 py-3 text-sm leading-relaxed text-text-primary focus:outline focus:outline-2 focus:outline-primary"
+              placeholder={chatReady ? "질문을 입력하세요. Ctrl/⌘ + Enter로 보낼 수 있습니다." : "백엔드가 준비되면 질문을 입력할 수 있습니다."}
+              disabled={!chatReady}
+              className="min-h-24 flex-1 resize-none rounded-3xl border border-surface-variant bg-white px-4 py-3 text-sm leading-relaxed text-text-primary focus:outline focus:outline-2 focus:outline-primary disabled:bg-surface disabled:text-text-secondary/70 disabled:placeholder:text-text-secondary/70"
             />
             <button
               type="button"
               onClick={sendMessage}
-              disabled={!draft.trim() || loading}
+              disabled={!draft.trim() || loading || !chatReady}
               className="rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-primary/95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               {loading ? "답변 중" : "보내기"}
