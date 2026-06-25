@@ -70,6 +70,14 @@ export interface WorkspaceItem {
   timestamp: string;
 }
 
+export interface DetectedServer {
+  name: string;
+  url: string;
+  api_base: string;
+  models: string[];
+  status?: string;
+}
+
 interface AppContextType {
   backendStatus: "connecting" | "online" | "offline";
   isGwsAuthenticated: boolean;
@@ -87,7 +95,7 @@ interface AppContextType {
   setLlmMode: (mode: "internal" | "external") => void;
   saveLlmConfig: (endpoint: string, model: string, mode: "llamacpp" | "ollama" | "external") => Promise<void>;
   handleLlmDisconnect: () => Promise<void>;
-  detectedServers: any[];
+  detectedServers: DetectedServer[];
   isDetecting: boolean;
   scanLocalServers: () => Promise<void>;
   syncStatus: "idle" | "syncing" | "done" | "error";
@@ -154,7 +162,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [llmMode, setLlmMode] = useState<"internal" | "external">("internal");
   
   // 로컬 LLM 자동 감지 상태
-  const [detectedServers, setDetectedServers] = useState<any[]>([]);
+  const [detectedServers, setDetectedServers] = useState<DetectedServer[]>([]);
   const [isDetecting, setIsDetecting] = useState<boolean>(false);
   
   // 동기화 상태
@@ -169,6 +177,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   const [recentVectorizedGmailIds, setRecentVectorizedGmailIds] = useState<string[]>([]);
   const vectorizationTimerRef = useRef<number | null>(null);
+  const googleAuthPollingTimerRef = useRef<number | null>(null);
+  const googleAuthPollingAttemptsRef = useRef(0);
+  const notionAuthPollingTimerRef = useRef<number | null>(null);
+  const notionAuthPollingAttemptsRef = useRef(0);
 
   // 지식 파이프라인 연동 설정 상태
   const [obsidianVaultPath, setObsidianVaultPath] = useState("");
@@ -186,6 +198,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       window.clearInterval(vectorizationTimerRef.current);
       vectorizationTimerRef.current = null;
     }
+  };
+
+  const stopGoogleAuthPolling = () => {
+    if (googleAuthPollingTimerRef.current !== null) {
+      window.clearInterval(googleAuthPollingTimerRef.current);
+      googleAuthPollingTimerRef.current = null;
+    }
+    googleAuthPollingAttemptsRef.current = 0;
+  };
+
+  const stopNotionAuthPolling = () => {
+    if (notionAuthPollingTimerRef.current !== null) {
+      window.clearInterval(notionAuthPollingTimerRef.current);
+      notionAuthPollingTimerRef.current = null;
+    }
+    notionAuthPollingAttemptsRef.current = 0;
+  };
+
+  const getStringProperty = (value: object, key: string): string => {
+    const property = Reflect.get(value, key);
+    return typeof property === "string" ? property : "";
+  };
+
+  const parseDetectedServers = (value: unknown): DetectedServer[] => {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const modelsValue = Reflect.get(item, "models");
+      const models = Array.isArray(modelsValue)
+        ? modelsValue.filter((model): model is string => typeof model === "string")
+        : [];
+      const server: DetectedServer = {
+        name: getStringProperty(item, "name"),
+        url: getStringProperty(item, "url"),
+        api_base: getStringProperty(item, "api_base"),
+        models,
+        status: getStringProperty(item, "status") || undefined,
+      };
+      return server.name && server.url && server.api_base ? [server] : [];
+    });
   };
 
   const startVectorizationTicker = () => {
@@ -233,13 +285,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch("http://localhost:18731/api/auth/status");
       const data = await response.json();
-      setIsGwsAuthenticated(!!data.authenticated);
-      if (data.authenticated) {
+      const authenticated = response.ok && data.authenticated === true;
+      setIsGwsAuthenticated(authenticated);
+      if (authenticated) {
         addLog("Google Workspace 인증 상태: 연결됨");
       } else {
         addLog("Google Workspace 인증 상태: 인증 필요");
       }
     } catch (error) {
+      setIsGwsAuthenticated(false);
       addLog("Google Workspace 인증 상태를 가져오지 못했습니다.");
     } finally {
       setAuthChecking(false);
@@ -266,6 +320,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Google 로그인 트리거
   const triggerGoogleLogin = async () => {
+    stopGoogleAuthPolling();
     addLog("Google OAuth 로그인 창을 엽니다...");
     try {
       const response = await fetch("http://localhost:18731/api/auth/login", { method: "POST" });
@@ -281,29 +336,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addLog("브라우저 창이 열렸습니다. 인증을 완료해 주세요.");
         
         // 로그인 완료 여부를 2초마다 폴링
-        let attempts = 0;
-        const interval = setInterval(async () => {
-          attempts++;
+        googleAuthPollingTimerRef.current = window.setInterval(async () => {
+          googleAuthPollingAttemptsRef.current += 1;
           try {
             const res = await fetch("http://localhost:18731/api/auth/status");
             const statusData = await res.json();
-            if (statusData.authenticated) {
+            if (res.ok && statusData.authenticated === true) {
               setIsGwsAuthenticated(true);
               addLog("Google Workspace 인증 성공!");
-              clearInterval(interval);
+              stopGoogleAuthPolling();
             }
           } catch (err) {
+            setIsGwsAuthenticated(false);
             console.error("인증 상태 체크 에러:", err);
           }
-          if (attempts >= 60) { // 최대 2분 대기
-            clearInterval(interval);
+          if (googleAuthPollingAttemptsRef.current >= 60) { // 최대 2분 대기
+            stopGoogleAuthPolling();
+            setIsGwsAuthenticated(false);
             addLog("인증 대기 시간이 초과되었습니다. 다시 시도해 주세요.");
           }
         }, 2000);
       } else {
+        setIsGwsAuthenticated(false);
         addLog(`인증 요청 실패: ${data.message || "알 수 없는 오류"}`);
       }
     } catch (e) {
+      setIsGwsAuthenticated(false);
       addLog(`로그인 요청 중 오류 발생: ${e}`);
     }
   };
@@ -414,7 +472,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sources, drive_files: sources.includes("drive") ? driveItems : [] }),
       });
-      const data = await response.json() as Record<string, unknown>;
+      const data: Record<string, unknown> = await response.json();
       if (data.status === "success") {
         const driveIndexed = typeof data.drive_indexed === "number" ? data.drive_indexed : 0;
         addLog(`벡터 인덱스 갱신 완료: Drive ${driveIndexed}개 처리`);
@@ -590,7 +648,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch("http://localhost:18731/api/llm/detect");
       const data = await response.json();
       if (data.status === "success") {
-        setDetectedServers(data.servers || []);
+        setDetectedServers(parseDetectedServers(data.servers));
       }
     } catch (error) {
       console.error("로컬 LLM 서버 감지 실패:", error);
@@ -721,6 +779,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Notion OAuth 로그인 트리거 및 폴링
   const triggerNotionLogin = async () => {
+    stopNotionAuthPolling();
     addLog("Notion OAuth 로그인 창을 엽니다...");
     try {
       const response = await fetch("http://localhost:18731/api/auth/notion/url");
@@ -734,23 +793,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           window.open(data.url, "_blank");
         }
         
-        let attempts = 0;
-        const interval = setInterval(async () => {
-          attempts++;
+        notionAuthPollingTimerRef.current = window.setInterval(async () => {
+          notionAuthPollingAttemptsRef.current += 1;
           try {
             const res = await fetch("http://localhost:18731/api/settings");
             const settingsData = await res.json();
-            if (settingsData.notion_api_key) {
+            if (res.ok && settingsData.notion_api_key) {
               setNotionApiKey(settingsData.notion_api_key);
               setNotionPageId(settingsData.notion_page_id || "");
               addLog("Notion OAuth 연동 성공!");
-              clearInterval(interval);
+              stopNotionAuthPolling();
             }
           } catch (err) {
             console.error("Notion 로그인 상태 체크 에러:", err);
           }
-          if (attempts >= 60) {
-            clearInterval(interval);
+          if (notionAuthPollingAttemptsRef.current >= 60) {
+            stopNotionAuthPolling();
             addLog("Notion 로그인 인증 대기 시간이 초과되었습니다.");
           }
         }, 2000);
@@ -830,8 +888,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [backendStatus, isGwsAuthenticated]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 언마운트 시 활성 타이머만 정리합니다.
   useEffect(() => {
-    return () => stopVectorizationTicker();
+    return () => {
+      stopVectorizationTicker();
+      stopGoogleAuthPolling();
+      stopNotionAuthPolling();
+    };
   }, []);
 
   return (
