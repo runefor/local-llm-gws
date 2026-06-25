@@ -101,7 +101,7 @@ const sourceOptions: Array<{ id: RagSource; label: string; description: string; 
 ];
 
 const toRecord = (value: unknown): Record<string, unknown> => {
-  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" ? Object.fromEntries(Object.entries(value)) : {};
 };
 
 const toStringValue = (value: unknown, fallback = ""): string => {
@@ -157,9 +157,10 @@ const normalizeArtifactLint = (value: unknown): ArtifactLintResult | undefined =
   const rawIssues = Array.isArray(record.issues) ? record.issues : [];
   const issues = rawIssues.map((item) => {
     const issue = toRecord(item);
+    const severity: "warning" | "error" = issue.severity === "warning" ? "warning" : "error";
     return {
       code: toStringValue(issue.code, "lint"),
-      severity: issue.severity === "warning" ? "warning" as const : "error" as const,
+      severity,
       message: toStringValue(issue.message, "확인 필요"),
       evidence_id: maybeString(issue.evidence_id),
     };
@@ -586,12 +587,12 @@ export default function RagSearchPanel() {
       .filter(Boolean);
   };
 
-  const applyEvidenceSetToWorkspace = (set: EvidenceSet) => {
+  const applyEvidenceSetToWorkspace = (set: EvidenceSet, restoredArtifact: Artifact | null = null) => {
     setSavedEvidenceSet(set);
     setEvidence(set.evidence_items);
     setSelectedEvidenceIds(set.evidence_items.map((item) => item.id));
     const restoredSources = Array.from(new Set(set.evidence_items.map((item) => item.source)))
-      .filter((source) => source === "gmail" || source === "drive") as Array<"gmail" | "drive">;
+      .filter((source): source is RagSource => source === "gmail" || source === "drive");
     setSelectedSources(restoredSources.length > 0 ? restoredSources : ["gmail", "drive"]);
     setQuery(set.original_query);
     setLastQuery(set.original_query);
@@ -601,11 +602,11 @@ export default function RagSearchPanel() {
     setEvidenceSetTitle(set.title);
     setEvidenceSetNotes(set.notes || "");
     setDraftTags(set.tags.length > 0 ? set.tags.join(", ") : "자료찾기, 정보묶음");
-    setArtifact(null);
-    setDraftTitle(set.title);
-    setDraftContent("");
-    setArtifactInstruction(defaultArtifactInstruction);
-    setArtifactType("wiki");
+    setArtifact(restoredArtifact);
+    setDraftTitle(restoredArtifact?.title || set.title);
+    setDraftContent(restoredArtifact?.content || "");
+    setArtifactInstruction(restoredArtifact?.instruction || defaultArtifactInstruction);
+    setArtifactType(restoredArtifact?.artifact_type || "wiki");
   };
 
   const fetchSavedEvidenceSets = useCallback(async () => {
@@ -819,10 +820,21 @@ export default function RagSearchPanel() {
       if (data.status === "success") {
         const fallbackSet = savedEvidenceSets.find((item) => item.id === evidenceSetId);
         const normalizedSet = normalizeEvidenceSet(data.evidence_set, fallbackSet);
-        applyEvidenceSetToWorkspace(normalizedSet);
+        const artifacts = Array.isArray(data.artifacts)
+          ? data.artifacts.map((item) => normalizeArtifact(item, normalizedSet.id))
+          : [];
+        const restoredArtifact = artifacts.reduce<Artifact | null>((latest, current) => {
+          if (!latest) return current;
+          const latestTime = Date.parse(latest.updated_at || latest.created_at || "");
+          const currentTime = Date.parse(current.updated_at || current.created_at || "");
+          if (!Number.isFinite(latestTime)) return current;
+          if (!Number.isFinite(currentTime)) return latest;
+          return currentTime >= latestTime ? current : latest;
+        }, null);
+        applyEvidenceSetToWorkspace(normalizedSet, restoredArtifact);
         setSavedEvidenceSets((prev) => [normalizedSet, ...prev.filter((item) => item.id !== normalizedSet.id)].slice(0, 8));
         addLog(`정보 묶음 다시 열기 완료: ${normalizedSet.id}`);
-        showNotification("success", "정보 묶음을 다시 열었습니다. 선택 자료와 메모를 이어서 사용할 수 있습니다.");
+        showNotification("success", restoredArtifact ? "정보 묶음과 최신 Wiki 후보를 다시 열었습니다." : "정보 묶음을 다시 열었습니다. 선택 자료와 메모를 이어서 사용할 수 있습니다.");
         setTimeout(() => {
           reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 150);
