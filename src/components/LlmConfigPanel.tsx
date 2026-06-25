@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useApp } from "../context/AppContext";
+import { useApp, type DetectedServer } from "../context/AppContext";
 import { classifyLlmEndpoint, type LlmServeMode } from "../utils/llmEndpoint";
 
 interface Preset {
@@ -14,6 +14,13 @@ interface LocalModel {
   name: string;
   preset_id: string | null;
   size_mb: number;
+}
+
+interface LlmActionResponse {
+  status?: string;
+  message?: string;
+  error?: string;
+  progress?: number;
 }
 
 export default function LlmConfigPanel() {
@@ -67,7 +74,7 @@ export default function LlmConfigPanel() {
     try {
       const res = await fetch("http://localhost:18731/api/llm/server/status");
       if (res.ok) {
-        const data = await res.json();
+        const data: { running: boolean; model: string | null; endpoint: string | null } = await res.json();
         setServerStatus(data);
       }
     } catch (e) {
@@ -80,20 +87,20 @@ export default function LlmConfigPanel() {
     try {
       const pRes = await fetch("http://localhost:18731/api/llm/presets");
       if (!pRes.ok) throw new Error("presets API 응답 불량");
-      const pData = await pRes.json();
+      const pData: { presets?: Preset[]; recommended?: string } = await pRes.json();
       setPresets(pData.presets || []);
       setRecommendedId(pData.recommended || "");
       
       const mRes = await fetch("http://localhost:18731/api/llm/local_models");
       if (!mRes.ok) throw new Error("local_models API 응답 불량");
-      const mData = await mRes.json();
+      const mData: { models?: LocalModel[] } = await mRes.json();
       setLocalModels(mData.models || []);
       
       setBackendOffline(false);
       
       if (mData.models && mData.models.length > 0) {
         // 내장 모델이 있고 llmModel이 외장값이면 내장으로 하나 선택해줌
-        if (!mData.models.find((m: any) => m.filename === llmModel)) {
+        if (!mData.models.find((m) => m.filename === llmModel)) {
           setLlmModel(mData.models[0].filename);
         }
       }
@@ -116,7 +123,7 @@ export default function LlmConfigPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model_filename: llmModel })
       });
-      const data = await res.json();
+      const data: LlmActionResponse = await res.json();
       if (data.status === "started" || data.status === "running") {
         addLog(`내장 서버 기동 완료: ${data.message}`);
         fetchServerStatus();
@@ -137,7 +144,7 @@ export default function LlmConfigPanel() {
     addLog("내장 서버 종료 요청");
     try {
       const res = await fetch("http://localhost:18731/api/llm/server/stop", { method: "POST" });
-      const data = await res.json();
+      const data: LlmActionResponse = await res.json();
       if (data.status === "stopped") {
         addLog("내장 서버가 종료되었습니다.");
         fetchServerStatus();
@@ -151,6 +158,7 @@ export default function LlmConfigPanel() {
     }
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: backendStatus 전환에만 반응해 모델/서버 상태를 새로고침합니다.
   useEffect(() => {
     fetchModels();
     if (backendStatus === "online") {
@@ -159,27 +167,31 @@ export default function LlmConfigPanel() {
   }, [backendStatus]);
 
   // 내장 서버 실행 여부 실시간 모니터링 폴링 (3초 간격)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: backendStatus 전환에 맞춰 하나의 폴링 타이머만 관리합니다.
   useEffect(() => {
-    let timer: any;
+    let timer: number | undefined;
     if (backendStatus === "online") {
-      timer = setInterval(() => {
-        fetchServerStatus();
+      timer = window.setInterval(() => {
+        void fetchServerStatus();
       }, 3000);
     }
-    return () => clearInterval(timer);
+    return () => {
+      if (timer !== undefined) window.clearInterval(timer);
+    };
   }, [backendStatus]);
 
   // 외장 API 선택 시 로컬 LLM 서버 백그라운드 자동 감지 폴링 (2.5초 간격)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 모드/백엔드 상태 전환에 맞춰 하나의 감지 타이머만 관리합니다.
   useEffect(() => {
-    let timer: any;
+    let timer: number | undefined;
     if (llmMode === "external" && backendStatus === "online") {
-      scanLocalServers(); // 즉시 실행
-      timer = setInterval(() => {
-        scanLocalServers();
+      void scanLocalServers(); // 즉시 실행
+      timer = window.setInterval(() => {
+        void scanLocalServers();
       }, 2500);
     }
     return () => {
-      if (timer) clearInterval(timer);
+      if (timer !== undefined) window.clearInterval(timer);
     };
   }, [llmMode, backendStatus]);
 
@@ -201,7 +213,7 @@ export default function LlmConfigPanel() {
   }, [detectedServers]);
 
   // 자동 감지된 서버 연결 핸들러
-  const handleConnectServer = (server: any) => {
+  const handleConnectServer = (server: DetectedServer) => {
     const modelName = selectedModels[server.name] || (server.models && server.models[0]) || "";
     setLlmEndpoint(server.api_base);
     setLlmModel(modelName);
@@ -213,61 +225,95 @@ export default function LlmConfigPanel() {
 
 
   // 다운로드 진행상황 폴링
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 다운로드 대상 변경에만 맞춰 하나의 상태 폴링 타이머만 관리합니다.
   useEffect(() => {
-    let interval: any;
+    let interval: number | undefined;
     if (downloading) {
-      interval = setInterval(async () => {
+      interval = window.setInterval(async () => {
         try {
           const res = await fetch(`http://localhost:18731/api/llm/download/progress/${downloading}`);
-          if (!res.ok) throw new Error("Progress API 응답 불량");
-          const data = await res.json();
+          const data: LlmActionResponse = await res.json();
+          if (!res.ok) {
+            const message = data.message || "Progress API 응답 불량";
+            setDownloading(null);
+            setProgress(0);
+            addLog(`다운로드 상태 조회 실패: ${message}`);
+            return;
+          }
           
           if (data.status === "completed") {
             setProgress(100);
             setDownloading(null);
             addLog("로컬 모델 다운로드 완료!");
-            fetchModels(); // 새로고침
+            void fetchModels(); // 새로고침
           } else if (data.status === "error") {
             setDownloading(null);
-            addLog(`다운로드 오류: ${data.error}`);
-            alert(`다운로드 중 오류가 발생했습니다: ${data.error}`);
+            setProgress(0);
+            const message = data.error || data.message || "알 수 없는 오류";
+            addLog(`다운로드 오류: ${message}`);
+            alert(`다운로드 중 오류가 발생했습니다: ${message}`);
+          } else if (data.status === "not_found") {
+            setDownloading(null);
+            setProgress(0);
+            addLog("다운로드 상태를 찾을 수 없어 대기 상태를 해제했습니다.");
           } else {
             setProgress(data.progress || 0);
           }
         } catch (e) {
+          setDownloading(null);
+          setProgress(0);
+          addLog("다운로드 상태 조회 중 네트워크 오류가 발생했습니다.");
           console.error("progress polling error", e);
         }
       }, 1000);
     }
-    return () => clearInterval(interval);
+    return () => {
+      if (interval !== undefined) window.clearInterval(interval);
+    };
   }, [downloading]);
 
   const handleDownload = async (presetId: string) => {
     try {
       setDownloading(presetId);
       setProgress(0);
-      addLog(`모델 다운로드 시작: ${presetId}`);
-      await fetch("http://localhost:18731/api/llm/download", {
+      addLog(`모델 다운로드 요청: ${presetId}`);
+      const response = await fetch("http://localhost:18731/api/llm/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preset_id: presetId })
       });
+      const data: LlmActionResponse = await response.json();
+      if (!response.ok || data.status !== "success") {
+        const message = data.message || "다운로드 시작 실패";
+        addLog(`다운로드 요청 실패: ${message}`);
+        alert(`다운로드 요청에 실패했습니다: ${message}`);
+        setDownloading(null);
+        setProgress(0);
+        return;
+      }
+      addLog(`모델 다운로드 시작: ${presetId}`);
     } catch (e) {
       addLog("다운로드 요청 실패");
       setDownloading(null);
+      setProgress(0);
     }
   };
 
   const handleDelete = async (filename: string) => {
     if (!window.confirm("이 모델을 삭제하시겠습니까?")) return;
     try {
-      await fetch("http://localhost:18731/api/llm/delete", {
+      const response = await fetch("http://localhost:18731/api/llm/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename })
       });
+      const data: LlmActionResponse = await response.json();
+      if (!response.ok || data.status !== "success") {
+        addLog(`삭제 실패: ${data.message || "알 수 없는 오류"}`);
+        return;
+      }
       addLog(`${filename} 모델이 삭제되었습니다.`);
-      fetchModels();
+      void fetchModels();
     } catch (e) {
       addLog("삭제 오류 발생");
     }
@@ -286,6 +332,7 @@ export default function LlmConfigPanel() {
             대상 API: http://localhost:18731/api/llm/presets
           </div>
           <button 
+            type="button"
             onClick={fetchModels}
             className="mt-2 bg-primary hover:bg-primary/95 text-white px-4 py-2 rounded-full text-xs font-semibold transition cursor-pointer"
           >
@@ -429,19 +476,21 @@ export default function LlmConfigPanel() {
                     </span>
                   </div>
                   
-                  {serverStatus.running ? (
-                    <button
-                      onClick={handleStopServer}
-                      disabled={serverActionLoading}
-                      className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
+	                  {serverStatus.running ? (
+	                    <button
+	                      type="button"
+	                      onClick={handleStopServer}
+	                      disabled={serverActionLoading}
+	                      className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
                     >
                       {serverActionLoading ? "중지 중..." : "서버 종료"}
                     </button>
-                  ) : (
-                    <button
-                      onClick={handleStartServer}
-                      disabled={serverActionLoading || localModels.length === 0}
-                      className="text-xs bg-primary hover:bg-[#094cb3] text-white font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
+	                  ) : (
+	                    <button
+	                      type="button"
+	                      onClick={handleStartServer}
+	                      disabled={serverActionLoading || localModels.length === 0}
+	                      className="text-xs bg-primary hover:bg-[#094cb3] text-white font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
                     >
                       {serverActionLoading ? "구동 중..." : "서버 시작"}
                     </button>
@@ -456,7 +505,8 @@ export default function LlmConfigPanel() {
             <h3 className="text-xs font-semibold uppercase mb-2 text-text-secondary">다운로드 가능한 모델 목록</h3>
             <div className="space-y-2">
               {presets.map(p => {
-                const isDownloaded = localModels.some(m => m.preset_id === p.id);
+                const downloadedModel = localModels.find(m => m.preset_id === p.id);
+                const isDownloaded = downloadedModel !== undefined;
                 const isDownloading = downloading === p.id;
                 const isRecommended = recommendedId === p.id;
                 
@@ -483,15 +533,19 @@ export default function LlmConfigPanel() {
                             <span className="material-symbols-rounded text-sm mr-0.5">check_circle</span>
                             준비 완료
                           </span>
-                          <button 
-                            onClick={() => handleDelete(localModels.find(m => m.preset_id === p.id)!.filename)}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (downloadedModel) void handleDelete(downloadedModel.filename);
+                            }}
                             className="text-xs text-red-500 hover:text-red-600 hover:underline px-2 py-1 cursor-pointer"
                           >
                             삭제
                           </button>
                         </div>
                       ) : (
-                        <button 
+                        <button
+                          type="button"
                           onClick={() => handleDownload(p.id)}
                           disabled={downloading !== null}
                           className="text-xs bg-primary hover:bg-primary/90 text-white font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 cursor-pointer"
@@ -509,7 +563,7 @@ export default function LlmConfigPanel() {
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-text-secondary leading-relaxed mb-3">
-            Ollama, LM Studio 등 실행 중인 외부 로컬 LLM 런타임을 자동으로 감지하여 연결해 줍니다. 
+            Ollama, LM Studio 등 실행 중인 외부 로컬 LLM 런타임을 자동으로 감지하여 연결해 줍니다.
           </p>
 
           {/* 자동 감지 서버 리스트 */}
@@ -542,6 +596,7 @@ export default function LlmConfigPanel() {
                 {detectedServers.map((server) => {
                   const hasModels = server.models && server.models.length > 0;
                   const isCurrentServer = llmEndpoint.startsWith(server.api_base);
+                  const serverSelectId = `detected-model-${server.name.replace(/\s+/g, "-").toLowerCase()}`;
 
                   return (
                     <div 
@@ -568,13 +623,14 @@ export default function LlmConfigPanel() {
                       <div className="flex items-center gap-3.5 ml-0 md:ml-auto">
                         {hasModels ? (
                           <div className="flex flex-col gap-0.5 min-w-[150px]">
-                            <label className="text-[9px] uppercase font-bold text-text-secondary tracking-wider">사용 가능한 모델</label>
+                            <label htmlFor={serverSelectId} className="text-[9px] uppercase font-bold text-text-secondary tracking-wider">사용 가능한 모델</label>
                             <select
+                              id={serverSelectId}
                               value={selectedModels[server.name] || server.models[0]}
                               onChange={(e) => setSelectedModels(prev => ({ ...prev, [server.name]: e.target.value }))}
                               className="bg-white border border-surface-variant rounded-lg px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary font-sans cursor-pointer"
                             >
-                              {server.models.map((m: string) => (
+                              {server.models.map((m) => (
                                 <option key={m} value={m}>{m}</option>
                               ))}
                             </select>
@@ -586,14 +642,16 @@ export default function LlmConfigPanel() {
                         )}
 
                         {isCurrentServer && llmMode === "external" ? (
-                          <button 
+                          <button
+                            type="button"
                             onClick={() => handleLlmDisconnect()}
                             className="bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors cursor-pointer shadow-sm"
                           >
                             연결 해제
                           </button>
                         ) : (
-                          <button 
+                          <button
+                            type="button"
                             onClick={() => handleConnectServer(server)}
                             disabled={!hasModels}
                             className="bg-primary hover:bg-[#094cb3] text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
@@ -612,6 +670,7 @@ export default function LlmConfigPanel() {
           {/* 수동 설정 아코디언 */}
           <div className="pt-2 border-t border-slate-100/50 dark:border-zinc-800">
             <button
+              type="button"
               onClick={() => setShowManualConfig(!showManualConfig)}
               className="text-xs text-text-secondary hover:text-text-primary font-semibold flex items-center transition cursor-pointer"
             >
@@ -624,34 +683,38 @@ export default function LlmConfigPanel() {
             {showManualConfig && (
               <div className="mt-4 space-y-3 p-4 bg-surface-variant/20 rounded-xl border border-surface-variant/40 animate-fadeIn">
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">API Endpoint URL</label>
-                  <input 
-                    type="text" 
+                  <label htmlFor="manual-llm-endpoint" className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">API Endpoint URL</label>
+                  <input
+                    id="manual-llm-endpoint"
+                    type="text"
                     value={llmEndpoint}
                     onChange={(e) => setLlmEndpoint(e.target.value)}
                     className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
                     placeholder="http://localhost:1234/v1"
                   />
-                </div>
+	                </div>
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Model Name</label>
-                  <input 
-                    type="text" 
+                  <label htmlFor="manual-llm-model" className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Model Name</label>
+                  <input
+                    id="manual-llm-model"
+                    type="text"
                     value={llmModel}
                     onChange={(e) => setLlmModel(e.target.value)}
                     className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
                     placeholder="gemma-2-9b-it"
                   />
-                </div>
+	                </div>
                 <div className="pt-1 flex gap-2">
-                  <button 
+                  <button
+                    type="button"
                     onClick={() => handleLlmTest()}
                     className="flex-1 bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-full text-xs transition-colors border border-surface-variant cursor-pointer"
                   >
                     LLM 서버 연결 테스트
-                  </button>
+	                  </button>
                   {llmMode === "external" && (
-                    <button 
+                    <button
+                      type="button"
                       onClick={() => handleLlmDisconnect()}
                       className="bg-red-50 dark:bg-red-950/20 hover:bg-red-100 text-red-600 dark:text-red-400 font-semibold py-2 px-4 rounded-full text-xs transition-colors border border-red-200 dark:border-red-900/30 cursor-pointer"
                     >
