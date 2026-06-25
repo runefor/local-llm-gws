@@ -390,7 +390,6 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
         
         content = fetch_drive_file_content(file_id, mime_type)
         if not content:
-            _delete_doc_chunks(drive_col, file_id)
             logger.warning("Drive 파일 텍스트 추출 실패로 RAG 인덱싱 제외: %s (%s)", name, mime_type)
             continue
             

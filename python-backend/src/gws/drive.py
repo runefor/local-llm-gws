@@ -9,6 +9,10 @@ import datetime
 RESOURCE_KEYS_HEADER = "X-Goog-Drive-Resource-Keys"
 
 
+def _escape_drive_query_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 def _execute_with_resource_key(request, file_id: str, resource_key: str = ""):
     if resource_key:
         request.headers[RESOURCE_KEYS_HEADER] = f"{file_id}/{resource_key}"
@@ -46,7 +50,8 @@ def list_drive_files(query=None, mime_types=None, page_token=None, max_results=1
         if any(op in query for op in ["contains", "=", ">", "<"]):
             clauses.append(f"({query})")
         else:
-            clauses.append(f"(name contains '{query}' or fullText contains '{query}')")
+            escaped_query = _escape_drive_query_literal(query)
+            clauses.append(f"(name contains '{escaped_query}' or fullText contains '{escaped_query}')")
             
     drive_q = " and ".join(clauses)
     

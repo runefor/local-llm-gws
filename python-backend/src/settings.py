@@ -1,4 +1,8 @@
 import json
+import os
+from pathlib import Path
+from typing import Mapping
+
 from config import config
 
 SETTINGS_FILE = config.DATA_DIR / "settings.json"
@@ -27,7 +31,21 @@ def load_settings() -> dict:
     except Exception:
         return DEFAULT_SETTINGS
 
-def save_settings(settings: dict) -> bool:
+def _write_json_atomic(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp_path.replace(path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def save_settings(settings: Mapping[str, object]) -> bool:
     """data/settings.json 파일에 사용자의 외부 서비스 연동 설정을 저장합니다."""
     try:
         existing_settings = {}
@@ -43,8 +61,7 @@ def save_settings(settings: dict) -> bool:
         for k, default_value in DEFAULT_SETTINGS.items():
             clean_settings[k] = settings.get(k, existing_settings.get(k, default_value))
 
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(clean_settings, f, ensure_ascii=False, indent=2)
+        _write_json_atomic(SETTINGS_FILE, clean_settings)
         return True
     except Exception:
         return False

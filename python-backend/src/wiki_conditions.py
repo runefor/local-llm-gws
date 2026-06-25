@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -214,4 +215,13 @@ class WikiConditionStore:
 
     def _write(self, conditions: list[WikiCondition]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(conditions, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path = self.path.with_name(f"{self.path.name}.tmp")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(conditions, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_path.replace(self.path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise

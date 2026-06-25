@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -133,8 +134,17 @@ def _load_store() -> EvidenceStore:
 
 
 def _save_store(store: EvidenceStore) -> None:
-    with open(STORE_PATH, "w", encoding="utf-8") as f:
-        json.dump(store.model_dump(), f, ensure_ascii=False, indent=2)
+    STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = STORE_PATH.with_name(f"{STORE_PATH.name}.tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(store.model_dump(), f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp_path.replace(STORE_PATH)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def list_evidence_sets() -> List[Dict[str, Any]]:

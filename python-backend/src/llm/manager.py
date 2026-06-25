@@ -221,7 +221,10 @@ def get_download_status(preset_id: str) -> Optional[Dict]:
 
 
 def delete_local_model(filename: str) -> bool:
-    filepath = Path(config.MODELS_DIR) / filename
+    models_dir = Path(config.MODELS_DIR).resolve()
+    filepath = (models_dir / filename).resolve()
+    if filepath.parent != models_dir:
+        return False
     if filepath.exists():
         try:
             filepath.unlink()

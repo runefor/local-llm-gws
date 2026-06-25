@@ -80,7 +80,10 @@ def start_server(model_filename: str) -> dict:
     """
     global _server_process, _current_model_path
 
-    model_path = Path(config.MODELS_DIR) / model_filename
+    model_dir = Path(config.MODELS_DIR).resolve()
+    model_path = (model_dir / model_filename).resolve()
+    if model_path.parent != model_dir:
+        return {"status": "error", "message": "모델 파일을 찾을 수 없습니다."}
     if not model_path.exists():
         return {"status": "error", "message": f"모델 파일을 찾을 수 없습니다: {model_path}"}
 
@@ -131,8 +134,9 @@ def start_server(model_filename: str) -> dict:
     if _wait_until_ready(host, port, timeout=30.0):
         logger.info(f"llama.cpp 서버 준비 완료: http://{host}:{port}")
         return {"status": "started", "message": f"서버가 시작되었습니다 (http://{host}:{port})"}
-    else:
-        return {"status": "error", "message": "서버가 30초 내에 응답하지 않았습니다."}
+    with _server_lock:
+        _stop_server_internal()
+    return {"status": "error", "message": "서버가 30초 내에 응답하지 않았습니다."}
 
 
 def _stop_server_internal():

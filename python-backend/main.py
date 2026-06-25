@@ -733,11 +733,14 @@ class NotionExportRequest(BaseModel):
     originals: List[Dict[str, str]] = Field(default_factory=list)
 
 @app.get("/api/settings")
-def get_settings():
+def get_settings(request: Request):
     """Obsidian 및 Notion 연동 설정을 가져옵니다."""
     try:
         from src.settings import load_settings
-        return load_settings()
+        loaded_settings = load_settings()
+        if not request.headers.get("origin"):
+            return {**loaded_settings, "notion_api_key": ""}
+        return loaded_settings
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
