@@ -9,7 +9,8 @@ export default function ServiceConfigPanel() {
     savePipelineSettings,
     backendStatus,
     triggerNotionLogin,
-    fetchNotionPages
+    fetchNotionPages,
+    addLog
   } = useApp();
 
   const [vaultPath, setVaultPath] = useState(obsidianVaultPath);
@@ -41,6 +42,7 @@ export default function ServiceConfigPanel() {
     setLoadingPages(false);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: apiKey 변경 시에만 Notion 페이지 목록을 새로고침합니다.
   useEffect(() => {
     loadNotionPages();
   }, [apiKey]);
@@ -56,10 +58,11 @@ export default function ServiceConfigPanel() {
       if (data.status === "success") {
         setVaultPath(data.directory);
       } else if (data.status === "error") {
-        alert(data.message);
+        addLog(`폴더 선택 실패: ${data.message}`);
       }
     } catch (err) {
-      alert("폴더 선택기를 여는 중 오류가 발생했습니다.");
+      const detail = err instanceof Error ? err.message : "알 수 없는 오류";
+      addLog(`폴더 선택기 실행 실패: ${detail}`);
     } finally {
       setSelectingFolder(false);
     }
@@ -82,11 +85,7 @@ export default function ServiceConfigPanel() {
     setLoading(true);
     const success = await savePipelineSettings(vaultPath, apiKey, pageId);
     setLoading(false);
-    if (success) {
-      alert("지식 파이프라인 연동 설정이 완료되었습니다.");
-    } else {
-      alert("설정 저장에 실패했습니다.");
-    }
+    addLog(success ? "지식 파이프라인 연동 설정 완료" : "지식 파이프라인 연동 설정 저장 실패");
   };
 
   return (
@@ -105,15 +104,16 @@ export default function ServiceConfigPanel() {
         {/* Obsidian 설정 */}
         <div className="border border-slate-100 p-4 rounded-xl space-y-3 bg-slate-50/30">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-text-primary">
-            <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+            <span className="w-2 h-2 rounded-full bg-primary"></span>
             Obsidian 설정
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+            <label htmlFor="obsidian-vault-path" className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
               Obsidian Vault 로컬 절대 경로
             </label>
             <div className="flex gap-2">
               <input
+                id="obsidian-vault-path"
                 type="text"
                 value={vaultPath}
                 onChange={(e) => setVaultPath(e.target.value)}
@@ -178,7 +178,7 @@ export default function ServiceConfigPanel() {
             <div className="space-y-3.5">
               {/* 이미 연결된 경우: 페이지 선택 드롭다운 */}
               <div className="flex flex-col gap-1.5">
-                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider">
+                <label htmlFor="notion-target-page" className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider">
                   가공 노트를 전송할 대상 페이지 선택
                 </label>
                 {loadingPages ? (
@@ -192,6 +192,7 @@ export default function ServiceConfigPanel() {
                   </div>
                 ) : (
                   <select
+                    id="notion-target-page"
                     value={pageId}
                     onChange={(e) => setPageId(e.target.value)}
                     className="w-full bg-white border border-surface-variant rounded-lg px-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary/50 transition-colors cursor-pointer"
@@ -246,10 +247,11 @@ export default function ServiceConfigPanel() {
               </details>
 
               <div>
-                <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                <label htmlFor="notion-api-key" className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
                   Notion API Key
                 </label>
                 <input
+                  id="notion-api-key"
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
@@ -259,10 +261,11 @@ export default function ServiceConfigPanel() {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                <label htmlFor="notion-page-id" className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
                   대상 Page ID (또는 페이지 URL 붙여넣기)
                 </label>
                 <input
+                  id="notion-page-id"
                   type="text"
                   value={pageId}
                   onChange={(e) => handlePageIdChange(e.target.value)}
