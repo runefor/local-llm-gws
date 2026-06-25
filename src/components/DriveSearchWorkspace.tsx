@@ -158,7 +158,7 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
 
   return (
     <div className={`bg-white rounded-2xl border border-surface-variant shadow-[0_1px_2px_rgba(0,0,0,0.05)] flex flex-col ${isDesktop ? "h-full min-h-0 overflow-hidden" : "min-h-[680px]"}`}>
-      <div className="p-6 border-b border-surface-variant flex items-start justify-between gap-4 flex-wrap">
+      <div className={`${isDesktop ? "p-4" : "p-6"} border-b border-surface-variant flex items-start justify-between gap-4 flex-wrap`}>
         <div className="flex flex-col gap-1">
           <h2 className="text-text-primary text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-primary">folder_special</span>
@@ -192,36 +192,36 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
         </div>
       )}
 
-      <div className={`grid grid-cols-1 min-[1140px]:grid-cols-[minmax(320px,0.78fr)_minmax(560px,1.22fr)] gap-5 p-6 ${isDesktop ? "flex-1 min-h-0 overflow-hidden" : ""}`}>
-        <section className="bg-surface rounded-2xl border border-surface-variant p-3 flex flex-col gap-3 min-h-0">
-          <form onSubmit={handleSearch} className="flex flex-col gap-3">
+      <div className={`grid grid-cols-1 min-[1140px]:grid-cols-[minmax(320px,0.78fr)_minmax(560px,1.22fr)] ${isDesktop ? "flex-1 min-h-0 gap-4 overflow-hidden p-4" : "gap-5 p-6"}`}>
+        <section className={`bg-surface rounded-2xl border border-surface-variant flex flex-col min-h-0 ${isDesktop ? "gap-2 p-2" : "gap-3 p-3"}`}>
+          <form onSubmit={handleSearch} className={`flex flex-col ${isDesktop ? "gap-2" : "gap-3"}`}>
             <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
               <span className="material-symbols-rounded text-primary text-sm">tune</span>
               Drive 상세 조건
             </h3>
 
-            <div className="rounded-2xl border border-surface-variant bg-white p-3">
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-text-primary">
+            <div className={`rounded-2xl border border-surface-variant bg-white ${isDesktop ? "p-2" : "p-3"}`}>
+              <div className={`${isDesktop ? "mb-1.5" : "mb-2"} flex items-center gap-1.5 text-[11px] font-semibold text-text-primary`}>
                 <span className="material-symbols-rounded text-sm text-primary">bookmark</span>
                 저장 조건
               </div>
-              <div className="grid grid-cols-1 gap-2">
-                <input type="text" value={conditionName} onChange={(event) => setConditionName(event.target.value)} disabled={!canUseDrive || isSearching} placeholder="조건 이름" className="w-full rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary transition-all placeholder:text-text-secondary/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50" />
+              <div className={`grid grid-cols-1 ${isDesktop ? "gap-1.5" : "gap-2"}`}>
+                <input type="text" value={conditionName} onChange={(event) => setConditionName(event.target.value)} disabled={!canUseDrive || isSearching} placeholder="조건 이름" className={`w-full rounded-full border border-surface-variant bg-surface px-3 text-xs text-text-primary transition-all placeholder:text-text-secondary/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`} />
                 <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-                  <select value={selectedConditionId} onChange={(event) => setSelectedConditionId(event.target.value)} disabled={!canUseDrive || isSearching || savedConditions.length === 0} className="min-w-0 rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50">
+                  <select value={selectedConditionId} onChange={(event) => setSelectedConditionId(event.target.value)} disabled={!canUseDrive || isSearching || savedConditions.length === 0} className={`min-w-0 rounded-full border border-surface-variant bg-surface px-3 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`}>
                     <option value="">불러올 조건 선택</option>
                     {savedConditions.map((condition) => (
                       <option key={condition.id} value={condition.id}>{condition.name}</option>
                     ))}
                   </select>
-                  <button type="button" onClick={handleSaveCondition} disabled={!canUseDrive || isSearching} className="rounded-full border border-surface-variant bg-surface px-3 py-2 text-[11px] font-semibold text-text-primary hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50">
+                  <button type="button" onClick={handleSaveCondition} disabled={!canUseDrive || isSearching} className={`rounded-full border border-surface-variant bg-surface px-3 text-[11px] font-semibold text-text-primary hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`}>
                     저장
                   </button>
-                  <button type="button" onClick={handleApplyCondition} disabled={!canUseDrive || isSearching || savedConditions.length === 0} className="rounded-full bg-primary px-3 py-2 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40">
+                  <button type="button" onClick={handleApplyCondition} disabled={!canUseDrive || isSearching || savedConditions.length === 0} className={`rounded-full bg-primary px-3 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 ${isDesktop ? "py-1.5" : "py-2"}`}>
                     적용
                   </button>
                 </div>
-                <p className="text-[11px] leading-relaxed text-text-secondary">적용은 입력값만 채우고 검색은 실행하지 않습니다.</p>
+                {!isDesktop && <p className="text-[11px] leading-relaxed text-text-secondary">적용은 입력값만 채우고 검색은 실행하지 않습니다.</p>}
               </div>
             </div>
 
@@ -229,11 +229,11 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
               <span className="text-[11px] font-semibold text-text-secondary">키워드</span>
               <div className="relative">
                 <span className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary text-lg">search</span>
-                <input type="text" value={keyword} onChange={(event) => setKeyword(event.target.value)} disabled={!canUseDrive || isSearching} placeholder="예: 계약서, 보고서, 지원 자료" className="w-full bg-white border border-surface-variant rounded-full pl-10 pr-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/55" />
+                <input type="text" value={keyword} onChange={(event) => setKeyword(event.target.value)} disabled={!canUseDrive || isSearching} placeholder="예: 계약서, 보고서, 지원 자료" className={`w-full bg-white border border-surface-variant rounded-full pl-10 pr-4 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 transition-all placeholder:text-text-secondary/55 ${isDesktop ? "py-2" : "py-2.5"}`} />
               </div>
             </label>
 
-            <div className="space-y-2">
+            <div className={isDesktop ? "space-y-1.5" : "space-y-2"}>
               <span className="text-[11px] font-semibold text-text-secondary">파일 형식</span>
               <div className="flex flex-wrap gap-2">
                 {driveTypeOptions.map((option) => (
@@ -244,7 +244,7 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className={isDesktop ? "space-y-1.5" : "space-y-2"}>
               <span className="text-[11px] font-semibold text-text-secondary">수정 기간</span>
               <div className="flex flex-wrap gap-2">
                 {drivePeriodOptions.map((option) => (
@@ -255,23 +255,23 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
               </div>
             </div>
 
-            <label className="flex items-center gap-2 rounded-2xl border border-surface-variant bg-white px-3 py-2 text-[11px] font-semibold text-text-primary">
+            <label className={`flex items-center gap-2 rounded-2xl border border-surface-variant bg-white px-3 text-[11px] font-semibold text-text-primary ${isDesktop ? "py-1.5" : "py-2"}`}>
               <input type="checkbox" checked={sharedWithMe} onChange={(event) => setSharedWithMe(event.target.checked)} disabled={!canUseDrive || isSearching} className="h-4 w-4 accent-primary" />
               공유받은 문서만
             </label>
 
             <div className="grid grid-cols-[110px_1fr] gap-2">
-              <input type="number" min="1" max="200" value={maxItems} onChange={(event) => setMaxItems(event.target.value)} disabled={!canUseDrive || isSearching} aria-label="최대 검색 Drive 문서 수" className="bg-white border border-surface-variant rounded-full px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50" />
-              <button type="submit" disabled={!canUseDrive || isSearching} className="bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white text-xs font-semibold px-5 py-2 rounded-full transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5">
+              <input type="number" min="1" max="200" value={maxItems} onChange={(event) => setMaxItems(event.target.value)} disabled={!canUseDrive || isSearching} aria-label="최대 검색 Drive 문서 수" className={`bg-white border border-surface-variant rounded-full px-3 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 ${isDesktop ? "py-1.5" : "py-2"}`} />
+              <button type="submit" disabled={!canUseDrive || isSearching} className={`bg-primary hover:bg-primary/90 disabled:bg-white disabled:text-text-secondary/40 text-white text-xs font-semibold px-5 rounded-full transition-all cursor-pointer disabled:cursor-default flex items-center justify-center gap-1.5 ${isDesktop ? "py-1.5" : "py-2"}`}>
                 <span className={`material-symbols-rounded text-sm ${isSearching ? "animate-spin" : ""}`}>{isSearching ? "sync" : "travel_explore"}</span>
                 <span>{isSearching ? "검색 중..." : "Drive 원본 검색"}</span>
               </button>
             </div>
           </form>
 
-          <div className="rounded-2xl border border-surface-variant bg-white p-2.5 text-[11px] text-text-secondary">
+          <div className={`rounded-2xl border border-surface-variant bg-white text-[11px] text-text-secondary ${isDesktop ? "p-2" : "p-2.5"}`}>
             <span>검색 결과 <strong className="text-text-primary">{driveItems.length}</strong>개</span>
-            <p className="mt-1.5 leading-relaxed">원문 확인 후 벡터 검색 대상이 필요하면 벡터 자료 찾기에서 Drive 인덱스를 갱신하세요.</p>
+            {!isDesktop && <p className="mt-1.5 leading-relaxed">원문 확인 후 벡터 검색 대상이 필요하면 벡터 자료 찾기에서 Drive 인덱스를 갱신하세요.</p>}
           </div>
         </section>
 
