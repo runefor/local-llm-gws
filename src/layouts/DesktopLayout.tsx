@@ -56,14 +56,14 @@ export default function DesktopLayout() {
       {/* 메인 윈도우 레이아웃 */}
       <div className="flex-1 flex overflow-hidden">
         
-        <aside className="w-72 bg-surface border-r border-surface-variant/60 flex flex-col justify-between p-4 select-none">
-          <div className="space-y-5">
+        <aside className="w-20 lg:w-72 bg-surface border-r border-surface-variant/60 flex flex-col p-2 lg:p-4 select-none">
+          <div className="flex-shrink-0 space-y-5">
             {/* 앱 로고/제목 */}
-            <div className="flex items-center space-x-3 rounded-2xl bg-background px-3 py-3 border border-surface-variant/60 shadow-sm">
-              <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center text-white shadow-sm">
+            <div className="flex items-center justify-center lg:justify-start lg:space-x-3 rounded-2xl bg-background px-2 lg:px-3 py-3 border border-surface-variant/60 shadow-sm">
+              <div className="w-10 h-10 rounded-2xl bg-primary flex shrink-0 items-center justify-center text-white shadow-sm">
                 <span className="material-symbols-rounded text-lg">hub</span>
               </div>
-              <div className="min-w-0">
+              <div className="hidden min-w-0 lg:block">
                 <h1 className="text-sm font-semibold tracking-wide text-text-primary truncate">
                   GWS 로컬 지식함
                 </h1>
@@ -74,10 +74,12 @@ export default function DesktopLayout() {
             </div>
 
             {/* 네비게이션 메뉴 */}
-            <nav className="space-y-4" aria-label="주요 작업 메뉴">
+          </div>
+
+          <nav className="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto pr-0 lg:pr-1" aria-label="주요 작업 메뉴">
               {menuSections.map((section) => (
                 <div key={section.title} className="space-y-1.5">
-                  <p className="px-3 text-[10px] font-semibold tracking-[0.08em] text-text-secondary">
+                  <p className="hidden px-3 text-[10px] font-semibold tracking-[0.08em] text-text-secondary lg:block">
                     {section.title}
                   </p>
                   <div className="space-y-1">
@@ -90,7 +92,8 @@ export default function DesktopLayout() {
                           type="button"
                           onClick={() => setActiveMenu(item.id)}
                           aria-current={isActive ? "page" : undefined}
-                          className={`w-full flex items-center space-x-3 px-3 py-2 rounded-full text-left transition-all cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                          title={item.label}
+                          className={`w-full flex items-center justify-center lg:justify-start lg:space-x-3 px-3 py-2 rounded-full text-left transition-all cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                             isActive
                               ? "bg-primary-container text-primary shadow-sm"
                               : "text-text-secondary hover:bg-primary-container/40 hover:text-text-primary"
@@ -99,7 +102,7 @@ export default function DesktopLayout() {
                           <span className={`material-symbols-rounded text-[20px] ${isActive ? "text-primary" : "text-text-secondary"}`}>
                             {item.icon}
                           </span>
-                          <span className="min-w-0 flex-1">
+                          <span className="hidden min-w-0 flex-1 lg:block">
                             <span className="block text-xs font-semibold truncate">{item.label}</span>
                             <span className="block text-[10px] font-medium leading-4 text-text-secondary truncate">
                               {item.description}
@@ -112,11 +115,10 @@ export default function DesktopLayout() {
                 </div>
               ))}
             </nav>
-          </div>
 
-          <div className="rounded-2xl bg-background border border-surface-variant/70 p-3 space-y-3 shadow-sm">
+          <div className="mt-3 flex-shrink-0 rounded-2xl bg-background border border-surface-variant/70 p-2 lg:p-3 space-y-3 shadow-sm">
             <div className="flex items-center justify-between">
-              <div>
+              <div className="hidden lg:block">
                 <p className="text-xs font-semibold text-text-primary">앱 상태</p>
                 <p className="text-[10px] text-text-secondary">문제가 있으면 다시 확인하세요</p>
               </div>
@@ -126,7 +128,7 @@ export default function DesktopLayout() {
                   checkBackend();
                   checkGwsAuth();
                 }}
-                className="h-8 w-8 rounded-full text-primary hover:bg-primary-container/50 transition-colors flex items-center justify-center cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mx-auto h-8 w-8 rounded-full text-primary hover:bg-primary-container/50 transition-colors flex items-center justify-center cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary lg:mx-0"
                 title="전체 상태 다시 확인"
               >
                 <span className="material-symbols-rounded text-base">refresh</span>
@@ -134,18 +136,18 @@ export default function DesktopLayout() {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-medium text-text-secondary">백엔드</span>
+              <div className="flex items-center justify-center lg:justify-between text-[11px]">
+                <span className="hidden font-medium text-text-secondary lg:inline">백엔드</span>
                 <span className="font-semibold text-text-primary flex items-center">
                   <span className={`w-2 h-2 rounded-full ${backendStatusClass} mr-1.5`}></span>
-                  {backendStatusLabel}
+                  <span className="hidden lg:inline">{backendStatusLabel}</span>
                 </span>
               </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-medium text-text-secondary">Google</span>
+              <div className="flex items-center justify-center lg:justify-between text-[11px]">
+                <span className="hidden font-medium text-text-secondary lg:inline">Google</span>
                 <span className="font-semibold text-text-primary flex items-center">
                   <span className={`w-2 h-2 rounded-full ${googleStatusClass} mr-1.5`}></span>
-                  {googleStatusLabel}
+                  <span className="hidden lg:inline">{googleStatusLabel}</span>
                 </span>
               </div>
             </div>
@@ -154,14 +156,14 @@ export default function DesktopLayout() {
               <button
                 type="button"
                 onClick={triggerGoogleLogin}
-                className="w-full rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/95 active:scale-[0.98] transition-all cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="hidden w-full rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/95 active:scale-[0.98] transition-all cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary lg:block"
               >
                 Google Workspace 연결하기
               </button>
             )}
 
             {backendStatus === "offline" && (
-              <div className="rounded-2xl bg-primary-container/30 px-3 py-2 text-[10px] leading-4 text-text-secondary">
+              <div className="hidden rounded-2xl bg-primary-container/30 px-3 py-2 text-[10px] leading-4 text-text-secondary lg:block">
                 백엔드가 꺼져 있으면 원본 조회와 벡터 검색이 제한됩니다.
                 <button 
                   type="button"
@@ -176,7 +178,7 @@ export default function DesktopLayout() {
         </aside>
 
         {/* 데스크탑 메인 콘텐츠 패널 (스크롤 제어) */}
-        <main className="flex-1 bg-background flex flex-col overflow-hidden p-6 relative">
+        <main className="min-w-0 flex-1 bg-background flex flex-col overflow-hidden p-3 md:p-4 lg:p-6 relative">
           
           {activeMenu === "hybrid" && (
             <div className="h-full min-h-0 overflow-hidden">

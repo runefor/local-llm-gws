@@ -41,7 +41,7 @@ function AppContent() {
           {/* 프리미엄 로더 애니메이션 */}
           <div className="relative w-14 h-14">
             <div className="absolute inset-0 rounded-full border-4 border-slate-800"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
           </div>
           <div className="text-center">
             <h1 className="text-base font-bold tracking-tight text-white mb-1.5">Local LLM GWS Integrator</h1>
