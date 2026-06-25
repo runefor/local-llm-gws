@@ -15,18 +15,19 @@ export default function LogConsole({ isDesktop = false }: LogConsoleProps) {
           동기화 및 API 시스템 로그
         </span>
         <button 
+          type="button"
           onClick={() => setSyncLog([])} 
           className="text-[10px] text-text-secondary hover:text-primary transition-colors cursor-pointer"
         >
-          Clear Logs
+          로그 비우기
         </button>
       </div>
       <div className={`space-y-1 scrollbar-none hover:scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent pr-2 flex flex-col-reverse ${isDesktop ? "flex-1 overflow-y-auto" : "h-32 overflow-y-auto"}`}>
         {syncLog.length === 0 ? (
           <span className="text-text-secondary italic">로그가 비어 있습니다. 동기화를 진행하거나 백엔드 서버를 확인하세요.</span>
         ) : (
-          syncLog.map((log, index) => (
-            <div key={index} className="text-text-secondary hover:bg-primary-container/20 px-1 py-0.5 rounded transition-colors break-all">
+          syncLog.map((log) => (
+            <div key={log} className="text-text-secondary hover:bg-primary-container/20 px-1 py-0.5 rounded transition-colors break-all">
               {log}
             </div>
           ))

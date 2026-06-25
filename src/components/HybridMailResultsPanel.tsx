@@ -71,7 +71,7 @@ export function HybridMailResultsPanel({
                           <p className="text-[11px] text-text-secondary truncate mt-0.5">{item.from || "발신자 없음"}</p>
                         </div>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex-shrink-0 ${vectorized ? "bg-primary-container/60 border-primary-container text-primary" : "bg-surface border-surface-variant text-text-secondary"}`}>
-                          {vectorized ? "vector" : formatMailDate(item.date)}
+                          {vectorized ? "벡터화됨" : formatMailDate(item.date)}
                         </span>
                       </div>
                       <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">{item.snippet || "미리보기 본문이 없습니다."}</p>

@@ -200,8 +200,8 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[10px] font-bold">
-          <span className={`px-3 py-1 rounded-full border ${backendStatus === "online" ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-rose-50 border-rose-100 text-rose-700"}`}>Backend {backendStatus}</span>
-          <span className={`px-3 py-1 rounded-full border ${isGwsAuthenticated ? "bg-primary-container/60 border-primary-container text-primary" : "bg-surface border-surface-variant text-text-secondary"}`}>Google {isGwsAuthenticated ? "connected" : "login needed"}</span>
+          <span className={`px-3 py-1 rounded-full border ${backendStatus === "online" ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-rose-50 border-rose-100 text-rose-700"}`}>백엔드 {backendStatus === "online" ? "실행 중" : backendStatus === "connecting" ? "확인 중" : "대기 중"}</span>
+          <span className={`px-3 py-1 rounded-full border ${isGwsAuthenticated ? "bg-primary-container/60 border-primary-container text-primary" : "bg-surface border-surface-variant text-text-secondary"}`}>Google {isGwsAuthenticated ? "연결됨" : "로그인 필요"}</span>
           <span className="px-3 py-1 rounded-full bg-surface border border-surface-variant text-text-secondary">선택 {selectedIds.length}개</span>
         </div>
       </div>
