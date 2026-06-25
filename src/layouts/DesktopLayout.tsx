@@ -9,6 +9,7 @@ import LlmConfigPanel from "../components/LlmConfigPanel";
 import ServiceConfigPanel from "../components/ServiceConfigPanel";
 import RagSearchPanel from "../components/RagSearchPanel";
 import LogConsole from "../components/LogConsole";
+import ChatPanel from "../components/ChatPanel";
 import { menuSections, type DesktopMenu } from "./desktopMenu";
 
 export default function DesktopLayout() {
@@ -224,6 +225,12 @@ export default function DesktopLayout() {
                   원본 목록 확인은 자료 준비의 Gmail · Drive 원본 검색에서 하고, Drive 원본은 벡터 인덱스 갱신 후 찾기에 나타납니다.
                 </p>
               </div>
+            </div>
+          )}
+
+          {activeMenu === "chat" && (
+            <div className="h-full min-h-0 overflow-hidden">
+              <ChatPanel />
             </div>
           )}
 

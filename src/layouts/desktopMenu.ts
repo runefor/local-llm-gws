@@ -1,4 +1,4 @@
-export type DesktopMenu = "hybrid" | "drive" | "sync" | "workspace" | "rag" | "pipeline" | "settings" | "logs";
+export type DesktopMenu = "hybrid" | "drive" | "sync" | "workspace" | "rag" | "chat" | "pipeline" | "settings" | "logs";
 
 type MenuItem = {
   readonly id: DesktopMenu;
@@ -50,6 +50,12 @@ export const menuSections = [
   {
     title: "답하기",
     items: [
+      {
+        id: "chat",
+        icon: "forum",
+        label: "LLM 채팅",
+        description: "일반 대화와 RAG/Wiki 근거 답변",
+      },
       {
         id: "sync",
         icon: "auto_stories",

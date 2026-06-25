@@ -9,6 +9,7 @@ from src.gws.gmail import list_labels, list_message_metadata
 from src.gws.drive import list_drive_files
 from src.gws.originals import router as gws_originals_router
 from src.evidence import record_relevance_feedback
+from src.chat_sessions import ChatGroundingOptions
 from src.wiki_conditions import ConditionValidationError, WikiConditionStore
 from src.wiki_condition_runner import run_condition
 
@@ -478,6 +479,63 @@ def rag_search(req: RagSearchRequest):
     try:
         from src.rag.retriever import search_evidence
         return search_evidence(req.query, req.top_k, req.sources)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class ChatSessionCreateRequest(BaseModel):
+    title: str = Field(default="", max_length=120)
+    options: ChatGroundingOptions = Field(default_factory=ChatGroundingOptions)
+
+
+class ChatMessageRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=12000)
+    options: Optional[ChatGroundingOptions] = None
+
+
+@app.get("/api/chat/sessions")
+def chat_sessions_list():
+    try:
+        from src.chat_sessions import list_chat_sessions
+
+        return {"status": "success", "sessions": list_chat_sessions()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/chat/sessions")
+def chat_sessions_create(req: ChatSessionCreateRequest):
+    try:
+        from src.chat_sessions import create_chat_session
+
+        session = create_chat_session(title=req.title, options=req.options)
+        return {"status": "success", "session": session.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/chat/sessions/{session_id}")
+def chat_sessions_get(session_id: str):
+    try:
+        from src.chat_sessions import get_chat_session
+
+        session = get_chat_session(session_id)
+        if session is None:
+            return {"status": "error", "message": "채팅을 찾을 수 없습니다."}
+        return {"status": "success", "session": session.model_dump()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/chat/sessions/{session_id}/messages")
+def chat_sessions_append_message(session_id: str, req: ChatMessageRequest):
+    try:
+        from src.chat_sessions import append_chat_message
+
+        session = append_chat_message(session_id, req.message, req.options)
+        if session is None:
+            return {"status": "error", "message": "채팅을 찾을 수 없습니다."}
+        return {"status": "success", "session": session.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
