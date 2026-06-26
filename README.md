@@ -1,7 +1,75 @@
-# Tauri + React + Typescript
+# GWS 로컬 지식함
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Google Workspace 자료를 내 PC에서 검색하고, 필요한 근거만 골라 로컬 LLM으로 답변이나 Wiki 초안을 만드는 데스크톱 앱입니다.
 
-## Recommended IDE Setup
+## 어떤 순서로 쓰나요?
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+1. **시작하기**: 오늘 할 작업과 전체 흐름을 확인합니다.
+2. **자료 가져오기**: Gmail 또는 Drive 원본을 찾습니다.
+3. **벡터화/인덱싱**: 선택한 자료를 검색 가능한 근거로 준비합니다.
+4. **검색하기**: 벡터화된 근거를 검색하고 정보 묶음으로 저장합니다.
+5. **답변/Wiki 만들기**: 저장한 근거로 채팅하거나 Wiki 후보를 생성합니다.
+6. **설정**: LLM, Obsidian, Notion 연결을 관리합니다.
+
+## 설치와 실행
+
+개발 환경에서는 아래 순서로 실행합니다.
+
+```bash
+npm install
+npm run build
+npm run tauri dev
+```
+
+간단히 실행하려면 Windows에서 `run.bat`를 사용할 수 있습니다. 앱은 기본적으로 프론트엔드 `18732`, 백엔드 `127.0.0.1:18731` 포트를 사용합니다.
+
+## Google Workspace 연결
+
+- 처음 사용할 때 Google OAuth 로그인이 필요합니다.
+- Gmail/Drive 자료는 사용자가 직접 검색하거나 선택한 범위에서만 처리합니다.
+- Gmail 전체 본문을 무조건 인덱싱하지 않고, 필요한 메일만 선택 벡터화하는 흐름을 기본으로 둡니다.
+
+## LLM 선택
+
+설정 화면에서 세 가지 중 하나를 고릅니다.
+
+- **추천: 로컬 모델 자동 설치**: 모델을 내려받아 이 PC 안에서 처리합니다.
+- **이미 Ollama/LM Studio 사용 중**: 실행 중인 로컬 서버를 감지해 연결합니다.
+- **외부 API 직접 입력**: 원격 API를 직접 입력합니다. 이 경우 Gmail/Drive 자료가 외부로 전송될 수 있으므로 앱에서 경고합니다.
+
+모델 파일은 용량이 클 수 있습니다. PC 사양과 디스크 여유 공간을 확인한 뒤 다운로드하세요.
+
+## 데이터와 개인정보
+
+- 앱 데이터, 토큰, 벡터 DB, 모델 파일은 기본적으로 `python-backend/data/` 아래에 보관됩니다.
+- 로컬 LLM 또는 localhost 기반 Ollama/LM Studio를 쓰면 자료 처리는 이 기기 안에서 이뤄집니다.
+- 외부 API endpoint를 쓰면 선택한 자료 일부가 해당 API 제공자에게 전송될 수 있습니다.
+
+## 진단 로그 저장
+
+사용자에게 상세 로그 패널을 계속 보여주지 않습니다. 대신 왼쪽 하단 **앱 상태** 카드에서 `진단 로그 저장`을 누르면 현재 백엔드/Google 연결 상태 요약을 `.txt` 파일로 저장할 수 있습니다. 개인정보 보호를 위해 Gmail/Drive 원문, 검색어, 최근 앱 로그 본문은 포함하지 않습니다.
+
+오류 제보 시 이 파일과 함께 다음 정보를 알려주세요.
+
+- 사용한 메뉴 단계
+- 백엔드 상태
+- Google 로그인 상태
+- LLM 선택 방식
+- 문제가 발생한 검색어 또는 자료 유형
+
+## 개발 명령
+
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run tauri dev
+npm run tauri build
+cd python-backend && python -m unittest discover -s tests
+```
+
+## 현재 제한
+
+- 배포 패키징은 Windows NSIS 흐름을 우선으로 둡니다.
+- 백엔드가 꺼져 있으면 Google 원본 조회, 벡터 검색, LLM 모델 목록 조회가 제한됩니다.
+- Obsidian/Notion 내보내기는 설정 화면에서 각 서비스 정보를 먼저 저장해야 합니다.
