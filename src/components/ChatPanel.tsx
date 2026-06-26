@@ -447,7 +447,7 @@ export default function ChatPanel() {
               <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                 {chatReady
                   ? "기본은 일반 LLM 대화입니다. RAG/Wiki 근거 사용을 켜면 자료 종류, 기간, 출처 엄격도와 고급 범위를 함께 저장합니다."
-                  : "데스크톱 앱이 로컬 백엔드와 연결되면 이 영역에서 바로 대화를 시작할 수 있습니다. 연결 기록은 실행 로그에 남습니다."}
+                  : "데스크톱 앱이 로컬 백엔드와 연결되면 이 영역에서 바로 대화를 시작할 수 있습니다. 문제가 있으면 앱 상태 카드에서 진단 로그를 저장하세요."}
               </p>
             </div>
           )}
