@@ -45,7 +45,7 @@ export function WorkspaceOriginalSearchHeader({
           >
             {isSyncing ? (
               <>
-                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
@@ -64,7 +64,7 @@ export function WorkspaceOriginalSearchHeader({
           <span className="material-symbols-rounded text-[14px] text-[#0b57d0]">info</span>
           <span>
             검색어로 GWS 원본 목록만 조회합니다. 검색어가 없을 경우 <strong>기본 1주일</strong> 기간 필터가 적용됩니다.
-            (팁: 여기서 가져온 Drive 원본은 자동으로 벡터 검색에 들어가지 않습니다. 찾기 메뉴에서 벡터 인덱스 갱신을 따로 실행하세요.)
+            (팁: 여기서 가져온 Drive 원본은 자동으로 벡터 검색에 들어가지 않습니다. 검색하기에서 벡터 인덱스 갱신을 따로 실행하세요.)
           </span>
         </div>
       </form>

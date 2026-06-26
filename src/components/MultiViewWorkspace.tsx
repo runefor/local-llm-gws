@@ -89,7 +89,7 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
           <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
             <span className="material-symbols-rounded text-4xl text-[#444746]/40">folder_open</span>
             <p className="text-sm text-[#444746] font-medium">가져온 원본 자료가 없습니다.</p>
-            <p className="text-xs text-[#444746]/70">위 검색창으로 GWS의 Gmail/Drive 원본 목록만 가져와 확인하세요. 벡터 검색 대상은 찾기 메뉴에서 따로 준비합니다.</p>
+            <p className="text-xs text-[#444746]/70">위 검색창으로 GWS의 Gmail/Drive 원본 목록만 가져와 확인하세요. 벡터 검색 대상은 검색하기에서 따로 준비합니다.</p>
           </div>
         ) : (
           
@@ -100,10 +100,11 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
               const isExpanded = expandedItemId === item.id;
               
               return (
-                <div
+                <button
                   key={item.id}
+                  type="button"
                   onClick={() => toggleExpand(item.id)}
-                  className="bg-[#f8fafd] hover:bg-[#d3e3fd]/20 p-4 rounded-2xl border border-[#e1e3e1] hover:border-[#0b57d0]/30 transition-all shadow-[0_1px_2px_0_rgba(0,0,0,0.02)] cursor-pointer flex flex-col space-y-2"
+                  className="w-full bg-[#f8fafd] hover:bg-[#d3e3fd]/20 p-4 rounded-2xl border border-[#e1e3e1] hover:border-[#0b57d0]/30 transition-all shadow-[0_1px_2px_0_rgba(0,0,0,0.02)] cursor-pointer flex flex-col space-y-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2 overflow-hidden">
@@ -150,7 +151,7 @@ export default function MultiViewWorkspace({ isDesktop = false }: MultiViewWorks
                       <div><span className="font-semibold">수정 시간:</span> {new Date(item.timestamp).toLocaleString()}</div>
                     </div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>

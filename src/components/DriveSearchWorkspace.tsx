@@ -108,7 +108,7 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
     const searched = await searchDriveMetadata(driveQuery, Number.isNaN(parsedMaxItems) ? 30 : parsedMaxItems);
     setNotice(searched
       ? { type: "success", text: "Drive 원본 검색이 완료되었습니다. 필요한 문서를 열어 내용을 확인하세요." }
-      : { type: "error", text: "Drive 원본 검색에 실패했습니다. 실행 로그를 확인하세요." });
+      : { type: "error", text: "Drive 원본 검색에 실패했습니다. 앱 상태 카드에서 진단 로그를 저장해 확인하세요." });
   };
 
   const handleSaveCondition = () => {
@@ -271,7 +271,7 @@ export default function DriveSearchWorkspace({ isDesktop = false }: DriveSearchW
 
           <div className={`rounded-2xl border border-surface-variant bg-white text-[11px] text-text-secondary ${isDesktop ? "p-2" : "p-2.5"}`}>
             <span>검색 결과 <strong className="text-text-primary">{driveItems.length}</strong>개</span>
-            {!isDesktop && <p className="mt-1.5 leading-relaxed">원문 확인 후 벡터 검색 대상이 필요하면 벡터 자료 찾기에서 Drive 인덱스를 갱신하세요.</p>}
+            {!isDesktop && <p className="mt-1.5 leading-relaxed">원문 확인 후 벡터 검색 대상이 필요하면 검색하기에서 Drive 인덱스를 갱신하세요.</p>}
           </div>
         </section>
 

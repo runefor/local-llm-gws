@@ -453,7 +453,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { status: "error", message };
     }
     if (sources.includes("drive") && driveItems.length === 0) {
-      const message = "Drive 원본 검색 결과가 없습니다. 자료 준비에서 관련 Drive 원본을 먼저 검색하세요.";
+      const message = "Drive 원본 검색 결과가 없습니다. 자료 가져오기에서 관련 Drive 원본을 먼저 검색하세요.";
       addLog(`Drive 벡터 인덱스 갱신 보류: ${message}`);
       return { status: "error", message };
     }
