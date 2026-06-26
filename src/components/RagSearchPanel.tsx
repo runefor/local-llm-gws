@@ -1075,7 +1075,7 @@ export default function RagSearchPanel() {
         <div className="flex flex-col gap-0.5">
           <h2 className="text-[#1f1f1f] text-base font-semibold flex items-center">
             <span className="material-symbols-rounded mr-2 text-[#0b57d0]">hub</span>
-            벡터 자료 찾기
+            검색하기
           </h2>
           <p className="text-xs text-[#444746] font-normal leading-relaxed">
             Gmail에서 선택 벡터화했거나 Drive 벡터 인덱스 갱신으로 넣은 근거만 검색하고, 선택한 자료를 정보 묶음으로 저장한 뒤 필요할 때만 요약을 생성합니다.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createWikiCondition,
   listWikiConditions,
@@ -81,7 +81,7 @@ export default function SyncPanel() {
     return new Map(gmailLabels.map((label) => [label.id, label.name]));
   }, [gmailLabels]);
 
-  const loadConditions = async () => {
+  const loadConditions = useCallback(async () => {
     setLoading(true);
     try {
       const response = await listWikiConditions();
@@ -97,11 +97,11 @@ export default function SyncPanel() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadConditions();
-  }, []);
+  }, [loadConditions]);
 
   const toggleLabel = (labelId: string) => {
     setDraft((current) => ({
@@ -172,7 +172,7 @@ export default function SyncPanel() {
             Wiki 후보 조건
           </h2>
           <p className="text-sm text-text-secondary leading-relaxed mt-1">
-            조건별로 필요한 원본 후보를 모으고, 메타데이터/스니펫 기반 초안을 만듭니다. 최종 Wiki는 벡터 자료 찾기에서 정보 묶음으로 확정하세요.
+            조건별로 필요한 원본 후보를 모으고, 메타데이터/스니펫 기반 초안을 만듭니다. 최종 Wiki는 검색하기에서 정보 묶음으로 확정하세요.
           </p>
         </div>
         <button

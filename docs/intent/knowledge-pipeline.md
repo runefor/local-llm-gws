@@ -20,5 +20,5 @@ Canonical direction: [RAG + LLM Wiki product direction](./rag-llm-wiki-product-d
 
 ## Implementation Boundary (2026-06-19)
 
-- 최종 Wiki 생성은 `벡터 자료 찾기 -> 정보 묶음 -> artifact_type=wiki` 경로에서만 수행한다.
+- 최종 Wiki 생성은 `검색하기 -> 정보 묶음 -> artifact_type=wiki` 경로에서만 수행한다.
 - 조건 기반 Wiki 화면은 메타데이터/스니펫 기반 후보 초안이다. 원문 검토와 정보 묶음 확정 전에는 최종 Wiki로 취급하지 않는다.

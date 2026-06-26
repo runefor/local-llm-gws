@@ -8,7 +8,7 @@ const flowSteps = [
   },
   {
     icon: "search",
-    title: "2. 벡터 자료 찾기",
+    title: "2. 검색하기",
     body: "벡터화된 본문을 검색해 관련 청크, 매칭 이유, 원문 위치를 확인합니다.",
   },
   {
@@ -81,7 +81,7 @@ export default function KnowledgePipelinePanel() {
           <div className="mt-4 rounded-2xl bg-primary-container/40 border border-primary/10 p-4">
             <p className="text-xs font-semibold text-text-primary">실제 실행 위치</p>
             <p className="text-[11px] text-text-secondary leading-relaxed mt-1">
-              왼쪽 메뉴의 <strong className="text-primary">벡터 자료 찾기</strong>에서 검색 결과를 선택해 정보 묶음을 만들고, 정보 묶음 상세에서 Wiki 초안과 저장을 진행하세요.
+              왼쪽 메뉴의 <strong className="text-primary">검색하기</strong>에서 검색 결과를 선택해 정보 묶음을 만들고, 정보 묶음 상세에서 Wiki 초안과 저장을 진행하세요.
             </p>
           </div>
         </div>
