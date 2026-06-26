@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useApp, type DetectedServer } from "../context/AppContext";
 import { classifyLlmEndpoint, type LlmServeMode } from "../utils/llmEndpoint";
+import { LlmSetupChooser } from "./LlmSetupChooser";
 
 interface Preset {
   id: string;
@@ -107,7 +108,6 @@ export default function LlmConfigPanel() {
     } catch (e) {
       const detail = e instanceof Error ? e.message : "알 수 없는 오류";
       addLog(`LLM 설정 데이터 로드 실패: ${detail}`);
-      console.error("LLM 데이터 로드 실패", e);
       setBackendOffline(true);
     } finally {
       setIsLoading(false);
@@ -326,7 +326,24 @@ export default function LlmConfigPanel() {
           LLM 설정 준비 중
         </h2>
         <div className="text-sm text-text-secondary leading-relaxed space-y-3">
-          <p>로컬 백엔드가 준비되면 모델 목록과 서버 상태가 이곳에 자동으로 표시됩니다. 연결 시도 기록은 실행 로그에 보관됩니다.</p>
+          <p>로컬 백엔드가 준비되면 모델 목록과 서버 상태가 이곳에 자동으로 표시됩니다. 지금은 아래 선택지 중 어떤 방식으로 쓸지만 먼저 확인하세요.</p>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <article className="rounded-2xl border border-surface-variant bg-background p-4">
+              <span className="material-symbols-rounded text-primary">download</span>
+              <h3 className="mt-2 text-sm font-semibold text-text-primary">추천: 로컬 모델 자동 설치</h3>
+              <p className="mt-1 text-xs leading-5 text-text-secondary">백엔드가 켜지면 모델 목록에서 PC 사양에 맞는 모델을 내려받습니다.</p>
+            </article>
+            <article className="rounded-2xl border border-surface-variant bg-background p-4">
+              <span className="material-symbols-rounded text-primary">dns</span>
+              <h3 className="mt-2 text-sm font-semibold text-text-primary">이미 Ollama/LM Studio 사용 중</h3>
+              <p className="mt-1 text-xs leading-5 text-text-secondary">백엔드가 켜지면 실행 중인 로컬 서버를 자동 감지합니다.</p>
+            </article>
+            <article className="rounded-2xl border border-surface-variant bg-background p-4">
+              <span className="material-symbols-rounded text-primary">key</span>
+              <h3 className="mt-2 text-sm font-semibold text-text-primary">외부 API 직접 입력</h3>
+              <p className="mt-1 text-xs leading-5 text-text-secondary">원격 API를 쓸 때는 자료 전송 경고를 확인한 뒤 연결합니다.</p>
+            </article>
+          </div>
           <button 
             type="button"
             onClick={fetchModels}
@@ -346,33 +363,16 @@ export default function LlmConfigPanel() {
         LLM 엔진 설정
       </h2>
       
-      <div className="flex space-x-4 mb-4">
-        <label className="flex items-center space-x-2 text-sm cursor-pointer">
-          <input 
-            type="radio" 
-            checked={llmMode === "internal"} 
-            onChange={() => {
-              setLlmMode("internal");
-              saveLlmConfig("http://localhost:8080/v1", llmModel, "llamacpp");
-            }}
-            className="text-primary focus:ring-primary"
-          />
-          <span>내장 로컬 모델 (추천)</span>
-        </label>
-        <label className="flex items-center space-x-2 text-sm cursor-pointer">
-          <input 
-            type="radio" 
-            checked={llmMode === "external"} 
-            onChange={() => {
-              setLlmMode("external");
-              const mode = llmEndpoint.includes("11434") ? "ollama" : "external";
-              saveLlmConfig(llmEndpoint, llmModel, mode);
-            }}
-            className="text-primary focus:ring-primary"
-          />
-          <span>외부 API (Ollama 등)</span>
-        </label>
-      </div>
+      <LlmSetupChooser
+        llmEndpoint={llmEndpoint}
+        llmModel={llmModel}
+        llmMode={llmMode}
+        setLlmEndpoint={setLlmEndpoint}
+        setLlmMode={setLlmMode}
+        saveLlmConfig={saveLlmConfig}
+        openManualConfig={() => setShowManualConfig(true)}
+        closeManualConfig={() => setShowManualConfig(false)}
+      />
 
       <div
         className={`mb-4 rounded-2xl border p-3.5 text-xs leading-relaxed ${
