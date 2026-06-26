@@ -1,4 +1,4 @@
-export type DesktopMenu = "hybrid" | "drive" | "sync" | "workspace" | "rag" | "chat" | "pipeline" | "settings" | "logs";
+export type DesktopMenu = "start" | "sources" | "indexing" | "search" | "create" | "settings";
 
 type MenuItem = {
   readonly id: DesktopMenu;
@@ -14,59 +14,37 @@ type MenuSection = {
 
 export const menuSections = [
   {
-    title: "자료 준비",
+    title: "작업 흐름",
     items: [
       {
-        id: "hybrid",
-        icon: "mail",
-        label: "Gmail 원본 검색",
-        description: "GWS 메일을 찾고 선택 벡터화",
+        id: "start",
+        icon: "flag",
+        label: "시작하기",
+        description: "오늘 할 작업과 다음 단계 확인",
       },
       {
-        id: "drive",
-        icon: "folder_special",
-        label: "Drive 원본 검색",
-        description: "Drive 문서를 상세 조건으로 찾기",
+        id: "sources",
+        icon: "folder_open",
+        label: "자료 가져오기",
+        description: "Gmail과 Drive 원본 찾기",
       },
       {
-        id: "workspace",
-        icon: "account_tree",
-        label: "Gmail · Drive 원본 검색",
-        description: "GWS 원본 목록만 확인",
+        id: "indexing",
+        icon: "sync_alt",
+        label: "벡터화/인덱싱",
+        description: "선택 자료를 검색 가능하게 준비",
       },
-    ],
-  },
-  {
-    title: "찾기",
-    items: [
       {
-        id: "rag",
+        id: "search",
         icon: "search",
-        label: "벡터 자료 찾기",
-        description: "벡터화된 자료만 검색",
-      },
-    ],
-  },
-  {
-    title: "답하기",
-    items: [
-      {
-        id: "chat",
-        icon: "forum",
-        label: "LLM 채팅",
-        description: "일반 대화와 RAG/Wiki 근거 답변",
+        label: "검색하기",
+        description: "근거 자료 찾고 정보 묶음 저장",
       },
       {
-        id: "sync",
+        id: "create",
         icon: "auto_stories",
-        label: "Wiki 조건 준비",
-        description: "조건별 원본 수집과 Wiki 초안",
-      },
-      {
-        id: "pipeline",
-        icon: "auto_stories",
-        label: "LLM Wiki 만들기",
-        description: "정보 묶음으로 Wiki 생성",
+        label: "답변/Wiki 만들기",
+        description: "채팅하거나 Wiki 후보 생성",
       },
     ],
   },
@@ -78,12 +56,6 @@ export const menuSections = [
         icon: "settings",
         label: "로컬 LLM 설정",
         description: "모델과 서비스 연결 관리",
-      },
-      {
-        id: "logs",
-        icon: "terminal",
-        label: "실행 로그",
-        description: "오류와 백엔드 기록 확인",
       },
     ],
   },
