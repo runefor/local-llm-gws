@@ -32,7 +32,7 @@ export function HybridMailResultsPanel({
             <span className="material-symbols-rounded text-primary text-sm">inbox</span>
             검색된 원본 메일
           </h3>
-          <p className="mt-1 leading-relaxed">제목, 발신자, 스니펫, 라벨을 한 화면에서 넓게 확인합니다.</p>
+          <p className="mt-1 break-keep leading-relaxed [overflow-wrap:normal] [word-break:keep-all]">제목, 발신자, 라벨을 넓게 봅니다.</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2 font-bold">
           <span className="rounded-full border border-surface-variant bg-surface px-3 py-1">결과 {gmailItems.length}개</span>
@@ -50,7 +50,7 @@ export function HybridMailResultsPanel({
           <div className="h-full min-h-[320px] flex flex-col items-center justify-center text-center gap-2 text-text-secondary">
             <span className="material-symbols-rounded text-4xl text-text-secondary/35">inbox</span>
             <p className="text-xs font-semibold">아직 GWS에서 검색한 Gmail 원본 메타데이터가 없습니다.</p>
-            <p className="text-[11px] leading-relaxed max-w-[300px]">왼쪽 조건으로 GWS Gmail 원본을 먼저 찾은 뒤 필요한 메일만 벡터화하세요.</p>
+            <p className="max-w-[260px] break-keep text-[11px] leading-relaxed [overflow-wrap:normal] [word-break:keep-all]">왼쪽 조건으로 메일을 찾고 필요한 항목만 벡터화하세요.</p>
           </div>
         ) : (
           <div className="space-y-3 pb-2">

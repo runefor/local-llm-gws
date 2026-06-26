@@ -223,7 +223,7 @@ export default function HybridMailWorkspace({ isDesktop = false }: HybridMailWor
         </div>
       )}
 
-      <div className={`grid grid-cols-1 min-[1140px]:grid-cols-[minmax(360px,0.86fr)_minmax(520px,1.14fr)] ${isDesktop ? "flex-1 min-h-0 gap-4 overflow-hidden p-4" : "gap-5 p-6"}`}>
+	      <div className={`grid grid-cols-1 ${isDesktop ? "flex-1 min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-4" : "gap-5 p-6"}`}>
         <HybridMailSearchPanel
           isDesktop={isDesktop}
           canUseGmail={canUseGmail}
