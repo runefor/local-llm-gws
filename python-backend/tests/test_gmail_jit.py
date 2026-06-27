@@ -625,7 +625,7 @@ class GmailJitEndpointTests(unittest.TestCase):
                 "body": {"data": "Qm9keQ=="},
             },
         }
-        document_hash = indexer._content_hash("Subject: Hello\nFrom: a@example.com\n\nBody")
+        document_hash = indexer._content_hash("Body")
         collection = _FakeCollection({"ids": ["gmail_m1_0"], "metadatas": [{"document_hash": document_hash}]})
         with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(collection)), \
              patch("src.rag.indexer.get_embedding_model") as get_embedding_model:

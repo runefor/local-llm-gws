@@ -68,18 +68,361 @@ def get_chroma_collection(client, name: str):
     except TypeError:
         return client.get_or_create_collection(name)
 
+def clean_subject_for_prefix(subject: str) -> str:
+    """이메일 제목에서 태그 및 불필요한 단어를 제거하여 축약된 제목 생성"""
+    if not subject:
+        return ""
+    # 대괄호 패턴 [...] 제거
+    cleaned = re.sub(r"\[[^\]]+\]", "", subject)
+    # '| 파이토치...' 또는 '- 파이토치...' 등 제거
+    cleaned = re.sub(r"[|-]\s*(?:파이토치|pytorch|Google|Drive).*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip()
+    if not cleaned:
+        cleaned = subject.strip()
+    # 25자 내외로 자름
+    if len(cleaned) > 25:
+        return cleaned[:22] + "..."
+    return cleaned
+
+
+def _is_korean_paragraph(text: str) -> bool:
+    """한글 문자가 최소 3개 이상 포함되어 있는지 여부"""
+    kr_chars = re.findall(r"[가-힣]", text)
+    return len(kr_chars) >= 3
+
+
+def _is_english_only_paragraph(text: str) -> bool:
+    """한글이 없고 알파벳이 주로 이루어진 단락인지 여부"""
+    if _is_korean_paragraph(text):
+        return False
+    # 알파벳이 포함되어 있는지 확인
+    en_chars = re.findall(r"[a-zA-Z]", text)
+    return len(en_chars) >= 5
+
+
+def _filter_parallel_english(text: str) -> str:
+    """한-영 병렬 텍스트에서 영어 단락 중복 제거 (코드 블록 및 단독 영문 단락 보호)"""
+    # 윈도우 줄바꿈 정규화
+    normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized_text.split("\n")
+    paragraphs = []
+    current_p = []
+    in_code_block = False
+    
+    # 1. 단락 단위로 쪼개기 (코드 블록은 하나의 단위로 묶음)
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            current_p.append(line)
+            if not in_code_block: # 코드 블록 끝남
+                paragraphs.append(("\n".join(current_p), True)) # (content, is_code)
+                current_p = []
+            continue
+            
+        if in_code_block:
+            current_p.append(line)
+        else:
+            if not stripped:
+                if current_p:
+                    paragraphs.append(("\n".join(current_p), False))
+                    current_p = []
+            else:
+                current_p.append(line)
+    if current_p:
+        paragraphs.append(("\n".join(current_p), in_code_block))
+
+    # 2. 순차적으로 단락 검사하며 한-영 병렬 패턴 제거
+    filtered_paragraphs = []
+    i = 0
+    n = len(paragraphs)
+    while i < n:
+        p_content, is_code = paragraphs[i]
+        
+        # 코드 블록은 무조건 보존
+        if is_code:
+            filtered_paragraphs.append(p_content)
+            i += 1
+            continue
+            
+        # 현재 단락이 한국어를 포함하며, 노이즈 제외를 위해 최소 40자 이상인 경우
+        if _is_korean_paragraph(p_content) and len(p_content) >= 40:
+            filtered_paragraphs.append(p_content)
+            
+            # 다음 단락이 주로 영어로만 구성되었고 길이가 비슷하면(번역본) 건너뜀
+            if i + 1 < n:
+                next_p, next_is_code = paragraphs[i+1]
+                if not next_is_code and _is_english_only_paragraph(next_p):
+                    len_ratio = len(next_p) / max(1, len(p_content))
+                    if 0.4 <= len_ratio <= 2.2:
+                        i += 2 # 현재(한글) 추가하고 다음(영어) 건너뜀
+                        continue
+        else:
+            filtered_paragraphs.append(p_content)
+            
+        i += 1
+        
+    return "\n\n".join(filtered_paragraphs)
+
+
+def classify_email(subject: str, body: str) -> str:
+    """이메일 타입 분류: 'structured_blog', 'newsletter_digest', 'short', 'long_plain'"""
+    subj_lower = subject.lower()
+    if any(k in subj_lower for k in ["뉴스레터", "newsletter", "소식이 도착", "새로운 소식"]):
+        return "newsletter_digest"
+        
+    # 극단적으로 짧은 이메일만 short로 우선 감지
+    if len(body) <= 200:
+        return "short"
+        
+    # 헤딩 존재 시 우선 구조화 블로그로 처리
+    headings = re.findall(r"^(?:##|###)\s+\S+", body, re.MULTILINE)
+    if len(headings) >= 2:
+        return "structured_blog"
+        
+    if len(body) <= 800:
+        return "short"
+        
+    return "long_plain"
+
+
+def _chunk_by_headings(body: str, subject: str) -> List[str]:
+    """마크다운 헤딩 기준 분할 (줄 단위 안전 파싱)"""
+    subject_prefix = f"[{clean_subject_for_prefix(subject)}] " if subject else ""
+    
+    # 윈도우 줄바꿈 정규화
+    normalized = body.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    
+    sections = []
+    current_section = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## ") or stripped.startswith("### "):
+            if current_section:
+                sections.append("\n".join(current_section))
+            current_section = [line]
+        else:
+            current_section.append(line)
+            
+    if current_section:
+        sections.append("\n".join(current_section))
+        
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    
+    for section in sections:
+        sec_clean = section.strip()
+        if not sec_clean:
+            continue
+            
+        if len(sec_clean) > 1200:
+            if current_chunk:
+                chunks.append(subject_prefix + "\n\n".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+                
+            sub_sections = _chunk_by_paragraphs(sec_clean, "", target_min=400, target_max=1000)
+            for sub_sec in sub_sections:
+                chunks.append(subject_prefix + sub_sec)
+        else:
+            if current_len + len(sec_clean) > 1000:
+                if current_chunk:
+                    chunks.append(subject_prefix + "\n\n".join(current_chunk))
+                    current_chunk = []
+                    current_len = 0
+            
+            current_chunk.append(sec_clean)
+            current_len += len(sec_clean)
+            
+    if current_chunk:
+        chunks.append(subject_prefix + "\n\n".join(current_chunk))
+        
+    return chunks
+
+
+def _chunk_newsletter_digest(body: str, subject: str) -> List[str]:
+    """뉴스레터 다이제스트 포스트별 분리 (줄 단위 안전 파싱)"""
+    subject_prefix = f"[{clean_subject_for_prefix(subject)}] " if subject else ""
+    
+    normalized = body.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    
+    posts = []
+    current_post = []
+    
+    for line in lines:
+        stripped = line.strip()
+        # [제목...][숫자] 형태의 링크 패턴이 줄 시작부에 나오면 새 포스트로 분할
+        if re.match(r"^\[[^\]]+\]\s*\[\d+\]", stripped):
+            if current_post:
+                posts.append("\n".join(current_post))
+            current_post = [line]
+        else:
+            current_post.append(line)
+            
+    if current_post:
+        posts.append("\n".join(current_post))
+        
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    
+    for post in posts:
+        post_clean = post.strip()
+        if not post_clean:
+            continue
+            
+        if len(post_clean) > 1200:
+            if current_chunk:
+                chunks.append(subject_prefix + "\n\n".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+            sub_chunks = _chunk_by_paragraphs(post_clean, "", target_min=400, target_max=1000)
+            for sc in sub_chunks:
+                chunks.append(subject_prefix + sc)
+        else:
+            if current_len + len(post_clean) > 1000:
+                if current_chunk:
+                    chunks.append(subject_prefix + "\n\n".join(current_chunk))
+                    current_chunk = []
+                    current_len = 0
+            current_chunk.append(post_clean)
+            current_len += len(post_clean)
+            
+    if current_chunk:
+        chunks.append(subject_prefix + "\n\n".join(current_chunk))
+        
+    return chunks
+
+
+def _chunk_by_paragraphs(body: str, subject: str, target_min: int = 400, target_max: int = 1000) -> List[str]:
+    """일반 단락 경계 기반 청킹"""
+    subject_prefix = f"[{clean_subject_for_prefix(subject)}] " if subject else ""
+    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+    
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    
+    for p in paragraphs:
+        if len(p) > target_max:
+            if current_chunk:
+                chunks.append(subject_prefix + "\n\n".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+                
+            sentences = re.split(r"(?<=[.!?])\s+", p)
+            curr_sent = []
+            curr_sent_len = 0
+            for sent in sentences:
+                if curr_sent_len + len(sent) > target_max:
+                    if curr_sent:
+                        chunks.append(subject_prefix + " ".join(curr_sent))
+                        curr_sent = []
+                        curr_sent_len = 0
+                curr_sent.append(sent)
+                curr_sent_len += len(sent)
+            if curr_sent:
+                chunks.append(subject_prefix + " ".join(curr_sent))
+        else:
+            if current_len + len(p) > target_max:
+                if current_chunk:
+                    chunks.append(subject_prefix + "\n\n".join(current_chunk))
+                    current_chunk = []
+                    current_len = 0
+            current_chunk.append(p)
+            current_len += len(p)
+            
+    if current_chunk:
+        chunks.append(subject_prefix + "\n\n".join(current_chunk))
+        
+    return _merge_small_chunks(chunks, min_size=100)
+
+
+def _merge_small_chunks(chunks: List[str], min_size: int = 100) -> List[str]:
+    """100자 이하의 너무 작은 청크들을 인접 청크에 병합"""
+    if not chunks:
+        return []
+        
+    merged = []
+    i = 0
+    n = len(chunks)
+    
+    while i < n:
+        chunk = chunks[i]
+        if len(chunk) < min_size:
+            if merged:
+                merged[-1] = merged[-1] + "\n\n" + chunk
+            elif i + 1 < n:
+                chunks[i+1] = chunk + "\n\n" + chunks[i+1]
+            else:
+                merged.append(chunk)
+        else:
+            merged.append(chunk)
+        i += 1
+        
+    return merged
+
+
+def chunk_drive_doc(content: str, mime_type: str, file_name: str = "") -> List[str]:
+    """Drive 파일 타입별 적응형 청킹"""
+    if not content:
+        return []
+        
+    prefix = f"[{file_name}] " if file_name else ""
+    
+    # Spreadsheet (CSV) 처리
+    if mime_type == 'application/vnd.google-apps.spreadsheet' or (',' in content[:100] and '\n' in content[:100]):
+        lines = [line.strip() for line in content.split('\n') if line.strip()]
+        if not lines:
+            return []
+            
+        header = lines[0]
+        chunks = []
+        rows_per_chunk = 15
+        
+        for i in range(1, len(lines), rows_per_chunk):
+            chunk_lines = [header] + lines[i:i + rows_per_chunk]
+            chunk_content = prefix + "\n".join(chunk_lines)
+            chunks.append(chunk_content)
+        return chunks
+        
+    # Google Docs 또는 일반 텍스트
+    headings = re.findall(r"^(?:##|###)\s+\S+", content, re.MULTILINE)
+    if len(headings) >= 2:
+        return _chunk_by_headings(content, file_name)
+        
+    return _chunk_by_paragraphs(content, file_name)
+
+
+def chunk_gmail(body: str, subject: str) -> List[str]:
+    """Gmail 전용 적응형 청킹"""
+    if not body:
+        return []
+        
+    clean_body = _filter_parallel_english(body)
+    email_type = classify_email(subject, clean_body)
+    
+    if email_type == "newsletter_digest":
+        return _chunk_newsletter_digest(clean_body, subject)
+    elif email_type == "structured_blog":
+        return _chunk_by_headings(clean_body, subject)
+    elif email_type == "short":
+        prefix = f"[{clean_subject_for_prefix(subject)}] " if subject else ""
+        return [prefix + clean_body]
+    else:
+        return _chunk_by_paragraphs(clean_body, subject)
+
+
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
-    """텍스트를 청크 단위로 분할합니다."""
+    """하위 호환성을 위해 유지하되, 내부적으로 적응형 청킹(단락 기준)을 기본 수행"""
     text = clean_rag_text(text)
     if not text:
         return []
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start += chunk_size - chunk_overlap
-    return chunks
+    return _chunk_by_paragraphs(text, "", target_min=chunk_size - chunk_overlap, target_max=chunk_size)
 
 def _gmail_search_url(message_id_header: str) -> str:
     if not message_id_header:
@@ -324,11 +667,10 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
         if not body:
             body = msg_detail.get("snippet", "")
             
-        full_text = f"Subject: {subject}\nFrom: {sender}\n\n{body}"
-        chunks = chunk_text(full_text)
+        chunks = chunk_gmail(body, subject)
         
         if chunks:
-            document_hash = _content_hash(full_text)
+            document_hash = _content_hash(body)
             if _doc_has_same_hash(gmail_col, msg_id, document_hash):
                 logger.info("변경 없는 Gmail 메시지 벡터화 건너뜀: %s", msg_id)
                 continue
@@ -353,7 +695,7 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
                 "labelIds": label_ids,
                 "label_ids": label_ids,
                 "original_url": _gmail_search_url(message_id_header),
-                "location_label": f"Gmail: {subject}",
+                "location_label": f"Gmail: {subject} · chunk {i + 1}",
                 "chunk_index": i,
                 "content_hash": _content_hash(chunks[i]),
                 "document_hash": document_hash,
@@ -393,7 +735,7 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
             logger.warning("Drive 파일 텍스트 추출 실패로 RAG 인덱싱 제외: %s (%s)", name, mime_type)
             continue
             
-        chunks = chunk_text(content)
+        chunks = chunk_drive_doc(content, mime_type, name)
         if chunks:
             document_hash = _content_hash(content)
             if _doc_has_same_hash(drive_col, file_id, document_hash):
