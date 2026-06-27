@@ -90,7 +90,7 @@ export default function DesktopLayout() {
         <main className="min-w-0 flex-1 bg-background flex flex-col gap-4 overflow-hidden p-3 md:p-4 lg:p-6">
           <FirstRunGuide activeMenu={activeMenu} onNavigate={setActiveMenu} />
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
             {activeMenu === "start" && <StartPanel onNavigate={setActiveMenu} />}
             {activeMenu === "sources" && <SourceImportPanel />}
             {activeMenu === "indexing" && <IndexingWorkspacePanel />}

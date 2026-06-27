@@ -32,7 +32,7 @@ export function RagWorkflowPanel({ intent }: RagWorkflowPanelProps) {
           })}
         </ol>
       </section>
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
         <RagSearchPanel />
       </div>
     </div>

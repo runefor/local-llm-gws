@@ -970,4 +970,22 @@ def list_notion_pages():
 
 
 if __name__ == "__main__":
+    import sys
+    import threading
+    import os
+
+    def monitor_parent_stdin():
+        """부모 프로세스(Tauri)의 stdin이 닫히면(즉, 부모가 종료되면) 백엔드를 스스로 종료시킵니다."""
+        try:
+            # stdin이 닫힐 때까지 블로킹 대기 (EOF 시 빈 문자열 반환)
+            sys.stdin.read(1)
+        except Exception:
+            pass
+        # 부모 프로세스가 끊어지면 즉시 완전히 자가 종료
+        os._exit(0)
+
+    # stdin 감시 스레드를 데몬 스레드로 기동
+    monitor_thread = threading.Thread(target=monitor_parent_stdin, daemon=True)
+    monitor_thread.start()
+
     uvicorn.run(app, host="127.0.0.1", port=18731)

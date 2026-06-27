@@ -24,7 +24,7 @@ export function SourceImportPanel() {
 
   if (selectedSource === null) {
     return (
-      <section className="flex h-full min-h-0 flex-col overflow-y-auto rounded-2xl border border-surface-variant bg-surface p-6 shadow-sm">
+      <section className="flex flex-1 min-h-0 flex-col overflow-y-auto rounded-2xl border border-surface-variant bg-surface p-6 shadow-sm">
         <div className="max-w-3xl">
           <p className="text-xs font-semibold text-primary">자료 가져오기</p>
           <h2 className="mt-2 text-[28px] font-normal leading-tight text-text-primary">어떤 원본에서 자료를 찾을까요?</h2>
@@ -59,7 +59,7 @@ export function SourceImportPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex flex-1 min-h-0 flex-col gap-3">
       <section className="flex flex-col gap-3 rounded-2xl border border-surface-variant bg-surface px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-primary-container text-primary">

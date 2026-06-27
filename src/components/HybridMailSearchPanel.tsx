@@ -97,15 +97,15 @@ export function HybridMailSearchPanel({
 
   return (
     <>
-		    <section className={`bg-surface rounded-2xl border border-surface-variant min-h-0 overflow-hidden ${isDesktop ? "grid grid-cols-1 gap-3 p-3 min-[1140px]:grid-cols-[0.95fr_1.05fr_1fr_0.9fr] min-[1140px]:items-start" : "flex flex-col gap-4 p-4"}`}>
-		      <form onSubmit={onSubmit} className="flex shrink-0 flex-col gap-3 min-[1140px]:contents">
-		        <div className="flex items-start justify-between gap-3 min-[1140px]:col-span-4">
+		    <section className={`bg-surface rounded-2xl border border-surface-variant flex flex-col min-h-0 ${isDesktop ? "gap-2 p-3 overflow-y-auto" : "gap-4 p-4"}`}>
+		      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+		        <div className="flex items-start justify-between gap-3">
 	          <div className="min-w-0">
 	            <h3 className="flex items-center gap-2 text-sm font-semibold text-text-primary">
 	              <span className="material-symbols-rounded text-primary text-base">mail</span>
-	              Gmail 메타데이터 검색 조건
+	              Gmail 검색 조건
 	            </h3>
-		            <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all] min-[1140px]:hidden">
+		            <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all]">
 	              본문 전에 제목, 발신자, 라벨, 기간으로 좁혀 찾습니다.
 	            </p>
 	          </div>
@@ -123,7 +123,7 @@ export function HybridMailSearchPanel({
 	                <span className="material-symbols-rounded text-base text-primary">search</span>
 	                검색어
 	              </div>
-		              <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all] min-[1140px]:hidden">키워드, 발신자, 빠른 예시로 조건을 채웁니다.</p>
+		              <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all]">키워드, 발신자, 빠른 예시로 조건을 채웁니다.</p>
 	            </div>
 	            <button
 	              type="button"
@@ -180,44 +180,44 @@ export function HybridMailSearchPanel({
 	            <span className="material-symbols-rounded mt-0.5 text-base text-primary">filter_alt</span>
 	            <div className="min-w-0">
 	              <div className="text-xs font-semibold text-text-primary">필터</div>
-		              <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all] min-[1140px]:hidden">라벨, 기간, 첨부 여부와 검색량을 조정합니다.</p>
+		              <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all]">라벨, 기간, 첨부 여부와 검색량을 조정합니다.</p>
 	            </div>
 	          </div>
 
-		          <div className="mt-3 flex flex-col gap-2 min-[1140px]:mt-2 min-[1140px]:gap-1.5">
-		            <div className="rounded-2xl border border-surface-variant bg-surface px-3 py-2 min-[1140px]:py-1.5">
+		          <div className="mt-3 flex flex-col gap-2">
+		            <div className="rounded-2xl border border-surface-variant bg-surface px-3 py-2">
 	              <div className="flex items-center justify-between gap-3">
 	                <div className="min-w-0">
 	                  <span className="text-[11px] font-semibold text-text-secondary">태그/라벨</span>
-		                  <p className="mt-0.5 truncate text-[11px] text-text-primary min-[1140px]:hidden">
+		                  <p className="mt-0.5 truncate text-[11px] text-text-primary">
 	                    {selectedLabelNames.length > 0 ? selectedLabelNames.join(", ") : "선택된 라벨 없음"}
 	                  </p>
 	                </div>
-		                <button type="button" onClick={() => setLabelPickerOpen(true)} disabled={!canUseGmail || searching} className="shrink-0 rounded-full border border-surface-variant bg-background px-3 py-1.5 text-[11px] font-semibold text-text-primary transition-colors hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary min-[1140px]:py-1">
+		                <button type="button" onClick={() => setLabelPickerOpen(true)} disabled={!canUseGmail || searching} className="shrink-0 rounded-full border border-surface-variant bg-background px-3 py-1.5 text-[11px] font-semibold text-text-primary transition-colors hover:border-primary/30 hover:bg-primary-container/25 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
 	                  라벨 선택
 	                </button>
 	              </div>
 	            </div>
 
-		            <div className="space-y-2 min-[1140px]:space-y-1">
+		            <div className="space-y-2">
 	              <span className="text-[11px] font-semibold text-text-secondary">기간</span>
 		              <div className="flex flex-wrap gap-1.5">
 	                {metadataPeriodOptions.map((option) => (
-		                  <button key={option.value} type="button" onClick={() => onPeriodChange(option.value)} disabled={!canUseGmail || searching} className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors min-[1140px]:px-2 min-[1140px]:py-0.5 ${metadataPeriod === option.value ? "border-primary/20 bg-primary-container text-primary" : "border-surface-variant bg-background text-text-secondary hover:border-primary/30 hover:bg-primary-container/25"} disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}>
+		                  <button key={option.value} type="button" onClick={() => onPeriodChange(option.value)} disabled={!canUseGmail || searching} className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${metadataPeriod === option.value ? "border-primary/20 bg-primary-container text-primary" : "border-surface-variant bg-background text-text-secondary hover:border-primary/30 hover:bg-primary-container/25"} disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}>
 	                    {option.label}
 	                  </button>
 	                ))}
 	              </div>
 	            </div>
 
-		            <label className="flex items-center gap-2 rounded-2xl border border-surface-variant bg-surface px-3 py-2 text-[11px] font-semibold text-text-primary min-[1140px]:py-1.5">
+		            <label className="flex items-center gap-2 rounded-2xl border border-surface-variant bg-surface px-3 py-2 text-[11px] font-semibold text-text-primary">
 	              <input type="checkbox" checked={metadataHasAttachment} onChange={(event) => onHasAttachmentChange(event.target.checked)} disabled={!canUseGmail || searching} className="h-4 w-4 accent-primary" />
 	              첨부파일 있는 메일만
 	            </label>
 
 	            <div className="grid grid-cols-[minmax(88px,112px)_minmax(0,1fr)] gap-2">
-		              <input type="number" min="1" max="200" value={maxEmails} onChange={(event) => onMaxEmailsChange(event.target.value)} disabled={!canUseGmail || searching} aria-label="최대 검색 메일 수" className="min-w-0 rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 min-[1140px]:py-1.5" />
-		              <button type="submit" disabled={!canUseGmail || searching} className="flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-background disabled:text-text-secondary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary min-[1140px]:py-1.5">
+		              <input type="number" min="1" max="200" value={maxEmails} onChange={(event) => onMaxEmailsChange(event.target.value)} disabled={!canUseGmail || searching} aria-label="최대 검색 메일 수" className="min-w-0 rounded-full border border-surface-variant bg-surface px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50" />
+		              <button type="submit" disabled={!canUseGmail || searching} className="flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-background disabled:text-text-secondary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
 	                <span className={`material-symbols-rounded text-sm ${searching ? "animate-spin" : ""}`}>{searching ? "sync" : "travel_explore"}</span>
 	                <span>{searching ? "검색 중..." : "메타데이터 검색"}</span>
 	              </button>
@@ -230,7 +230,7 @@ export function HybridMailSearchPanel({
 	            <span className="material-symbols-rounded mt-0.5 text-base text-primary">bookmark</span>
 	            <div className="min-w-0">
 	              <div className="text-xs font-semibold text-text-primary">저장 조건</div>
-		              <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all] min-[1140px]:hidden">자주 쓰는 조건을 저장하고 다시 불러옵니다.</p>
+		              <p className="mt-1 break-keep text-[11px] leading-5 text-text-secondary [overflow-wrap:normal] [word-break:keep-all]">자주 쓰는 조건을 저장하고 다시 불러옵니다.</p>
 	            </div>
 	          </div>
 

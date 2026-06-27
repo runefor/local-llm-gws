@@ -89,6 +89,7 @@ pub fn run() {
                 let mut cmd = Command::new(&python_exe);
                 cmd.arg(&script_path);
                 cmd.current_dir(&work_dir);
+                cmd.stdin(std::process::Stdio::piped());
 
                 // Windows에서 새 콘솔창이 뜨지 않도록 처리
                 #[cfg(target_os = "windows")]

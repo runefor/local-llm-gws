@@ -1070,7 +1070,9 @@ export default function RagSearchPanel() {
   }, [backendStatus, fetchIndexStatus, vectorizationProgress.status]);
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-[#e1e3e1] shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] flex flex-col gap-6 w-full">
+    <div className="h-full min-h-0 bg-white rounded-2xl p-6 border border-[#e1e3e1] shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] flex flex-col gap-4 w-full overflow-hidden">
+      {/* 상단 고정 영역 */}
+      <div className="flex-shrink-0 flex flex-col gap-4">
       <div className="flex items-center justify-between border-b border-[#e1e3e1] pb-4 flex-wrap gap-3">
         <div className="flex flex-col gap-0.5">
           <h2 className="text-[#1f1f1f] text-base font-semibold flex items-center">
@@ -1126,6 +1128,13 @@ export default function RagSearchPanel() {
           </div>
         </div>
       )}
+      </div>
+
+      {/* 2단 컨텐츠 스크롤 영역 */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 min-[1280px]:grid-cols-[1.1fr_0.9fr] gap-6 overflow-hidden">
+        
+        {/* 좌측 패널: 검색 및 리스트 */}
+        <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-2 pb-2">
 
       {(loadingEvidenceSets || savedEvidenceSets.length > 0) && (
         <section className="bg-[#f8fafd] border border-[#e1e3e1] rounded-2xl p-4 flex flex-col gap-3">
@@ -1425,8 +1434,23 @@ export default function RagSearchPanel() {
               );
             })}
           </div>
+        </div>
+      )}
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-3 pt-1">
+      {/* 우측 패널: 정보 묶음 편집 / Wiki 후보 생성 */}
+      <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-2 pb-2 border-t min-[1280px]:border-t-0 min-[1280px]:border-l border-[#e1e3e1] min-[1280px]:pl-6">
+        
+      {evidence.length > 0 && (
+        <div className="flex flex-col gap-5 bg-[#f8fafd] border border-[#e1e3e1] p-5 rounded-2xl animate-slideUp">
+          <div className="flex items-center justify-between border-b border-[#e1e3e1]/60 pb-3 flex-wrap gap-3">
+            <h3 className="text-[#1f1f1f] text-xs font-bold flex items-center">
+              <span className="material-symbols-rounded mr-2 text-[#0b57d0]">save</span>
+              정보 묶음 저장
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 pt-1">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="evidence-set-title" className="text-[11px] font-bold text-[#444746] flex items-center gap-1.5">
                 <span className="material-symbols-rounded text-sm text-[#0b57d0]">title</span>
@@ -1701,6 +1725,9 @@ export default function RagSearchPanel() {
           </div>
         </div>
       )}
+
+      </div>
+      </div>
 
       {focusedEvidence && (
         <RagEvidenceDetailModal
