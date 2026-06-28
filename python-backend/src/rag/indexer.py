@@ -13,7 +13,7 @@ from urllib.parse import quote
 from config import config
 from src.gws.auth import is_authenticated
 from src.gws.gmail import get_message
-from src.gws.text_cleaner import clean_original_markdown
+from src.gws.text_cleaner import clean_original_markdown, remove_email_quoted_text
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,8 @@ _embedding_model = None
 
 def clean_rag_text(text: str) -> str:
     """Strip HTML/layout noise before vector storage or search display."""
-    return clean_original_markdown(text)
+    cleaned = clean_original_markdown(text)
+    return remove_email_quoted_text(cleaned)
 
 def get_embedding_model():
     global _embedding_model

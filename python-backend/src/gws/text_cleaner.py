@@ -440,3 +440,87 @@ def clean_original_markdown(markdown: str) -> str:
         previous_blank = False
 
     return "\n".join(cleaned_lines).strip()
+
+
+def remove_email_quoted_text(text: str) -> str:
+    """
+    이메일 본문에서 회신/전달 꼬리말(Thread History) 경계선을 감지하여 잘라내고,
+    남은 본문에서 인용 표시(>)로 시작하는 라인들을 제거합니다.
+    """
+    if not text:
+        return ""
+
+    lines = text.split("\n")
+    cleaned_lines = []
+    
+    # 꼬리말 경계선 감지 정규식
+    divider_patterns = [
+        # 2026년 6월 15일 (월) 오후 3:33, 임베디드SW경진대회 님이 작성:
+        # 2026. 6. 15. 오후 3:33, 임베디드SW경진대회 님이 작성:
+        re.compile(r"^\s*\d{4}년\s+\d{1,2}월\s+\d{1,2}일\s*\(.*?\)\s*(?:오전|오후|am|pm)?\s*\d{1,2}:\d{2}.*님이\s*(?:작성|작성한\s*메시지):", re.IGNORECASE),
+        re.compile(r"^\s*\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.\s*(?:오전|오후|am|pm)?\s*\d{1,2}:\d{2}.*님이\s*(?:작성|작성한\s*메시지):", re.IGNORECASE),
+        re.compile(r"^\s*\d{4}-\d{2}-\d{2}\s+.*님이\s*(?:작성|작성한\s*메시지):", re.IGNORECASE),
+        
+        # On Sun, Jun 28, 2026 at 8:06 PM, User <user@example.com> wrote:
+        re.compile(r"^\s*on\s+.*,\s+.*(?:wrote|작성|쓰기):", re.IGNORECASE),
+        
+        # -----Original Message-----
+        re.compile(r"^\s*-+\s*(?:original\s+message|원본\s*메일|forwarded\s+message)\s*-+", re.IGNORECASE),
+        
+        # Date: 2026/06/15 15:45:16 From: ... To: ... Subject: ... (인라인 헤더)
+        re.compile(r"^\s*(?:date|날짜|보낸\s*날짜):\s*.*?(?:from|발신자|보낸\s*사람|보낸사람):\s*.*?(?:to|수신자|받는\s*사람|받는사람):\s*", re.IGNORECASE),
+    ]
+    
+    # From/To/Sent 헤더 블록 감지용 패턴
+    header_start_pattern = re.compile(r"^\s*(?:from|발신자|보낸\s*사람|보낸사람):\s*", re.IGNORECASE)
+    header_sub_patterns = [
+        re.compile(r"^\s*(?:to|수신자|받는\s*사람|받는사람):\s*", re.IGNORECASE),
+        re.compile(r"^\s*(?:sent|date|보낸\s*날짜|날짜|일시):\s*", re.IGNORECASE),
+        re.compile(r"^\s*(?:subject|제목):\s*", re.IGNORECASE),
+    ]
+
+    truncate_index = -1
+    
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+            
+        # 1) 일반적인 단일 구분선 매칭 검사
+        matched_divider = False
+        for pattern in divider_patterns:
+            if pattern.match(line):
+                matched_divider = True
+                break
+        if matched_divider:
+            truncate_index = idx
+            break
+            
+        # 2) Outlook 스타일 헤더 블록 감지 (From: 이 오고 다음 3줄 내에 To/Sent/Subject가 오는 경우)
+        if header_start_pattern.match(line):
+            is_header_block = False
+            lookahead = lines[idx+1 : idx+4]
+            match_count = 0
+            for la_line in lookahead:
+                for sub_pat in header_sub_patterns:
+                    if sub_pat.match(la_line):
+                        match_count += 1
+                        break
+            if match_count >= 1:
+                truncate_index = idx
+                break
+
+    # 절단 지점이 발견되었다면 그 윗줄까지만 취함
+    if truncate_index != -1:
+        lines = lines[:truncate_index]
+
+    # 3) 남은 줄 중에서 `>`로 시작하는 라인 제거
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(">"):
+            continue
+        cleaned_lines.append(line)
+        
+    result_text = "\n".join(cleaned_lines)
+    result_text = re.sub(r"\n{3,}", "\n\n", result_text)
+    return result_text.strip()
