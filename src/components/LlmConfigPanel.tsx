@@ -8,6 +8,14 @@ interface Preset {
   name: string;
   description: string;
   ram_gb_required: number;
+  category?: "recommended" | "power_user";
+}
+
+interface HardwareProfile {
+  ram_gb: number;
+  gpu_name: string;
+  vram_gb: number;
+  profile_tier: string;
 }
 
 interface LocalModel {
@@ -40,6 +48,7 @@ export default function LlmConfigPanel() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [recommendedId, setRecommendedId] = useState<string>("");
+  const [hardware, setHardware] = useState<HardwareProfile | null>(null);
   
   // 자동 감지용 로컬 상태
   const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
@@ -80,6 +89,15 @@ export default function LlmConfigPanel() {
       }
     } catch (e) {
       console.error("서버 상태 조회 실패", e);
+    }
+  };
+
+  const fetchHardware = async () => {
+    try {
+      const res = await fetch("http://localhost:18731/api/llm/hardware");
+      if (res.ok) setHardware(await res.json());
+    } catch (e) {
+      console.error("하드웨어 정보 조회 실패", e);
     }
   };
 
@@ -167,7 +185,7 @@ export default function LlmConfigPanel() {
     }
   }, [backendStatus]);
 
-  // 내장 서버 실행 여부 실시간 모니터링 폴링 (3초 간격)
+  // 내장 서버 실행 여부 실시간 모니화링 폴링 (3초 간격)
   // biome-ignore lint/correctness/useExhaustiveDependencies: backendStatus 전환에 맞춰 하나의 폴링 타이머만 관리합니다.
   useEffect(() => {
     let timer: number | undefined;
@@ -180,6 +198,12 @@ export default function LlmConfigPanel() {
       if (timer !== undefined) window.clearInterval(timer);
     };
   }, [backendStatus]);
+
+  useEffect(() => {
+    if (llmMode === "internal") {
+      void fetchHardware();
+    }
+  }, [llmMode]);
 
   // 외장 API 선택 시 로컬 LLM 서버 백그라운드 자동 감지 폴링 (2.5초 간격)
   // biome-ignore lint/correctness/useExhaustiveDependencies: 모드/백엔드 상태 전환에 맞춰 하나의 감지 타이머만 관리합니다.
@@ -435,6 +459,20 @@ export default function LlmConfigPanel() {
           <p className="text-xs text-text-secondary leading-relaxed">
             비개발자도 쉽게 사용할 수 있는 인앱 내장 LLM입니다. 오프라인 보안 및 100% 로컬 구동을 보장합니다.
           </p>
+
+          {hardware && (
+            <div className="bg-primary/5 rounded-[12px] p-4 border border-primary/10 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-primary">내 시스템 사양</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  RAM: {hardware.ram_gb}GB | GPU: {hardware.gpu_name} (VRAM: {hardware.vram_gb}GB)
+                </p>
+              </div>
+              <div className="px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-500 shadow-sm border border-gray-100">
+                프로파일: {hardware.profile_tier}
+              </div>
+            </div>
+          )}
           
           <div className="bg-surface-variant/30 p-4 rounded-lg border border-surface-variant/50">
             <h3 className="text-xs font-semibold uppercase mb-2 text-text-secondary">선택된 활성 모델</h3>
@@ -472,21 +510,21 @@ export default function LlmConfigPanel() {
                     </span>
                   </div>
                   
-	                  {serverStatus.running ? (
-	                    <button
-	                      type="button"
-	                      onClick={handleStopServer}
-	                      disabled={serverActionLoading}
-	                      className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
+                  {serverStatus.running ? (
+                    <button
+                      type="button"
+                      onClick={handleStopServer}
+                      disabled={serverActionLoading}
+                      className="text-xs bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/50 font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
                     >
                       {serverActionLoading ? "중지 중..." : "서버 종료"}
                     </button>
-	                  ) : (
-	                    <button
-	                      type="button"
-	                      onClick={handleStartServer}
-	                      disabled={serverActionLoading || localModels.length === 0}
-	                      className="text-xs bg-primary hover:bg-[#094cb3] text-white font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartServer}
+                      disabled={serverActionLoading || localModels.length === 0}
+                      className="text-xs bg-primary hover:bg-[#094cb3] text-white font-semibold px-3 py-1.5 rounded-full cursor-pointer disabled:cursor-default transition-all"
                     >
                       {serverActionLoading ? "구동 중..." : "서버 시작"}
                     </button>
@@ -494,7 +532,6 @@ export default function LlmConfigPanel() {
                 </div>
               </div>
             )}
-
           </div>
 
           <div className="mt-4">
@@ -688,7 +725,7 @@ export default function LlmConfigPanel() {
                     className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
                     placeholder="http://localhost:1234/v1"
                   />
-	                </div>
+                </div>
                 <div>
                   <label htmlFor="manual-llm-model" className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">Model Name</label>
                   <input
@@ -699,7 +736,7 @@ export default function LlmConfigPanel() {
                     className="w-full bg-white dark:bg-zinc-800 border border-surface-variant rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-primary font-mono"
                     placeholder="gemma-2-9b-it"
                   />
-	                </div>
+                </div>
                 <div className="pt-1 flex gap-2">
                   <button
                     type="button"
@@ -707,7 +744,7 @@ export default function LlmConfigPanel() {
                     className="flex-1 bg-white hover:bg-surface-variant/30 text-primary font-semibold py-2 px-4 rounded-full text-xs transition-colors border border-surface-variant cursor-pointer"
                   >
                     LLM 서버 연결 테스트
-	                  </button>
+                  </button>
                   {llmMode === "external" && (
                     <button
                       type="button"
