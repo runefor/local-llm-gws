@@ -342,6 +342,63 @@ export default function LlmConfigPanel() {
     }
   };
 
+  const recommendedPresets = presets.filter(p => !p.category || p.category === "recommended");
+  const powerUserPresets = presets.filter(p => p.category === "power_user");
+
+  const renderPresetCard = (p: Preset) => {
+    const downloadedModel = localModels.find(m => m.preset_id === p.id);
+    const isDownloaded = downloadedModel !== undefined;
+    const isDownloading = downloading === p.id;
+    const isRecommended = recommendedId === p.id;
+    
+    return (
+      <div key={p.id} className={`p-3 border rounded-lg flex items-center justify-between transition ${isRecommended ? 'border-primary/40 bg-primary/5' : 'border-surface-variant'}`}>
+        <div className="flex-1 pr-4">
+          <div className="font-semibold text-sm flex items-center text-text-primary">
+            {p.name}
+            {isRecommended && <span className="ml-2 text-[10px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">내 PC 추천</span>}
+          </div>
+          <div className="text-xs text-text-secondary mt-1">{p.description}</div>
+        </div>
+        <div className="min-w-[120px] text-right flex flex-col items-end">
+          {isDownloading ? (
+            <div className="w-full flex flex-col items-end">
+              <span className="text-xs font-bold text-primary mb-1">{progress}%</span>
+              <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
+                <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+              </div>
+            </div>
+          ) : isDownloaded ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-emerald-600 dark:text-emerald-500 font-semibold flex items-center mr-1">
+                <span className="material-symbols-rounded text-sm mr-0.5">check_circle</span>
+                준비 완료
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (downloadedModel) void handleDelete(downloadedModel.filename);
+                }}
+                className="text-xs text-red-500 hover:text-red-600 hover:underline px-2 py-1 cursor-pointer"
+              >
+                삭제
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleDownload(p.id)}
+              disabled={downloading !== null}
+              className="text-xs bg-primary hover:bg-primary/90 text-white font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              다운로드
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (backendOffline) {
     return (
       <div className="bg-surface rounded-2xl p-6 border border-primary-container/70 shadow-sm">
@@ -534,62 +591,32 @@ export default function LlmConfigPanel() {
             )}
           </div>
 
-          <div className="mt-4">
-            <h3 className="text-xs font-semibold uppercase mb-2 text-text-secondary">다운로드 가능한 모델 목록</h3>
-            <div className="space-y-2">
-              {presets.map(p => {
-                const downloadedModel = localModels.find(m => m.preset_id === p.id);
-                const isDownloaded = downloadedModel !== undefined;
-                const isDownloading = downloading === p.id;
-                const isRecommended = recommendedId === p.id;
-                
-                return (
-                  <div key={p.id} className={`p-3 border rounded-lg flex items-center justify-between transition ${isRecommended ? 'border-primary/40 bg-primary/5' : 'border-surface-variant'}`}>
-                    <div className="flex-1 pr-4">
-                      <div className="font-semibold text-sm flex items-center text-text-primary">
-                        {p.name}
-                        {isRecommended && <span className="ml-2 text-[10px] bg-primary text-white px-1.5 py-0.5 rounded-full font-bold">내 PC 추천</span>}
-                      </div>
-                      <div className="text-xs text-text-secondary mt-1">{p.description}</div>
-                    </div>
-                    <div className="min-w-[120px] text-right flex flex-col items-end">
-                      {isDownloading ? (
-                        <div className="w-full flex flex-col items-end">
-                          <span className="text-xs font-bold text-primary mb-1">{progress}%</span>
-                          <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
-                            <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
-                          </div>
-                        </div>
-                      ) : isDownloaded ? (
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs text-emerald-600 dark:text-emerald-500 font-semibold flex items-center mr-1">
-                            <span className="material-symbols-rounded text-sm mr-0.5">check_circle</span>
-                            준비 완료
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (downloadedModel) void handleDelete(downloadedModel.filename);
-                            }}
-                            className="text-xs text-red-500 hover:text-red-600 hover:underline px-2 py-1 cursor-pointer"
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(p.id)}
-                          disabled={downloading !== null}
-                          className="text-xs bg-primary hover:bg-primary/90 text-white font-semibold px-4 py-2 rounded-full transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          다운로드
-                        </button>
-                      )}
-                    </div>
+          <div className="mt-4 space-y-6">
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase text-text-secondary">다운로드 가능한 모델 목록</h3>
+              
+              {/* 기본 권장 모델 섹션 */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-gray-700 dark:text-zinc-300">기본 권장 모델 (빠르고 가벼움)</h4>
+                <div className="space-y-2">
+                  {recommendedPresets.map(renderPresetCard)}
+                </div>
+              </div>
+
+              {/* 파워 유저 모델 섹션 */}
+              {powerUserPresets.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-zinc-800">
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-700 dark:text-zinc-300">파워 유저용 고품질 모델</h4>
+                    <p className="text-[10px] text-text-secondary mt-0.5">
+                      하드 드라이브 용량(5GB 이상)과 높은 RAM을 요구합니다. 고사양 PC 사용자에게만 권장합니다.
+                    </p>
                   </div>
-                );
-              })}
+                  <div className="space-y-2">
+                    {powerUserPresets.map(renderPresetCard)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
