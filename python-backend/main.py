@@ -973,6 +973,15 @@ if __name__ == "__main__":
     import sys
     import threading
     import os
+    import argparse
+    from config import config
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resource-dir", default="", help="Tauri 리소스 디렉토리 경로")
+    args, _ = parser.parse_known_args()
+
+    if args.resource_dir:
+        config.TAURI_RESOURCE_DIR = args.resource_dir
 
     def monitor_parent_stdin():
         """부모 프로세스(Tauri)의 stdin이 닫히면(즉, 부모가 종료되면) 백엔드를 스스로 종료시킵니다."""

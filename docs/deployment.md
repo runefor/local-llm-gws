@@ -10,15 +10,23 @@ Windows 피드백 배포판을 빌드하는 흐름은 다음과 같습니다.
 
 ```mermaid
 graph TD
-    A[1. Frontend 빌드: npm run build] --> B[2. Python 백엔드 바이너리 컴파일: PyInstaller]
-    B --> C[3. 바이너리를 Tauri Sidecar 규격에 맞춰 이름 변경 및 이동]
-    C --> D[4. Tauri 최종 앱 빌드: npm run build:desktop]
-    D --> E[5. NSIS 설치 파일 배포]
+    A[0. llama-server 바이너리 준비] --> B[1. Frontend 빌드: npm run build]
+    B --> C[2. Python 백엔드 바이너리 컴파일: PyInstaller]
+    C --> D[3. 바이너리를 Tauri Sidecar 규격에 맞춰 이름 변경 및 이동]
+    D --> E[4. Tauri 최종 앱 빌드: npm run build:desktop]
+    E --> F[5. NSIS 설치 파일 배포]
 ```
 
 ---
 
 ## 2. 세부 빌드 단계
+
+### [0단계] 로컬 LLM 서버(llama-server) 바이너리 준비
+앱 구동에 필요한 `llama-server.exe` 및 Vulkan 가속 관련 DLL을 사전에 다운로드하여 `src-tauri/bin/`에 배치합니다. 준비 스크립트를 실행하면 자동으로 처리됩니다.
+```powershell
+.\scripts\prepare_llama_server.ps1
+```
+(선택 사항) CUDA(NVIDIA) 전용 GPU 가속이 필요한 경우, `prepare_llama_server.ps1` 실행 후 cuBLAS 지원 DLL 묶음을 `src-tauri/bin/` 디렉토리에 수동으로 덮어씌워야 합니다. 기본적으로는 내장 그래픽 호환성이 좋은 Vulkan 빌드만 번들링합니다.
 
 ### [1단계] 프론트엔드 정적 파일 빌드
 프론트엔드 리소스를 프로덕션 최적화 상태로 빌드합니다. 이 결과물은 `dist/` 폴더에 생성되며, Tauri가 패키징 시 이 폴더를 내장하게 됩니다.

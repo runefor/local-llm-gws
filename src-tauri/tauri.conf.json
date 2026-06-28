@@ -34,6 +34,11 @@
     "externalBin": [
       "bin/gws-backend"
     ],
+    "resources": [
+      "bin/llama-server.exe",
+      "bin/ggml-vulkan.dll",
+      "bin/ggml-base.dll"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

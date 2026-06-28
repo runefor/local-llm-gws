@@ -20,7 +20,10 @@
         {
           "name": "bin/gws-backend",
           "sidecar": true,
-          "args": false
+          "args": [
+            "--resource-dir",
+            { "validator": "\\S+" }
+          ]
         }
       ]
     }

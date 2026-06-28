@@ -107,7 +107,18 @@ pub fn run() {
                     }
                 }
             } else {
-                match app.shell().sidecar("gws-backend") {
+                let resource_dir = app.path().resource_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                let sidecar_result = if resource_dir.is_empty() {
+                    app.shell().sidecar("gws-backend")
+                } else {
+                    app.shell().sidecar("gws-backend")
+                        .map(|cmd| cmd.args(["--resource-dir", &resource_dir]))
+                };
+
+                match sidecar_result {
                     Ok(command) => match command.spawn() {
                         Ok((mut events, child)) => {
                             println!("Successfully started Python backend sidecar.");
