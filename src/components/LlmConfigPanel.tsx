@@ -608,7 +608,7 @@ export default function LlmConfigPanel() {
                 <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-zinc-800">
                   <div>
                     <h4 className="text-xs font-bold text-gray-700 dark:text-zinc-300">파워 유저용 고품질 모델</h4>
-                    <p className="text-[10px] text-text-secondary mt-0.5">
+                    <p className="text-[10px] text-text-secondary mt-1">
                       하드 드라이브 용량(5GB 이상)과 높은 RAM을 요구합니다. 고사양 PC 사용자에게만 권장합니다.
                     </p>
                   </div>
