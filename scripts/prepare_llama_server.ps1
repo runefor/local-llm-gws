@@ -17,7 +17,9 @@ if (-not (Test-Path -Path $BinDir)) {
 $RequiredFiles = @(
     "llama-server.exe",
     "ggml-vulkan.dll",
-    "ggml-base.dll"
+    "ggml-base.dll",
+    "llama.dll",
+    "ggml.dll"
 )
 
 # Check if files already exist
@@ -89,17 +91,29 @@ if (-not $BuildDirPath) {
     $BuildDirPath = $TempDir
 }
 
-Write-Host "Copying required files to $BinDir..."
-foreach ($file in $RequiredFiles) {
-    $SourceFile = Join-Path -Path $BuildDirPath -ChildPath $file
-    $DestFile = Join-Path -Path $BinDir -ChildPath $file
+Write-Host "Copying files to $BinDir..."
+# 1. Copy llama-server.exe
+$ExeFile = "llama-server.exe"
+$SourceExe = Join-Path -Path $BuildDirPath -ChildPath $ExeFile
+$DestExe = Join-Path -Path $BinDir -ChildPath $ExeFile
+if (Test-Path -Path $SourceExe) {
+    Copy-Item -Path $SourceExe -Destination $DestExe -Force
+    Write-Host "Copied $ExeFile"
+} else {
+    Write-Warning "Could not find $ExeFile in the extracted archive."
+}
 
-    if (Test-Path -Path $SourceFile) {
-        Copy-Item -Path $SourceFile -Destination $DestFile -Force
-        Write-Host "Copied $file"
-    } else {
-        Write-Warning "Could not find $file in the extracted archive."
+# 2. Copy all DLL files dynamically
+$DllFiles = Get-ChildItem -Path $BuildDirPath -Filter *.dll
+if ($DllFiles) {
+    foreach ($dll in $DllFiles) {
+        $SourceDll = $dll.FullName
+        $DestDll = Join-Path -Path $BinDir -ChildPath $dll.Name
+        Copy-Item -Path $SourceDll -Destination $DestDll -Force
+        Write-Host "Copied $($dll.Name)"
     }
+} else {
+    Write-Warning "No DLL files found in the extracted archive."
 }
 
 Write-Host "Cleaning up temporary files..."

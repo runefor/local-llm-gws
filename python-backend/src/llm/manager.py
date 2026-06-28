@@ -12,14 +12,37 @@ from config import config
 # -----------------------------------------------------------------------
 PRESET_MODELS = [
     {
-        "id": "qwen3-30b-a3b",
-        "name": "Qwen3-30B-A3B (CPU 전용 / GPU 없음)",
-        "repo_id": "Qwen/Qwen3-30B-A3B-GGUF",
-        "filename": "qwen3-30b-a3b-q4_k_m.gguf",
+        "id": "gemma3-1b",
+        "name": "Gemma 3 1B IT (초고속/구글 안전성)",
+        "repo_id": "bartowski/gemma-3-1b-it-GGUF",
+        "filename": "gemma-3-1b-it-Q4_K_M.gguf",
+        "profile": "cpu_only",
+        "ram_gb_required": 4,
+        "vram_gb_required": 0,
+        "description": "구글의 최신 초경량 1B 모델. 중국어 리스크가 없으며 약 1GB의 적은 메모리로도 빠른 속도를 보여줍니다.",
+        "category": "recommended",
+    },
+    {
+        "id": "exaone3-7.8b",
+        "name": "LG EXAONE 3.0 7.8B (순수 한국어 최고성능)",
+        "repo_id": "bartowski/EXAONE-3.0-7.8B-Instruct-GGUF",
+        "filename": "EXAONE-3.0-7.8B-Instruct-Q4_K_M.gguf",
         "profile": "cpu_only",
         "ram_gb_required": 8,
         "vram_gb_required": 0,
-        "description": "GPU 없이도 동작하는 MoE 모델. 활성 파라미터 3B 수준으로 CPU에서도 실용적 속도를 냅니다.",
+        "description": "LG AI 연구원이 만든 토종 모델. 뜬금없이 중국어가 나오는 현상이 0%이며, 아주 자연스러운 한국어 문장력을 보여줍니다. (용량 약 4.6GB)",
+        "category": "power_user",
+    },
+    {
+        "id": "llama3.2-3b",
+        "name": "Llama 3.2 3B Instruct (속도/품질 밸런스)",
+        "repo_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
+        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "profile": "cpu_only",
+        "ram_gb_required": 8,
+        "vram_gb_required": 0,
+        "description": "약 2GB 수준으로 8GB 노트북에 가장 적합한 밸런스형 소형 모델. 중국어 이슈가 없는 안전한 선택입니다.",
+        "category": "recommended",
     },
     {
         "id": "qwen3.5-9b",
@@ -30,6 +53,7 @@ PRESET_MODELS = [
         "ram_gb_required": 8,
         "vram_gb_required": 6,
         "description": "6GB VRAM 환경에서 35~55 tok/s. 한국어 지시 이행력이 뛰어납니다.",
+        "category": "power_user",
     },
     {
         "id": "gemma4-12b-q4",
@@ -40,6 +64,7 @@ PRESET_MODELS = [
         "ram_gb_required": 16,
         "vram_gb_required": 8,
         "description": "QAT 기법으로 정확도 손실 없이 6.6GB VRAM만으로 구동. 초당 45~65 토큰.",
+        "category": "power_user",
     },
     {
         "id": "gemma4-12b-q5",
@@ -50,6 +75,7 @@ PRESET_MODELS = [
         "ram_gb_required": 16,
         "vram_gb_required": 12,
         "description": "12GB VRAM에서 50~90 tok/s. MMLU Pro 77.2% 기록, 구형 27B 성능 추월.",
+        "category": "power_user",
     },
     {
         "id": "deepseek-r1-14b",
@@ -60,6 +86,7 @@ PRESET_MODELS = [
         "ram_gb_required": 32,
         "vram_gb_required": 16,
         "description": "o1급 수리 논리력. 자가 디버깅 및 <think> 추론 체인 지원. 60~100 tok/s.",
+        "category": "power_user",
     },
 ]
 
@@ -122,14 +149,16 @@ def get_hardware_profile() -> HardwareProfile:
 def get_recommended_model_id() -> str:
     """현재 하드웨어 프로파일에 맞는 추천 모델 ID를 반환합니다."""
     hw = get_hardware_profile()
+    if hw.ram_gb < 8:
+        return "gemma3-1b"
     tier_map = {
-        "cpu_only":   "qwen3-30b-a3b",
+        "cpu_only":   "llama3.2-3b",
         "entry_6gb":  "qwen3.5-9b",
         "mid_8gb":    "gemma4-12b-q4",
         "high_12gb":  "gemma4-12b-q5",
         "ultra_16gb": "deepseek-r1-14b",
     }
-    return tier_map.get(hw.profile_tier, "qwen3-30b-a3b")
+    return tier_map.get(hw.profile_tier, "llama3.2-3b")
 
 
 def get_preset_models() -> List[Dict]:

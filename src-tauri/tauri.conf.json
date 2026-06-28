@@ -37,7 +37,9 @@
     "resources": [
       "bin/llama-server.exe",
       "bin/ggml-vulkan.dll",
-      "bin/ggml-base.dll"
+      "bin/ggml-base.dll",
+      "bin/llama.dll",
+      "bin/ggml.dll"
     ],
     "icon": [
       "icons/32x32.png",

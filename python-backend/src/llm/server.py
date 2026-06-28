@@ -36,16 +36,10 @@ _BINARY_CANDIDATES = [
 
 
 def _find_binary() -> Optional[Path]:
-    """PATH, Tauri 리소스 디렉토리, 프로젝트 bin/ 순으로 llama-server를 탐색합니다."""
+    """Tauri 리소스, PyInstaller frozen, 프로젝트 bin/, PATH 순으로 llama-server를 탐색합니다."""
     import sys
 
-    # 1) PATH 전역 탐색 (개발/릴리스 공통)
-    for name in _BINARY_CANDIDATES:
-        found = shutil.which(name)
-        if found:
-            return Path(found)
-
-    # 2) Tauri 리소스 디렉토리 탐색 (릴리스 모드)
+    # 1) Tauri 리소스 디렉토리 탐색 (릴리스 모드 - 최우선)
     resource_dir = getattr(config, 'TAURI_RESOURCE_DIR', '')
     if resource_dir:
         res_path = Path(resource_dir)
@@ -55,7 +49,7 @@ def _find_binary() -> Optional[Path]:
                 if candidate.exists():
                     return candidate
 
-    # 3) PyInstaller frozen 환경 — exe 인접 경로 탐색
+    # 2) PyInstaller frozen 환경 — exe 인접 경로 탐색
     if getattr(sys, 'frozen', False):
         exe_dir = Path(sys.executable).parent
         for search_dir in [exe_dir / "resources" / "bin", exe_dir / "bin", exe_dir]:
@@ -64,12 +58,18 @@ def _find_binary() -> Optional[Path]:
                 if candidate.exists():
                     return candidate
 
-    # 4) 개발 모드 — 프로젝트 루트 bin/ 폴더
+    # 3) 개발 모드 — 프로젝트 루트 bin/ 폴더
     project_root = Path(__file__).resolve().parents[3]
     for name in _BINARY_CANDIDATES:
         candidate = project_root / "bin" / name
         if candidate.exists():
             return candidate
+
+    # 4) PATH 전역 탐색 (최하위 폴백)
+    for name in _BINARY_CANDIDATES:
+        found = shutil.which(name)
+        if found:
+            return Path(found)
 
     return None
 

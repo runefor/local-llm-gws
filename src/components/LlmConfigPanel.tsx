@@ -92,14 +92,7 @@ export default function LlmConfigPanel() {
     }
   };
 
-  const fetchHardware = async () => {
-    try {
-      const res = await fetch("http://localhost:18731/api/llm/hardware");
-      if (res.ok) setHardware(await res.json());
-    } catch (e) {
-      console.error("하드웨어 정보 조회 실패", e);
-    }
-  };
+
 
   const fetchModels = async () => {
     setIsLoading(true);
@@ -185,7 +178,7 @@ export default function LlmConfigPanel() {
     }
   }, [backendStatus]);
 
-  // 내장 서버 실행 여부 실시간 모니화링 폴링 (3초 간격)
+  // 내장 서버 실행 여부 실시간 모니터링 폴링 (3초 간격)
   // biome-ignore lint/correctness/useExhaustiveDependencies: backendStatus 전환에 맞춰 하나의 폴링 타이머만 관리합니다.
   useEffect(() => {
     let timer: number | undefined;
@@ -200,9 +193,27 @@ export default function LlmConfigPanel() {
   }, [backendStatus]);
 
   useEffect(() => {
+    let active = true;
+    const fetchHardware = async () => {
+      try {
+        const res = await fetch("http://localhost:18731/api/llm/hardware");
+        if (res.ok) {
+          const data = await res.json();
+          if (active) {
+            setHardware(data);
+          }
+        }
+      } catch (e) {
+        console.error("하드웨어 정보 조회 실패", e);
+      }
+    };
+
     if (llmMode === "internal") {
       void fetchHardware();
     }
+    return () => {
+      active = false;
+    };
   }, [llmMode]);
 
   // 외장 API 선택 시 로컬 LLM 서버 백그라운드 자동 감지 폴링 (2.5초 간격)

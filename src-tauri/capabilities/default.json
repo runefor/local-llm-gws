@@ -22,7 +22,7 @@
           "sidecar": true,
           "args": [
             "--resource-dir",
-            { "validator": "\\S+" }
+            { "validator": ".+" }
           ]
         }
       ]
