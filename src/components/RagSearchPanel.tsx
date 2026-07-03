@@ -92,7 +92,14 @@ interface IndexStatus {
 type NotificationType = "success" | "error" | "info" | "warning";
 type RagSource = "gmail" | "drive";
 type DateFilterMode = "all" | "known" | "unknown";
-type RelevanceFeedbackValue = "relevant" | "irrelevant";
+type RelevanceFeedbackValue = "relevant" | "irrelevant" | "important" | "excluded";
+
+const relevanceFeedbackMessages: Record<RelevanceFeedbackValue, string> = {
+  relevant: "관련 있음 피드백을 저장했습니다.",
+  important: "중요 피드백을 저장했습니다.",
+  irrelevant: "관련 없음 피드백을 저장했습니다.",
+  excluded: "제외 피드백을 저장했습니다.",
+};
 
 const defaultArtifactInstruction = "선택한 자료 근거만 사용해 확정 사실/주장·평가/검증 필요를 분리하고, 출처 지도와 [ev_...] 근거를 붙여 주세요.";
 const sourceOptions: Array<{ id: RagSource; label: string; description: string; icon: string }> = [
@@ -736,7 +743,7 @@ export default function RagSearchPanel() {
       const data = toRecord(await response.json());
       if (data.status === "success") {
         setFeedbackByEvidenceId((prev) => ({ ...prev, [item.id]: feedback }));
-        showNotification("success", feedback === "relevant" ? "관련 있음 피드백을 저장했습니다." : "관련 없음 피드백을 저장했습니다.");
+        showNotification("success", relevanceFeedbackMessages[feedback]);
       } else {
         showNotification("error", `피드백 저장 실패: ${toStringValue(data.message, "알 수 없는 오류")}`);
       }
@@ -1420,12 +1427,31 @@ export default function RagSearchPanel() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => submitRelevanceFeedback(item, "important")}
+                          disabled={isSavingFeedback || backendStatus !== "online"}
+                          className={`text-xs font-bold rounded-full border px-2.5 py-1 transition-all flex items-center gap-1 disabled:opacity-50 ${currentFeedback === "important" ? "bg-[#fef7e0] border-[#fef7e0] text-[#a15c00]" : "bg-white border-[#e1e3e1] text-[#444746] hover:bg-[#fef7e0]/70"}`}
+                        >
+                          <span className="material-symbols-rounded text-sm">star</span>
+                          중요
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => submitRelevanceFeedback(item, "irrelevant")}
                           disabled={isSavingFeedback || backendStatus !== "online"}
                           className={`text-xs font-bold rounded-full border px-2.5 py-1 transition-all flex items-center gap-1 disabled:opacity-50 ${currentFeedback === "irrelevant" ? "bg-[#fce8e6] border-[#fce8e6] text-[#b3261e]" : "bg-white border-[#e1e3e1] text-[#444746] hover:bg-[#fce8e6]/60"}`}
                         >
                           <span className="material-symbols-rounded text-sm">thumb_down</span>
                           관련 없음
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitRelevanceFeedback(item, "excluded")}
+                          disabled={isSavingFeedback || backendStatus !== "online"}
+                          title="이 결과를 다음 검색에서 숨깁니다. 다시 보려면 관련 있음을 눌러 되돌리세요."
+                          className={`text-xs font-bold rounded-full border px-2.5 py-1 transition-all flex items-center gap-1 disabled:opacity-50 ${currentFeedback === "excluded" ? "bg-[#f1f3f4] border-[#dadce0] text-[#5f6368]" : "bg-white border-[#e1e3e1] text-[#444746] hover:bg-[#f1f3f4]"}`}
+                        >
+                          <span className="material-symbols-rounded text-sm">visibility_off</span>
+                          제외
                         </button>
                       </div>
                     </div>

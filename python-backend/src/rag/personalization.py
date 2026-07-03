@@ -4,8 +4,10 @@ from typing import Any, Dict, List, Literal, assert_never
 from src.evidence import _load_store
 
 RELEVANT_FEEDBACK_BOOST = 0.04
+IMPORTANT_FEEDBACK_BOOST = 0.12
 IRRELEVANT_FEEDBACK_PENALTY = -0.06
 SAME_DOC_FEEDBACK_WEIGHT = 0.5
+EXCLUDED_CHUNK_DOC_PENALTY = -0.10 * SAME_DOC_FEEDBACK_WEIGHT
 
 
 def _terms(query: str) -> set[str]:
@@ -20,27 +22,49 @@ def _applies(saved_query: str, current_query: str) -> bool:
     return bool(saved_terms & current_terms)
 
 
-def _delta(feedback: Literal["relevant", "irrelevant"]) -> float:
+def _delta(feedback: Literal["relevant", "irrelevant", "important"]) -> float:
     match feedback:
         case "relevant":
             return RELEVANT_FEEDBACK_BOOST
+        case "important":
+            return IMPORTANT_FEEDBACK_BOOST
         case "irrelevant":
             return IRRELEVANT_FEEDBACK_PENALTY
         case unreachable:
             assert_never(unreachable)
 
 
-def _scores(query: str) -> Dict[str, float]:
+def _feedback_adjustments(query: str) -> tuple[Dict[str, float], set[str]]:
     store = _load_store()
     scores: Dict[str, float] = {}
+    latest_by_chunk: Dict[str, tuple[str, str, str]] = {}
     for item in store.relevance_feedback:
         if not _applies(item.query, query):
+            continue
+        if item.chunk_id:
+            current = latest_by_chunk.get(item.chunk_id)
+            if current is None or item.created_at >= current[0]:
+                latest_by_chunk[item.chunk_id] = (item.created_at, item.feedback, item.doc_id)
+        if item.feedback == "excluded":
             continue
         delta = _delta(item.feedback)
         if item.chunk_id:
             scores[f"chunk:{item.chunk_id}"] = scores.get(f"chunk:{item.chunk_id}", 0.0) + delta
         if item.doc_id:
             scores[f"doc:{item.doc_id}"] = scores.get(f"doc:{item.doc_id}", 0.0) + (delta * SAME_DOC_FEEDBACK_WEIGHT)
+
+    excluded_chunk_ids: set[str] = set()
+    for chunk_id, (_created_at, feedback, doc_id) in latest_by_chunk.items():
+        if feedback != "excluded":
+            continue
+        excluded_chunk_ids.add(chunk_id)
+        if doc_id:
+            scores[f"doc:{doc_id}"] = scores.get(f"doc:{doc_id}", 0.0) + EXCLUDED_CHUNK_DOC_PENALTY
+    return scores, excluded_chunk_ids
+
+
+def _scores(query: str) -> Dict[str, float]:
+    scores, _excluded_chunk_ids = _feedback_adjustments(query)
     return scores
 
 
@@ -52,8 +76,8 @@ def _chunk_score(chunk: Dict[str, Any], scores: Dict[str, float]) -> float:
 
 
 def apply_relevance_feedback(query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    scores = _scores(query)
-    if not scores:
+    scores, excluded_chunk_ids = _feedback_adjustments(query)
+    if not scores and not excluded_chunk_ids:
         return chunks
     personalized = []
     for rank, chunk in enumerate(chunks, 1):
@@ -64,4 +88,8 @@ def apply_relevance_feedback(query: str, chunks: List[Dict[str, Any]]) -> List[D
         base_score = chunk.get("rrf_score") or (1.0 / (60 + rank))
         personalized.append(({**chunk, "metadata": metadata}, base_score + feedback_score))
     personalized.sort(key=lambda item: item[1], reverse=True)
-    return [chunk for chunk, _score in personalized]
+    reordered = [chunk for chunk, _score in personalized]
+    if not excluded_chunk_ids:
+        return reordered
+    filtered = [chunk for chunk in reordered if (chunk.get("id") or "") not in excluded_chunk_ids]
+    return filtered or reordered

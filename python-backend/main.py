@@ -592,7 +592,7 @@ class RelevanceFeedbackRequest(BaseModel):
     chunk_id: str = Field(max_length=240)
     doc_id: str = Field(max_length=240)
     source: Literal["gmail", "drive", "unknown"] = "unknown"
-    feedback: Literal["relevant", "irrelevant"]
+    feedback: Literal["relevant", "irrelevant", "important", "excluded"]
     title: str = Field(default="", max_length=500)
     match_reason: str = Field(default="", max_length=2000)
 

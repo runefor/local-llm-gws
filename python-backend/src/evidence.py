@@ -110,7 +110,7 @@ class RelevanceFeedback(BaseModel):
     chunk_id: str
     doc_id: str
     source: Literal["gmail", "drive", "unknown"] = "unknown"
-    feedback: Literal["relevant", "irrelevant"]
+    feedback: Literal["relevant", "irrelevant", "important", "excluded"]
     title: str = ""
     match_reason: str = ""
     created_at: str
@@ -229,7 +229,7 @@ def record_relevance_feedback(
     chunk_id: str,
     doc_id: str,
     source: Literal["gmail", "drive", "unknown"],
-    feedback: Literal["relevant", "irrelevant"],
+    feedback: Literal["relevant", "irrelevant", "important", "excluded"],
     title: str = "",
     match_reason: str = "",
 ) -> RelevanceFeedback:
