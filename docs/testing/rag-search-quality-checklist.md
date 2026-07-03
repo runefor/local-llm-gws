@@ -33,6 +33,19 @@ cd ..
 git diff --check
 ```
 
+### Developer Real-Embedding RAG Eval
+
+릴리스 전에는 빠른 unit fixture 외에 실제 `intfloat/multilingual-e5-small` 임베딩 모델로 골든 fixture를 한 번 더 확인한다. 개인 로컬 인덱스 smoke는 golden answer를 커밋하지 않는 임시 점검용으로만 사용한다.
+
+```powershell
+cd python-backend
+./.venv/Scripts/python.exe tools/eval_rag.py --mode fixture
+./.venv/Scripts/python.exe tools/eval_rag.py --mode live
+```
+
+- `--mode fixture`: fixture golden set 20건을 실제 임베딩 모델로 다시 검색한다. 릴리스 전 sanity check로 사용한다.
+- `--mode live`: 현재 개인 로컬 Chroma/BM25 인덱스에 대해 ad hoc smoke를 실행한다. 커밋된 golden answer는 없으며, 실제 문서 내용/snippet은 리포트에 남기지 않는다.
+
 ### Known Non-Blocking Warnings
 
 자동 검증에서 아래 경고만 보이는 경우는 실패로 보지 않는다. 다만 새 경고가 추가되거나 테스트/빌드 exit code가 0이 아니면 실패로 처리한다.
