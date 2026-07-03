@@ -1,26 +1,335 @@
 {
   "cases": [
     {
-      "id": "contract_deadline",
-      "query": "지난번 계약 일정",
-      "expected_ids": ["drive_contract_0", "gmail_contract_0"],
-      "result_ids": ["drive_contract_0", "gmail_contract_0", "drive_noise_0"],
-      "minimum_recall_at_5": 1.0,
-      "minimum_recall_at_12": 1.0,
-      "minimum_mrr": 1.0,
-      "maximum_duplicate_rate": 0.0,
-      "notes": "계약/일정 동의어 확장으로 Drive와 Gmail 근거를 모두 찾아야 한다."
-    },
-    {
-      "id": "interview_materials",
-      "query": "지원자 면접 자료",
-      "expected_ids": ["gmail_interview_0"],
-      "result_ids": ["drive_noise_0", "gmail_interview_0", "drive_followup_0"],
+      "id": "contract_deadline_cross_source",
+      "query": "리버브 계약 마감 일정 확인",
+      "expected_ids": [
+        "gmail_contract_2026_c0",
+        "drive_contract_2026_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
       "minimum_recall_at_5": 1.0,
       "minimum_recall_at_12": 1.0,
       "minimum_mrr": 0.5,
       "maximum_duplicate_rate": 0.0,
-      "notes": "Gmail 메타데이터 기반 후보라도 기대 근거가 상위권에 있어야 한다."
+      "notes": "계약과 일정 힌트가 Gmail 협상 메일과 Drive 계약 초안을 함께 끌어오는지 본다."
+    },
+    {
+      "id": "contract_clause_drive_only",
+      "query": "서비스 계약 위약금 조항",
+      "expected_ids": [
+        "drive_contract_2026_c1"
+      ],
+      "sources": [
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Drive만 검색할 때 Gmail 계약 메일이 새지 않고 계약 조항 청크가 잡히는지 확인한다."
+    },
+    {
+      "id": "quote_contract_bundle",
+      "query": "계약 견적 같이 확인",
+      "expected_ids": [
+        "gmail_quote_neuron_c0",
+        "drive_quote_neuron_c0",
+        "drive_contract_2026_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 0.33,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 0.33,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "계약과 견적이 섞인 실제 업무형 검색에서 두 도메인 근거가 같이 나오는지 본다."
+    },
+    {
+      "id": "quote_cost_breakdown",
+      "query": "뉴런온보딩 견적 비용 정리",
+      "expected_ids": [
+        "drive_quote_neuron_c0",
+        "gmail_quote_neuron_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 0.5,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "견적/비용 확장어가 제안서와 회신 메일을 모두 찾는지 확인한다."
+    },
+    {
+      "id": "meeting_minutes_action_items",
+      "query": "알파 회의록 액션 아이템",
+      "expected_ids": [
+        "drive_meeting_alpha_c0",
+        "gmail_meeting_alpha_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "회의록과 미팅 후속 메일이 함께 검색되는지 본다."
+    },
+    {
+      "id": "schedule_deadline_shift",
+      "query": "릴리스 일정 마감 변경 deadline",
+      "expected_ids": [
+        "drive_schedule_release_c0",
+        "gmail_schedule_release_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "일정/마감 한국어와 영어 deadline 혼합 쿼리를 검증한다."
+    },
+    {
+      "id": "payment_invoice_status",
+      "query": "인보이스 결제 승인 영수증",
+      "expected_ids": [
+        "gmail_payment_invoice_c0",
+        "drive_payment_invoice_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "결제/영수증/인보이스 확장어가 회계 메일과 Drive 증빙을 연결하는지 본다."
+    },
+    {
+      "id": "report_weekly_risk",
+      "query": "주간 보고 리스크 지표",
+      "expected_ids": [
+        "drive_report_weekly_c0",
+        "gmail_report_weekly_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "보고서 도메인에서 Drive 리포트와 공유 메일을 같이 회수하는지 확인한다."
+    },
+    {
+      "id": "recruiting_interview_packet",
+      "query": "지원자 면접 자료 interview",
+      "expected_ids": [
+        "gmail_recruiting_packet_c0",
+        "drive_recruiting_packet_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "채용/면접 한국어와 영어 interview가 섞인 검색을 검증한다."
+    },
+    {
+      "id": "recruiting_scorecard_drive_only",
+      "query": "면접 평가표 루브릭",
+      "expected_ids": [
+        "drive_recruiting_packet_c1"
+      ],
+      "sources": [
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Drive 전용 채용 평가표 검색이 출처 필터를 지키는지 본다."
+    },
+    {
+      "id": "gmail_only_contract_thread",
+      "query": "Gmail 계약 회신 서명 일정",
+      "expected_ids": [
+        "gmail_contract_2026_c0",
+        "gmail_contract_2026_c1"
+      ],
+      "sources": [
+        "gmail"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Gmail 전용 검색에서 Drive 계약 초안이 섞이지 않는지 확인한다."
+    },
+    {
+      "id": "drive_only_report_board",
+      "query": "Drive 보고서 이사회 지표",
+      "expected_ids": [
+        "drive_report_weekly_c1"
+      ],
+      "sources": [
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Drive 전용 보고서 검색과 출처 필터 누수를 함께 검증한다."
+    },
+    {
+      "id": "vague_followup_next_steps",
+      "query": "지난번 후속 작업 정리",
+      "expected_ids": [
+        "gmail_meeting_alpha_c1",
+        "drive_meeting_alpha_c1"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "체크리스트의 vague query 유형처럼 도메인 단서가 약한 검색의 최소 회수율을 본다."
+    },
+    {
+      "id": "english_contract_deadline",
+      "query": "contract deadline 확인",
+      "expected_ids": [
+        "drive_contract_2026_c0",
+        "gmail_contract_2026_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 0.33,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "영어 힌트만 섞인 계약 마감 검색이 확장 쿼리와 lexical 경로로 동작하는지 본다."
+    },
+    {
+      "id": "noise_adjacent_approval",
+      "query": "승인 검토 자료",
+      "expected_ids": [
+        "gmail_payment_invoice_c1",
+        "drive_schedule_release_c1"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "노이즈 문서와 표면어를 공유하지만 실제 승인 문서가 최소한 일부 잡히는지 확인한다."
+    },
+    {
+      "id": "low_signal_fallback_filtered",
+      "query": "파일명 계약서 초안",
+      "expected_ids": [
+        "drive_contract_2026_c0"
+      ],
+      "sources": [
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Drive 파일명 fallback 문서가 표면어를 공유해도 low-signal 필터 뒤 상위 결과를 오염시키지 않아야 한다."
+    },
+    {
+      "id": "duplicate_contract_chunks",
+      "query": "리버브 계약 서명 순서",
+      "expected_ids": [
+        "gmail_contract_2026_c0",
+        "gmail_contract_2026_c1"
+      ],
+      "sources": [
+        "gmail"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "같은 메일의 near-duplicate 청크가 중복 ID 없이 안정적으로 랭킹되는지 본다."
+    },
+    {
+      "id": "meeting_schedule_cross_domain",
+      "query": "회의 일정 조율 미팅 schedule",
+      "expected_ids": [
+        "gmail_meeting_alpha_c0",
+        "drive_schedule_release_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "회의와 일정 도메인이 섞인 검색에서 두 도메인 후보가 함께 노출되는지 본다."
+    },
+    {
+      "id": "payment_report_cross_domain",
+      "query": "결제 보고 비용 리포트",
+      "expected_ids": [
+        "drive_payment_invoice_c0",
+        "drive_report_weekly_c0",
+        "gmail_report_weekly_c0"
+      ],
+      "sources": [
+        "gmail",
+        "drive"
+      ],
+      "minimum_recall_at_5": 0.66,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 0.33,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "결제와 보고가 섞인 비용 리포트 검색을 검증한다."
+    },
+    {
+      "id": "quote_proposal_drive_summary",
+      "query": "proposal 제안서 범위 견적",
+      "expected_ids": [
+        "drive_quote_neuron_c1",
+        "drive_quote_neuron_c0"
+      ],
+      "sources": [
+        "drive"
+      ],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 0.5,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Drive 제안서 청크 쌍이 proposal/견적 확장어로 검색되는지 확인한다."
     }
   ]
 }

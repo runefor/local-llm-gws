@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "id": "contract_deadline",
+      "query": "지난번 계약 일정",
+      "expected_ids": ["drive_contract_0", "gmail_contract_0"],
+      "result_ids": ["drive_contract_0", "gmail_contract_0", "drive_noise_0"],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 1.0,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "계약/일정 동의어 확장으로 Drive와 Gmail 근거를 모두 찾아야 한다."
+    },
+    {
+      "id": "interview_materials",
+      "query": "지원자 면접 자료",
+      "expected_ids": ["gmail_interview_0"],
+      "result_ids": ["drive_noise_0", "gmail_interview_0", "drive_followup_0"],
+      "minimum_recall_at_5": 1.0,
+      "minimum_recall_at_12": 1.0,
+      "minimum_mrr": 0.5,
+      "maximum_duplicate_rate": 0.0,
+      "notes": "Gmail 메타데이터 기반 후보라도 기대 근거가 상위권에 있어야 한다."
+    }
+  ]
+}

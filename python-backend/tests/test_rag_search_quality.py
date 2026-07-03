@@ -14,7 +14,7 @@ from src.rag import retriever
 from src import evidence as evidence_module
 
 
-FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "rag_eval_cases.json"
+FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "rag_eval_metric_cases.json"
 
 
 class RagSearchQualityTests(unittest.TestCase):
