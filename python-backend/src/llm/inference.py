@@ -6,9 +6,11 @@ OpenAI 호환 /v1/chat/completions 엔드포인트에 httpx로 요청합니다.
 DeepSeek R1 계열의 <think>...</think> 토큰 분리를 지원합니다.
 """
 
+import json
 import re
 import logging
 from typing import Any, Dict, List, Optional
+from collections.abc import Generator
 
 import httpx
 
@@ -144,3 +146,62 @@ def test_connection(endpoint: Optional[str] = None, model: Optional[str] = None)
     if "error" in result:
         return {"status": "error", "message": result["error"]}
     return {"status": "success", "message": "연결 성공"}
+
+
+def chat_completion_stream(
+    messages: List[Dict[str, str]],
+    model: Optional[str] = None,
+    max_tokens: int = 512,
+    temperature: float = 0.7,
+    endpoint: Optional[str] = None,
+    timeout: float = 120.0,
+) -> Generator[str, None, None]:
+    """
+    OpenAI 호환 /v1/chat/completions 엔드포인트에 스트리밍 요청을 보냅니다.
+    응답 텍스트(chunk)를 실시간으로 yield 합니다.
+    """
+    base_url = endpoint or _get_base_url()
+    url = f"{base_url.rstrip('/')}/chat/completions"
+
+    payload: Dict[str, Any] = {
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": True,
+    }
+    target_model = model or config.LLM_MODEL
+    if target_model:
+        payload["model"] = target_model
+    if config.LLM_SERVE_MODE == "ollama":
+        payload["reasoning"] = {"effort": "none"}
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {config.LLM_API_KEY}",
+    }
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            with client.stream("POST", url, json=payload, headers=headers) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content")
+                            # reasoning_content handling for deepseek? We can yield it as well or ignore for now.
+                            reasoning = delta.get("reasoning_content")
+                            if content:
+                                yield content
+                            elif reasoning:
+                                # For some models using reasoning_content in delta
+                                yield f"<think>{reasoning}</think>"
+                        except json.JSONDecodeError:
+                            continue
+    except Exception as e:
+        logger.error(f"LLM API 스트리밍 오류: {e}")
+        yield f"\n[오류 발생: {str(e)}]"

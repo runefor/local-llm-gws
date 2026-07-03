@@ -267,6 +267,7 @@ export default function ChatPanel() {
   const [options, setOptions] = useState<ChatOptions>(defaultOptions);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const activeTitle = activeSession?.title || "새 채팅";
   const hasGrounding = options.grounding_enabled;
@@ -336,13 +337,84 @@ export default function ChatPanel() {
     try {
       const session = activeSession || await createSession();
       setDraft("");
-      const data = await readJson<{ session: ChatSession }>(await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(session.id)}/messages`, {
+      
+      const userMsg: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        role: "user",
+        content: message,
+        created_at: new Date().toISOString(),
+        used_options: options,
+        sources: [],
+        status: "ok"
+      };
+      
+      const assistantMsg: ChatMessage = {
+        id: `temp-ast-${Date.now()}`,
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+        used_options: options,
+        sources: [],
+        status: "ok"
+      };
+      
+      setActiveSession({
+        ...session,
+        messages: [...session.messages, userMsg, assistantMsg]
+      });
+
+      const response = await fetch(`${API_BASE}/api/chat/sessions/${encodeURIComponent(session.id)}/messages/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, options }),
-      }));
-      setActiveSession(data.session);
-      setOptions({ ...defaultOptions, ...data.session.options });
+      });
+      
+      if (!response.ok || !response.body) {
+        throw new Error(`요청 실패 (${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let currentContent = "";
+      let buffer = "";
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // ponytail: 마지막 불완전한 라인(끊긴 JSON)은 버퍼에 남겨둠
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.error) {
+                throw new Error(parsed.error);
+              }
+              if (parsed.type === "meta") {
+                assistantMsg.sources = parsed.sources || [];
+                assistantMsg.status = parsed.status || "ok";
+              } else if (parsed.type === "chunk") {
+                currentContent += (parsed.content || "");
+                assistantMsg.content = currentContent;
+              }
+              setActiveSession(prev => {
+                if (!prev) return prev;
+                const newMessages = [...prev.messages];
+                newMessages[newMessages.length - 1] = { ...assistantMsg };
+                return { ...prev, messages: newMessages };
+              });
+            } catch (e) {
+              // Ignore partial line JSON errors
+            }
+          }
+        }
+      }
+      
+      await loadSession(session.id);
       await loadSessions();
     } catch (error) {
       logChatFailure("답변 생성", error);
@@ -423,15 +495,27 @@ export default function ChatPanel() {
                 {selectedSourceText} · {hasGrounding ? strictnessLabels[options.strictness] : "근거 없이 일반 대화"}
               </p>
             </div>
-            <label className="inline-flex items-center gap-2 rounded-full bg-surface px-4 py-2 text-sm font-semibold text-text-primary">
-              <input
-                type="checkbox"
-                checked={options.grounding_enabled}
-                onChange={(event) => setOptions((current) => ({ ...current, grounding_enabled: event.target.checked }))}
-                className="h-4 w-4 accent-primary"
-              />
-              RAG/Wiki 근거 사용
-            </label>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-2 rounded-full bg-surface px-4 py-2 text-sm font-semibold text-text-primary cursor-pointer hover:bg-surface-variant transition-colors">
+                <input
+                  type="checkbox"
+                  checked={options.grounding_enabled}
+                  onChange={(event) => setOptions((current) => ({ ...current, grounding_enabled: event.target.checked }))}
+                  className="h-4 w-4 accent-primary cursor-pointer"
+                />
+                RAG/Wiki 근거 사용
+              </label>
+              {hasGrounding && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="h-9 w-9 rounded-full bg-surface text-text-secondary hover:bg-surface-variant transition-colors flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                  title="검색 설정"
+                >
+                  <span className="material-symbols-rounded text-lg">settings</span>
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -446,7 +530,7 @@ export default function ChatPanel() {
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                 {chatReady
-                  ? "기본은 일반 LLM 대화입니다. RAG/Wiki 근거 사용을 켜면 자료 종류, 기간, 출처 엄격도와 고급 범위를 함께 저장합니다."
+                  ? "기본은 일반 LLM 대화입니다. RAG/Wiki 근거 사용을 켜고 우측 상단 톱니바퀴 아이콘을 눌러 검색 범위를 설정해보세요."
                   : "데스크톱 앱이 로컬 백엔드와 연결되면 이 영역에서 바로 대화를 시작할 수 있습니다. 문제가 있으면 앱 상태 카드에서 진단 로그를 저장하세요."}
               </p>
             </div>
@@ -455,17 +539,20 @@ export default function ChatPanel() {
           {activeSession?.messages.map((message) => (
             <article
               key={message.id}
-              className={`max-w-3xl rounded-3xl px-5 py-4 shadow-sm ${
-                message.role === "user"
-                  ? "ml-auto bg-primary text-white"
-                  : "mr-auto border border-surface-variant/70 bg-background text-text-primary"
-              }`}
+              className={`flex w-full ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              {message.role === "assistant" ? (
-                <MarkdownAnswer content={message.content} />
-              ) : (
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
-              )}
+              <div
+                className={`max-w-[85%] lg:max-w-[75%] rounded-[24px] px-5 py-4 shadow-sm ${
+                  message.role === "user"
+                    ? "bg-primary text-white rounded-br-sm"
+                    : "border border-surface-variant/70 bg-white text-text-primary rounded-bl-sm"
+                }`}
+              >
+                {message.role === "assistant" ? (
+                  <MarkdownAnswer content={message.content} />
+                ) : (
+                  <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{message.content}</p>
+                )}
               {message.role === "assistant" && (
                 <div className="mt-3 space-y-3">
                   <div className="flex flex-wrap gap-2 text-[11px]">
@@ -517,130 +604,161 @@ export default function ChatPanel() {
                   )}
                 </div>
               )}
+              </div>
             </article>
           ))}
         </div>
 
-        <div className="max-h-[52%] shrink-0 overflow-y-auto border-t border-surface-variant/70 bg-background p-4 xl:max-h-none">
-            <div className="mb-4 rounded-3xl border border-surface-variant/70 bg-surface p-4">
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div>
-                <p className="mb-2 text-xs font-semibold text-text-primary">자료 종류</p>
-                <div className="flex flex-wrap gap-2">
-                  {(["gmail", "drive", "wiki"] as SourceType[]).map((source) => (
-                    <button
-                      key={source}
-                      type="button"
-                      onClick={() => toggleSource(source)}
-                      disabled={!hasGrounding}
-                      className={`rounded-full px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
-                        options.source_types.includes(source) && hasGrounding
-                          ? "bg-primary text-white"
-                          : "bg-background text-text-secondary hover:bg-primary-container/40 disabled:bg-background/60 disabled:text-text-secondary/55"
-                      }`}
-                    >
-                      {sourceLabels[source]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold text-text-primary">기간</span>
-                <select
-                  value={options.date_range}
-                  disabled={!hasGrounding}
-                  onChange={(event) => setOptions((current) => ({ ...current, date_range: event.target.value as DateRange }))}
-                  className="w-full rounded-2xl border border-surface-variant bg-background px-3 py-2 text-sm text-text-primary focus:outline-primary disabled:opacity-50"
-                >
-                  {Object.entries(dateRangeLabels).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-xs font-semibold text-text-primary">출처 엄격도</span>
-                <select
-                  value={options.strictness}
-                  disabled={!hasGrounding}
-                  onChange={(event) => setOptions((current) => ({ ...current, strictness: event.target.value as Strictness }))}
-                  className="w-full rounded-2xl border border-surface-variant bg-background px-3 py-2 text-sm text-text-primary focus:outline-primary disabled:opacity-50"
-                >
-                  <option value="strict">엄격: 자료에서만 답변</option>
-                  <option value="balanced">균형: 자료 우선, 추론 분리</option>
-                  <option value="free">자유: 일반 지식 허용</option>
-                </select>
-              </label>
-            </div>
-
-            <details className="mt-4 rounded-2xl bg-background px-4 py-3">
-              <summary className="cursor-pointer text-sm font-semibold text-primary">고급 검색 범위</summary>
-              <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold text-text-primary">Drive 폴더 힌트</span>
-                  <input
-                    value={options.drive_folder}
-                    disabled={!hasGrounding}
-                    onChange={(event) => setOptions((current) => ({ ...current, drive_folder: event.target.value }))}
-                    placeholder="폴더명 또는 ID 일부로 좁히기"
-                    className="w-full rounded-2xl border border-surface-variant bg-white px-3 py-2 text-sm focus:outline-primary disabled:opacity-50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold text-text-primary">Wiki/정보 묶음</span>
-                  <select
-                    value={options.evidence_set_id}
-                    disabled={!hasGrounding}
-                    onChange={(event) => setOptions((current) => ({ ...current, evidence_set_id: event.target.value }))}
-                    className="w-full rounded-2xl border border-surface-variant bg-white px-3 py-2 text-sm focus:outline-primary disabled:opacity-50"
-                  >
-                    <option value="">선택하지 않음</option>
-                    {evidenceSets.map((set) => (
-                      <option key={set.id} value={set.id}>
-                        {set.title} ({set.evidence_items?.length ?? 0})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold text-text-primary">검색어 보강</span>
-                  <input
-                    value={options.search_scope}
-                    disabled={!hasGrounding}
-                    onChange={(event) => setOptions((current) => ({ ...current, search_scope: event.target.value }))}
-                    placeholder="예: 계약, 회의록, 프로젝트명"
-                    className="w-full rounded-2xl border border-surface-variant bg-white px-3 py-2 text-sm focus:outline-primary disabled:opacity-50"
-                  />
-                </label>
-              </div>
-            </details>
-          </div>
-
-          <div className="flex items-end gap-3">
-              <textarea
+        <div className="shrink-0 bg-background px-6 pb-6 pt-2">
+          <div className="relative mx-auto max-w-4xl">
+            <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
                   sendMessage();
                 }
               }}
-              placeholder={chatReady ? "질문을 입력하세요. Ctrl/⌘ + Enter로 보낼 수 있습니다." : "백엔드가 준비되면 질문을 입력할 수 있습니다."}
+              placeholder={chatReady ? "메시지를 입력하세요..." : "백엔드가 준비되면 질문을 입력할 수 있습니다."}
               disabled={!chatReady}
-              className="min-h-24 flex-1 resize-none rounded-3xl border border-surface-variant bg-white px-4 py-3 text-sm leading-relaxed text-text-primary focus:outline focus:outline-2 focus:outline-primary disabled:bg-surface disabled:text-text-secondary/70 disabled:placeholder:text-text-secondary/70"
+              rows={1}
+              className="w-full resize-none rounded-[24px] border border-surface-variant/70 bg-surface px-5 py-4 pr-14 text-[15px] leading-relaxed text-text-primary shadow-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+              style={{ minHeight: '56px', maxHeight: '200px' }}
             />
             <button
               type="button"
               onClick={sendMessage}
               disabled={!draft.trim() || loading || !chatReady}
-              className="rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-primary/95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="absolute bottom-2 right-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-sm transition-all hover:bg-primary/95 disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-text-secondary"
             >
-              {loading ? "답변 중" : "보내기"}
+              <span className="material-symbols-rounded text-lg">{loading ? "hourglass_empty" : "arrow_upward"}</span>
             </button>
           </div>
+          <p className="mx-auto mt-2 max-w-4xl text-center text-[11px] text-text-secondary">
+            Enter를 눌러 전송, Shift + Enter로 줄바꿈을 할 수 있습니다.
+          </p>
         </div>
       </section>
+
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-surface p-6 shadow-xl border border-surface-variant">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-text-primary">RAG 검색 설정</h3>
+                <p className="text-sm text-text-secondary mt-1">자료 기반 답변의 검색 범위를 세밀하게 조정합니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-background hover:bg-surface-variant text-text-secondary transition-colors"
+              >
+                <span className="material-symbols-rounded">close</span>
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="col-span-full sm:col-span-1 lg:col-span-1">
+                  <p className="mb-2 text-sm font-semibold text-text-primary">자료 종류</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(["gmail", "drive", "wiki"] as SourceType[]).map((source) => (
+                      <button
+                        key={source}
+                        type="button"
+                        onClick={() => toggleSource(source)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                          options.source_types.includes(source)
+                            ? "bg-primary text-white"
+                            : "bg-background text-text-secondary hover:bg-primary-container/40"
+                        }`}
+                      >
+                        {sourceLabels[source]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-text-primary">기간</span>
+                  <select
+                    value={options.date_range}
+                    onChange={(event) => setOptions((current) => ({ ...current, date_range: event.target.value as DateRange }))}
+                    className="w-full rounded-2xl border border-surface-variant bg-background px-4 py-2.5 text-sm text-text-primary focus:outline-primary"
+                  >
+                    {Object.entries(dateRangeLabels).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-text-primary">출처 엄격도</span>
+                  <select
+                    value={options.strictness}
+                    onChange={(event) => setOptions((current) => ({ ...current, strictness: event.target.value as Strictness }))}
+                    className="w-full rounded-2xl border border-surface-variant bg-background px-4 py-2.5 text-sm text-text-primary focus:outline-primary"
+                  >
+                    <option value="strict">엄격: 자료에서만 답변</option>
+                    <option value="balanced">균형: 자료 우선, 추론 분리</option>
+                    <option value="free">자유: 일반 지식 허용</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="border-t border-surface-variant/70 pt-6">
+                <h4 className="mb-4 text-sm font-semibold text-text-primary">고급 검색 범위</h4>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold text-text-secondary">Drive 폴더 힌트</span>
+                    <input
+                      value={options.drive_folder}
+                      onChange={(event) => setOptions((current) => ({ ...current, drive_folder: event.target.value }))}
+                      placeholder="폴더명 또는 ID 일부"
+                      className="w-full rounded-2xl border border-surface-variant bg-background px-4 py-2.5 text-sm focus:outline-primary"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold text-text-secondary">Wiki/정보 묶음</span>
+                    <select
+                      value={options.evidence_set_id}
+                      onChange={(event) => setOptions((current) => ({ ...current, evidence_set_id: event.target.value }))}
+                      className="w-full rounded-2xl border border-surface-variant bg-background px-4 py-2.5 text-sm focus:outline-primary"
+                    >
+                      <option value="">선택하지 않음</option>
+                      {evidenceSets.map((set) => (
+                        <option key={set.id} value={set.id}>
+                          {set.title} ({set.evidence_items?.length ?? 0})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold text-text-secondary">검색어 보강</span>
+                    <input
+                      value={options.search_scope}
+                      onChange={(event) => setOptions((current) => ({ ...current, search_scope: event.target.value }))}
+                      placeholder="계약, 회의록 등"
+                      className="w-full rounded-2xl border border-surface-variant bg-background px-4 py-2.5 text-sm focus:outline-primary"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-8 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary/95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                완료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -538,6 +538,18 @@ def chat_sessions_append_message(session_id: str, req: ChatMessageRequest):
         return {"status": "success", "session": session.model_dump()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/chat/sessions/{session_id}/messages/stream")
+def chat_sessions_stream_message(session_id: str, req: ChatMessageRequest):
+    try:
+        from src.chat_sessions import stream_chat_message
+        return StreamingResponse(
+            stream_chat_message(session_id, req.message, req.options),
+            media_type="application/x-ndjson"
+        )
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.post("/api/gmail/search")
