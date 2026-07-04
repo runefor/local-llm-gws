@@ -4,6 +4,8 @@ import unittest
 import importlib
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
@@ -59,8 +61,12 @@ _install_dependency_stubs()
 
 main = importlib.import_module("main")
 
+HEADERS = {"host": "localhost:18731", "origin": "http://localhost:18732"}
+
 
 # 라우터 분리(main.py 모놀리스 → 도메인별 APIRouter) 전후로 이 집합이 바뀌지 않아야 한다.
+# fastapi 0.137.1의 include_router는 lazy(_IncludedRouter) 구조라 app.routes를 직접
+# 순회하면 라우터의 라우트가 안 보인다. 실제 API 표면은 OpenAPI 스키마로 검증한다.
 # 새 엔드포인트를 의도적으로 추가/삭제할 때만 이 목록을 갱신한다.
 EXPECTED_ROUTES = {
     ("DELETE", "/api/evidence-sets/{evidence_set_id}"),
@@ -75,6 +81,8 @@ EXPECTED_ROUTES = {
     ("GET", "/api/evidence-sets"),
     ("GET", "/api/evidence-sets/{evidence_set_id}"),
     ("GET", "/api/gmail/labels"),
+    ("GET", "/api/gws/originals/drive/{file_id}"),
+    ("GET", "/api/gws/originals/gmail/{message_id}"),
     ("GET", "/api/llm/config"),
     ("GET", "/api/llm/detect"),
     ("GET", "/api/llm/download/progress/{preset_id}"),
@@ -86,10 +94,6 @@ EXPECTED_ROUTES = {
     ("GET", "/api/rag/status"),
     ("GET", "/api/settings"),
     ("GET", "/api/wiki-conditions"),
-    ("GET,HEAD", "/docs"),
-    ("GET,HEAD", "/docs/oauth2-redirect"),
-    ("GET,HEAD", "/openapi.json"),
-    ("GET,HEAD", "/redoc"),
     ("PATCH", "/api/artifacts/{artifact_id}"),
     ("PATCH", "/api/artifacts/{artifact_id}/status"),
     ("PATCH", "/api/evidence-sets/{evidence_set_id}"),
@@ -125,15 +129,13 @@ EXPECTED_ROUTES = {
 
 class RouteInventoryTest(unittest.TestCase):
     def _actual_routes(self):
-        routes = set()
-        for route in main.app.routes:
-            methods = getattr(route, "methods", None)
-            if not methods:
-                continue
-            # OPTIONS/HEAD 자동 추가분 중 HEAD는 GET과 함께 의미가 있으므로 유지, OPTIONS는 제외한다.
-            relevant = sorted(m for m in methods if m != "OPTIONS")
-            routes.add((",".join(relevant), route.path))
-        return routes
+        client = TestClient(main.app)
+        schema = client.get("/openapi.json", headers=HEADERS).json()
+        return {
+            (method.upper(), path)
+            for path, operations in schema["paths"].items()
+            for method in operations
+        }
 
     def test_route_surface_is_unchanged(self):
         self.assertEqual(self._actual_routes(), EXPECTED_ROUTES)
