@@ -47,3 +47,8 @@ src-tauri/bin/
 # oh my codex
 .omo
 .omx/
+
+# bkit
+.bkit
+**/.bkit-memory.json
+**/.pdca-status.json
