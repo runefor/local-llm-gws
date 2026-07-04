@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useApp } from "../context/AppContext";
-
-const API_BASE = "http://localhost:18731";
+import { API_BASE } from "../api/client";
 
 type Strictness = "strict" | "balanced" | "free";
 type SourceType = "gmail" | "drive" | "wiki";

@@ -1,3 +1,5 @@
+import { API_BASE } from "./client";
+
 export type WikiConditionPeriod = "1w" | "1m" | "3m" | "all";
 
 export type WikiCondition = {
@@ -74,8 +76,6 @@ type ConditionResponse = {
   message?: string;
   condition?: WikiCondition;
 };
-
-const API_BASE = "http://localhost:18731";
 
 const parseJson = async <T>(response: Response): Promise<T> => {
   return response.json() as Promise<T>;

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
     "prepare:tauri-dev": "powershell -ExecutionPolicy Bypass -File ./scripts/ensure_dev_sidecar.ps1",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ./scripts/build_backend_sidecar.ps1",
     "build:desktop": "tauri build",
@@ -26,6 +27,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "tailwindcss": "^4.3.1",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.9"
   }
 }

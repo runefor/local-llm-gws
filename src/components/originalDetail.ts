@@ -1,4 +1,5 @@
 import type { WorkspaceItem } from "../context/AppContext";
+import { API_BASE } from "../api/client";
 
 export type OriginalDetail = {
   readonly id: string;
@@ -55,8 +56,8 @@ export const fetchOriginalDetail = async (item: WorkspaceItem): Promise<Original
   }
 
   const endpoint = item.type === "gmail"
-    ? `http://localhost:18731/api/gws/originals/gmail/${encodeURIComponent(item.id)}`
-    : `http://localhost:18731/api/gws/originals/drive/${encodeURIComponent(item.id)}?${params.toString()}`;
+    ? `${API_BASE}/api/gws/originals/gmail/${encodeURIComponent(item.id)}`
+    : `${API_BASE}/api/gws/originals/drive/${encodeURIComponent(item.id)}?${params.toString()}`;
   const response = await fetch(endpoint);
   const data: unknown = await response.json();
 

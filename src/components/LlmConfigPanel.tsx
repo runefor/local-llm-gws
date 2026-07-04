@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useApp, type DetectedServer } from "../context/AppContext";
 import { classifyLlmEndpoint, type LlmServeMode } from "../utils/llmEndpoint";
 import { LlmSetupChooser } from "./LlmSetupChooser";
+import { API_BASE } from "../api/client";
 
 interface Preset {
   id: string;
@@ -82,7 +83,7 @@ export default function LlmConfigPanel() {
   // 내장 서버 실행 상태 조회
   const fetchServerStatus = async () => {
     try {
-      const res = await fetch("http://localhost:18731/api/llm/server/status");
+      const res = await fetch(`${API_BASE}/api/llm/server/status`);
       if (res.ok) {
         const data: { running: boolean; model: string | null; endpoint: string | null } = await res.json();
         setServerStatus(data);
@@ -97,13 +98,13 @@ export default function LlmConfigPanel() {
   const fetchModels = async () => {
     setIsLoading(true);
     try {
-      const pRes = await fetch("http://localhost:18731/api/llm/presets");
+      const pRes = await fetch(`${API_BASE}/api/llm/presets`);
       if (!pRes.ok) throw new Error("presets API 응답 불량");
       const pData: { presets?: Preset[]; recommended?: string } = await pRes.json();
       setPresets(pData.presets || []);
       setRecommendedId(pData.recommended || "");
       
-      const mRes = await fetch("http://localhost:18731/api/llm/local_models");
+      const mRes = await fetch(`${API_BASE}/api/llm/local_models`);
       if (!mRes.ok) throw new Error("local_models API 응답 불량");
       const mData: { models?: LocalModel[] } = await mRes.json();
       setLocalModels(mData.models || []);
@@ -131,7 +132,7 @@ export default function LlmConfigPanel() {
     setServerActionLoading(true);
     addLog(`내장 서버 기동 요청: ${llmModel}`);
     try {
-      const res = await fetch("http://localhost:18731/api/llm/server/start", {
+      const res = await fetch(`${API_BASE}/api/llm/server/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model_filename: llmModel })
@@ -155,7 +156,7 @@ export default function LlmConfigPanel() {
     setServerActionLoading(true);
     addLog("내장 서버 종료 요청");
     try {
-      const res = await fetch("http://localhost:18731/api/llm/server/stop", { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/llm/server/stop`, { method: "POST" });
       const data: LlmActionResponse = await res.json();
       if (data.status === "stopped") {
         addLog("내장 서버가 종료되었습니다.");
@@ -196,7 +197,7 @@ export default function LlmConfigPanel() {
     let active = true;
     const fetchHardware = async () => {
       try {
-        const res = await fetch("http://localhost:18731/api/llm/hardware");
+        const res = await fetch(`${API_BASE}/api/llm/hardware`);
         if (res.ok) {
           const data = await res.json();
           if (active) {
@@ -267,7 +268,7 @@ export default function LlmConfigPanel() {
     if (downloading) {
       interval = window.setInterval(async () => {
         try {
-          const res = await fetch(`http://localhost:18731/api/llm/download/progress/${downloading}`);
+          const res = await fetch(`${API_BASE}/api/llm/download/progress/${downloading}`);
           const data: LlmActionResponse = await res.json();
           if (!res.ok) {
             const message = data.message || "Progress API 응답 불량";
@@ -312,7 +313,7 @@ export default function LlmConfigPanel() {
       setDownloading(presetId);
       setProgress(0);
       addLog(`모델 다운로드 요청: ${presetId}`);
-      const response = await fetch("http://localhost:18731/api/llm/download", {
+      const response = await fetch(`${API_BASE}/api/llm/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preset_id: presetId })
@@ -336,7 +337,7 @@ export default function LlmConfigPanel() {
   const handleDelete = async (filename: string) => {
     if (!window.confirm("이 모델을 삭제하시겠습니까?")) return;
     try {
-      const response = await fetch("http://localhost:18731/api/llm/delete", {
+      const response = await fetch(`${API_BASE}/api/llm/delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename })

@@ -4,6 +4,7 @@ import { classifyLlmEndpoint } from "../utils/llmEndpoint";
 import type { OriginalExportDocument, WorkspaceItem } from "../context/AppContext";
 import { OriginalDetailModal, OriginalErrorToast } from "./OriginalDetailModal";
 import { fetchOriginalDetail, type OriginalDetail } from "./originalDetail";
+import { API_BASE } from "../api/client";
 import { ArtifactStatusPanel, type ArtifactLintResult, type ArtifactStatus } from "./rag/ArtifactStatusPanel";
 import { MatchReasonDetails } from "./rag/MatchReasonDetails";
 import { RagEvidenceDetailModal } from "./rag/RagEvidenceDetailModal";
@@ -465,7 +466,7 @@ export default function RagSearchPanel() {
 
   const fetchIndexStatus = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:18731/api/rag/status");
+      const response = await fetch(`${API_BASE}/api/rag/status`);
       const data = toRecord(await response.json());
       if (data.status === "success") {
         setIndexStatus({
@@ -619,7 +620,7 @@ export default function RagSearchPanel() {
   const fetchSavedEvidenceSets = useCallback(async () => {
     setLoadingEvidenceSets(true);
     try {
-      const response = await fetch("http://localhost:18731/api/evidence-sets");
+      const response = await fetch(`${API_BASE}/api/evidence-sets`);
       const data = toRecord(await response.json());
       if (data.status === "success" && Array.isArray(data.evidence_sets)) {
         setSavedEvidenceSets(
@@ -667,7 +668,7 @@ export default function RagSearchPanel() {
     addLog(`RAG 근거 검색 요청(${selectedSourceLabel}): "${trimmedQuery}"`);
 
     try {
-      const response = await fetch("http://localhost:18731/api/rag/search", {
+      const response = await fetch(`${API_BASE}/api/rag/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: trimmedQuery, top_k: 12, sources: selectedSources }),
@@ -726,7 +727,7 @@ export default function RagSearchPanel() {
     if (savingFeedbackId || backendStatus !== "online") return;
     setSavingFeedbackId(item.id);
     try {
-      const response = await fetch("http://localhost:18731/api/rag/feedback", {
+      const response = await fetch(`${API_BASE}/api/rag/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -767,8 +768,8 @@ export default function RagSearchPanel() {
     };
     const isUpdatingEvidenceSet = !!savedEvidenceSet?.id;
     const requestUrl = isUpdatingEvidenceSet
-      ? `http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}`
-      : "http://localhost:18731/api/evidence-sets";
+      ? `${API_BASE}/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}`
+      : `${API_BASE}/api/evidence-sets`;
     const requestMethod = isUpdatingEvidenceSet ? "PATCH" : "POST";
 
     setSavingEvidenceSet(true);
@@ -822,7 +823,7 @@ export default function RagSearchPanel() {
     setOpeningEvidenceSetId(evidenceSetId);
     showNotification("info", "저장된 정보 묶음을 불러오는 중입니다...");
     try {
-      const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(evidenceSetId)}`);
+      const response = await fetch(`${API_BASE}/api/evidence-sets/${encodeURIComponent(evidenceSetId)}`);
       const data = toRecord(await response.json());
       if (data.status === "success") {
         const fallbackSet = savedEvidenceSets.find((item) => item.id === evidenceSetId);
@@ -866,7 +867,7 @@ export default function RagSearchPanel() {
     addLog(`Wiki 후보 생성 요청: 정보 묶음 ${savedEvidenceSet.id}, type=wiki`);
 
     try {
-      const response = await fetch(`http://localhost:18731/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
+      const response = await fetch(`${API_BASE}/api/evidence-sets/${encodeURIComponent(savedEvidenceSet.id)}/artifacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -926,7 +927,7 @@ export default function RagSearchPanel() {
 
     setSavingArtifact(true);
     try {
-      const response = await fetch(`http://localhost:18731/api/artifacts/${encodeURIComponent(artifact.id)}`, {
+      const response = await fetch(`${API_BASE}/api/artifacts/${encodeURIComponent(artifact.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: draftTitle.trim(), content: draftContent }),
@@ -964,7 +965,7 @@ export default function RagSearchPanel() {
 
     setUpdatingArtifactStatus(true);
     try {
-      const response = await fetch(`http://localhost:18731/api/artifacts/${encodeURIComponent(targetArtifact.id)}/status`, {
+      const response = await fetch(`${API_BASE}/api/artifacts/${encodeURIComponent(targetArtifact.id)}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),

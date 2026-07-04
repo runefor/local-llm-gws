@@ -35,7 +35,7 @@ src/
 - Avoid purple/indigo gradients, neon glow, oversized blur, and lorem ipsum filler.
 - Keep Korean user-facing labels/logs natural and concise.
 - Tauri-only APIs must be guarded or dynamically imported. Browser mode must not crash if Tauri APIs are unavailable.
-- Current API base is hardcoded as `http://localhost:18731`; update all call sites consistently if this changes.
+- API base URL lives in one place: `API_BASE` in `src/api/client.ts` (`http://localhost:18731`). Import it; do not re-hardcode the URL in call sites. `src/api/client.ts` also exposes `fetchJson`/`postJson` helpers for new call sites.
 - `npm run build` is the frontend verification gate; TypeScript forbids unused locals/params.
 
 ## ANTI-PATTERNS

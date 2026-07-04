@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
+import { API_BASE } from "../api/client";
 
 export default function ServiceConfigPanel() {
   const {
@@ -51,7 +52,7 @@ export default function ServiceConfigPanel() {
     if (backendStatus !== "online") return;
     setSelectingFolder(true);
     try {
-      const response = await fetch("http://localhost:18731/api/utils/select_directory", {
+      const response = await fetch(`${API_BASE}/api/utils/select_directory`, {
         method: "POST"
       });
       const data = await response.json();

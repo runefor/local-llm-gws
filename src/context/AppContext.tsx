@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { isTauri } from "../utils/env";
+import { API_BASE } from "../api/client";
 
 export interface GmailItem {
   id: string;
@@ -268,7 +269,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const checkBackend = async () => {
     setBackendStatus("connecting");
     try {
-      const response = await fetch("http://localhost:18731/");
+      const response = await fetch(`${API_BASE}/`);
       const data = await response.json();
       if (data.status === "ok") {
         setBackendStatus("online");
@@ -288,7 +289,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const checkGwsAuth = async () => {
     setAuthChecking(true);
     try {
-      const response = await fetch("http://localhost:18731/api/auth/status");
+      const response = await fetch(`${API_BASE}/api/auth/status`);
       const data = await response.json();
       const authenticated = response.ok && data.authenticated === true;
       setIsGwsAuthenticated(authenticated);
@@ -309,7 +310,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (backendStatus !== "online" || !isGwsAuthenticated) return;
     setGmailLabelsLoading(true);
     try {
-      const response = await fetch("http://localhost:18731/api/gmail/labels");
+      const response = await fetch(`${API_BASE}/api/gmail/labels`);
       const data = await response.json();
       if (data.status === "success" && Array.isArray(data.labels)) {
         setGmailLabels(data.labels);
@@ -328,7 +329,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     stopGoogleAuthPolling();
     addLog("Google OAuth 로그인 창을 엽니다...");
     try {
-      const response = await fetch("http://localhost:18731/api/auth/login", { method: "POST" });
+      const response = await fetch(`${API_BASE}/api/auth/login`, { method: "POST" });
       const data = await response.json();
       if (data.status === "pending" && data.url) {
         addLog("Google OAuth 로그인 링크를 엽니다...");
@@ -344,7 +345,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         googleAuthPollingTimerRef.current = window.setInterval(async () => {
           googleAuthPollingAttemptsRef.current += 1;
           try {
-            const res = await fetch("http://localhost:18731/api/auth/status");
+            const res = await fetch(`${API_BASE}/api/auth/status`);
             const statusData = await res.json();
             if (res.ok && statusData.authenticated === true) {
               setIsGwsAuthenticated(true);
@@ -383,7 +384,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addLog(query ? `Gmail 메타데이터 검색 시작 (검색어: "${query}"${labelLog})...` : `Gmail 메타데이터 검색 시작${labelLog}...`);
 
     try {
-      const response = await fetch("http://localhost:18731/api/gmail/search", {
+      const response = await fetch(`${API_BASE}/api/gmail/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -428,7 +429,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     beginVectorization("gmail", `Gmail 선택 메일 ${messageIds.length}개 벡터화`);
     addLog(`Gmail 선택 메일 벡터화 시작: ${messageIds.length}개`);
     try {
-      const response = await fetch("http://localhost:18731/api/gmail/vectorize", {
+      const response = await fetch(`${API_BASE}/api/gmail/vectorize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_ids: messageIds })
@@ -472,7 +473,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     beginVectorization("drive", label);
     addLog(`${label} 작업 실행 중...`);
     try {
-      const response = await fetch("http://localhost:18731/api/rag/index", {
+      const response = await fetch(`${API_BASE}/api/rag/index`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sources, drive_files: sources.includes("drive") ? driveItems : [] }),
@@ -507,7 +508,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addLog(query ? `Drive 원본 검색 시작 (검색어: "${query}")...` : "Drive 원본 검색 시작...");
 
     try {
-      const response = await fetch("http://localhost:18731/api/sync/drive", {
+      const response = await fetch(`${API_BASE}/api/sync/drive`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -546,7 +547,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addLog(query ? `Gmail/Drive 원본 검색 시작 (검색어: "${query}")...` : "Gmail/Drive 원본 검색 시작...");
 
     try {
-      const response = await fetch("http://localhost:18731/api/gws/originals/search", {
+      const response = await fetch(`${API_BASE}/api/gws/originals/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -575,7 +576,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 백엔드로부터 LLM 설정 로드
   const fetchLlmConfig = async () => {
     try {
-      const response = await fetch("http://localhost:18731/api/llm/config");
+      const response = await fetch(`${API_BASE}/api/llm/config`);
       if (response.ok) {
         const data = await response.json();
         setLlmEndpoint(data.endpoint);
@@ -596,7 +597,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saveLlmConfig = async (endpoint: string, model: string, mode: "llamacpp" | "ollama" | "external") => {
     try {
       addLog(`백엔드 LLM 설정 동기화 시도... (${mode} 모드)`);
-      const response = await fetch("http://localhost:18731/api/llm/config", {
+      const response = await fetch(`${API_BASE}/api/llm/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint, model, mode })
@@ -627,7 +628,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const targetModel = overrideModel || llmModel;
     addLog(`로컬 LLM 서버에 연결 테스트 중: ${targetEndpoint} (모델: ${targetModel})`);
     try {
-      const response = await fetch("http://localhost:18731/api/llm/test", {
+      const response = await fetch(`${API_BASE}/api/llm/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint: targetEndpoint, model: targetModel })
@@ -649,7 +650,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const scanLocalServers = async () => {
     setIsDetecting(true);
     try {
-      const response = await fetch("http://localhost:18731/api/llm/detect");
+      const response = await fetch(`${API_BASE}/api/llm/detect`);
       const data = await response.json();
       if (data.status === "success") {
         setDetectedServers(parseDetectedServers(data.servers));
@@ -664,7 +665,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 지식 파이프라인 연동 설정 불러오기
   const loadPipelineSettings = async () => {
     try {
-      const response = await fetch("http://localhost:18731/api/settings");
+      const response = await fetch(`${API_BASE}/api/settings`);
       if (response.ok) {
         const data = await response.json();
         setObsidianVaultPath(data.obsidian_vault_path || "");
@@ -681,7 +682,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const savePipelineSettings = async (vaultPath: string, apiKey: string, pageId: string) => {
     try {
       addLog("지식 파이프라인 설정 저장 중...");
-      const response = await fetch("http://localhost:18731/api/settings", {
+      const response = await fetch(`${API_BASE}/api/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -711,7 +712,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saveExternalLlmWarningPreference = async (suppress: boolean) => {
     try {
       addLog("외부 LLM 민감정보 경고 설정 저장 중...");
-      const response = await fetch("http://localhost:18731/api/settings", {
+      const response = await fetch(`${API_BASE}/api/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -739,7 +740,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const exportToObsidian = async (title: string, content: string, tags?: string[], originals: OriginalExportDocument[] = []) => {
     try {
       addLog(`Obsidian으로 내보내는 중... 제목: "${title}"`);
-      const response = await fetch("http://localhost:18731/api/export/obsidian", {
+      const response = await fetch(`${API_BASE}/api/export/obsidian`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, tags: tags || ["workspace"], originals })
@@ -762,7 +763,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const exportToNotion = async (title: string, content: string, originals: OriginalExportDocument[] = []) => {
     try {
       addLog(`Notion으로 내보내는 중... 제목: "${title}"`);
-      const response = await fetch("http://localhost:18731/api/export/notion", {
+      const response = await fetch(`${API_BASE}/api/export/notion`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, originals })
@@ -786,7 +787,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     stopNotionAuthPolling();
     addLog("Notion OAuth 로그인 창을 엽니다...");
     try {
-      const response = await fetch("http://localhost:18731/api/auth/notion/url");
+      const response = await fetch(`${API_BASE}/api/auth/notion/url`);
       const data = await response.json();
       if (data.status === "success" && data.url) {
         addLog("Notion 로그인 링크를 브라우저에 엽니다...");
@@ -800,7 +801,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notionAuthPollingTimerRef.current = window.setInterval(async () => {
           notionAuthPollingAttemptsRef.current += 1;
           try {
-            const res = await fetch("http://localhost:18731/api/settings");
+            const res = await fetch(`${API_BASE}/api/settings`);
             const settingsData = await res.json();
             if (res.ok && settingsData.notion_api_key) {
               setNotionApiKey(settingsData.notion_api_key);
@@ -827,7 +828,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Notion 페이지 목록 가져오기
   const fetchNotionPages = async () => {
     try {
-      const response = await fetch("http://localhost:18731/api/notion/pages");
+      const response = await fetch(`${API_BASE}/api/notion/pages`);
       const data = await response.json();
       if (data.status === "success") {
         return data.pages || [];
