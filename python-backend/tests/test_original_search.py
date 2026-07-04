@@ -22,8 +22,8 @@ class OriginalSearchApiTest(unittest.TestCase):
         ]
 
         with (
-            patch("main.list_message_metadata", return_value=(gmail_messages, None)) as list_message_metadata,
-            patch("main.list_drive_files", return_value=(drive_files, None)) as list_drive_files,
+            patch("src.gws.originals.list_message_metadata", return_value=(gmail_messages, None)) as list_message_metadata,
+            patch("src.gws.originals.list_drive_files", return_value=(drive_files, None)) as list_drive_files,
             patch("src.rag.indexer.index_drive_raw") as index_drive_raw,
             patch("src.rag.indexer.index_gmail_message_ids") as index_gmail_message_ids,
         ):

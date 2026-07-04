@@ -65,6 +65,8 @@ def _install_dependency_stubs():
 _install_dependency_stubs()
 
 main = importlib.import_module("main")
+llm_sync = importlib.import_module("src.api.routers.llm_sync")
+rag = importlib.import_module("src.api.routers.rag")
 indexer = importlib.import_module("src.rag.indexer")
 retriever = importlib.import_module("src.rag.retriever")
 gmail = importlib.import_module("src.gws.gmail")
@@ -467,9 +469,9 @@ class GmailJitEndpointTests(unittest.TestCase):
 
     def test_metadata_search_does_not_fetch_full_body_or_index(self):
         metadata = [{"id": "m1", "subject": "Subject", "from": "a@example.com", "snippet": "hello", "date": "2026-01-01T00:00:00Z", "labelIds": []}]
-        with patch("main.list_message_metadata", return_value=(metadata, None)) as list_metadata, \
+        with patch("src.api.routers.llm_sync.list_message_metadata", return_value=(metadata, None)) as list_metadata, \
              patch("src.gws.gmail.get_message") as get_message:
-            result = main.sync_gmail(main.SyncRequest(max_emails=10, query="from:a@example.com"))
+            result = llm_sync.sync_gmail(llm_sync.SyncRequest(max_emails=10, query="from:a@example.com"))
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["count"], 1)
@@ -482,8 +484,8 @@ class GmailJitEndpointTests(unittest.TestCase):
         metadata = [{"id": "m1", "subject": "Subject", "from": "a@example.com", "snippet": "hello", "date": "2026-01-01T00:00:00Z", "labelIds": []}]
         original_indexer = sys.modules.pop("src.rag.indexer", None)
         try:
-            with patch("main.list_message_metadata", return_value=(metadata, None)):
-                result = main.gmail_search(main.SyncRequest(max_emails=1, query="subject:test"))
+            with patch("src.api.routers.llm_sync.list_message_metadata", return_value=(metadata, None)):
+                result = llm_sync.gmail_search(llm_sync.SyncRequest(max_emails=1, query="subject:test"))
             self.assertEqual(result["status"], "success")
             self.assertNotIn("src.rag.indexer", sys.modules)
         finally:
@@ -492,7 +494,7 @@ class GmailJitEndpointTests(unittest.TestCase):
 
     def test_vectorize_rejects_empty_message_ids(self):
         with patch("src.rag.indexer.index_gmail_message_ids") as index_selected:
-            result = main.gmail_vectorize(main.GmailVectorizeRequest(message_ids=["", "  "]))
+            result = llm_sync.gmail_vectorize(llm_sync.GmailVectorizeRequest(message_ids=["", "  "]))
 
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["indexed"], 0)
@@ -501,7 +503,7 @@ class GmailJitEndpointTests(unittest.TestCase):
     def test_vectorize_uses_selected_message_ids(self):
         with patch("src.rag.indexer.index_gmail_message_ids", return_value=2) as index_selected, \
              patch("src.rag.indexer.rebuild_bm25_index", return_value={"status": "success"}) as rebuild_bm25_index:
-            result = main.gmail_vectorize(main.GmailVectorizeRequest(message_ids=[" m1 ", "m2"]))
+            result = llm_sync.gmail_vectorize(llm_sync.GmailVectorizeRequest(message_ids=[" m1 ", "m2"]))
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["indexed"], 2)
@@ -543,7 +545,7 @@ class GmailJitEndpointTests(unittest.TestCase):
     def test_rag_index_api_forwards_drive_search_results(self):
         drive_files = [{"id": "d1", "name": "관련 문서", "mimeType": "text/plain"}]
         with patch("src.rag.indexer.index_all", return_value={"status": "success"}) as index_all:
-            result = main.rag_index(main.RagIndexRequest(sources=["drive"], drive_files=drive_files))
+            result = rag.rag_index(rag.RagIndexRequest(sources=["drive"], drive_files=drive_files))
 
         self.assertEqual(result["status"], "success")
         index_all.assert_called_once_with(["drive"], drive_files)

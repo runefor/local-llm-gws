@@ -114,7 +114,7 @@ class WikiConditionTests(unittest.TestCase):
     def test_drive_sync_returns_originals_without_vector_indexing(self):
         drive_files = [{"id": "d1", "name": "Resume", "mimeType": "text/plain"}]
         with (
-            patch("main.list_drive_files", return_value=(drive_files, None)) as list_drive_files,
+            patch("src.api.routers.llm_sync.list_drive_files", return_value=(drive_files, None)) as list_drive_files,
             patch("src.rag.indexer.index_drive_raw") as index_drive_raw,
             patch("src.rag.indexer.rebuild_bm25_index") as rebuild_bm25_index,
         ):
