@@ -2,6 +2,10 @@ import { listen } from "@tauri-apps/api/event";
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { isTauri } from "../utils/env";
 import { API_BASE } from "../api/client";
+import { useLlmDomain, type DetectedServer } from "./hooks/useLlmDomain";
+import { usePipelineDomain, type OriginalExportDocument } from "./hooks/usePipelineDomain";
+
+export type { DetectedServer, OriginalExportDocument };
 
 export interface GmailItem {
   id: string;
@@ -73,14 +77,6 @@ export interface WorkspaceItem {
   timestamp: string;
 }
 
-export interface DetectedServer {
-  name: string;
-  url: string;
-  api_base: string;
-  models: string[];
-  status?: string;
-}
-
 interface AppContextType {
   backendStatus: "connecting" | "online" | "offline";
   backendStartupError: string | null;
@@ -138,14 +134,6 @@ interface AppContextType {
   fetchNotionPages: () => Promise<{ id: string; title: string; url: string }[]>;
 }
 
-export type OriginalExportDocument = {
-  readonly evidence_id: string;
-  readonly title: string;
-  readonly content: string;
-  readonly source_line?: string;
-  readonly open_url?: string;
-};
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -161,15 +149,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [gmailLabelsLoading, setGmailLabelsLoading] = useState(false);
   const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
   
-  // LLM 설정 상태
-  const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:1234/v1");
-  const [llmModel, setLlmModel] = useState("gemma4-9b-it");
-  const [llmMode, setLlmMode] = useState<"internal" | "external">("internal");
-  
-  // 로컬 LLM 자동 감지 상태
-  const [detectedServers, setDetectedServers] = useState<DetectedServer[]>([]);
-  const [isDetecting, setIsDetecting] = useState<boolean>(false);
-  
   // 동기화 상태
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [syncProgress, setSyncProgress] = useState(0);
@@ -184,19 +163,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const vectorizationTimerRef = useRef<number | null>(null);
   const googleAuthPollingTimerRef = useRef<number | null>(null);
   const googleAuthPollingAttemptsRef = useRef(0);
-  const notionAuthPollingTimerRef = useRef<number | null>(null);
-  const notionAuthPollingAttemptsRef = useRef(0);
-
-  // 지식 파이프라인 연동 설정 상태
-  const [obsidianVaultPath, setObsidianVaultPath] = useState("");
-  const [notionApiKey, setNotionApiKey] = useState("");
-  const [notionPageId, setNotionPageId] = useState("");
-  const [suppressExternalLlmSensitiveWarning, setSuppressExternalLlmSensitiveWarning] = useState(false);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
     setSyncLog((prev) => [`[${time}] ${msg}`, ...prev.slice(0, 49)]);
   };
+
+  // 도메인별 훅 (LLM 설정 / 지식 파이프라인). 외부 의존 addLog만 주입해 파사드로 재조합.
+  const llm = useLlmDomain(addLog);
+  const pipeline = usePipelineDomain(addLog);
 
   const stopVectorizationTicker = () => {
     if (vectorizationTimerRef.current !== null) {
@@ -211,38 +186,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       googleAuthPollingTimerRef.current = null;
     }
     googleAuthPollingAttemptsRef.current = 0;
-  };
-
-  const stopNotionAuthPolling = () => {
-    if (notionAuthPollingTimerRef.current !== null) {
-      window.clearInterval(notionAuthPollingTimerRef.current);
-      notionAuthPollingTimerRef.current = null;
-    }
-    notionAuthPollingAttemptsRef.current = 0;
-  };
-
-  const getStringProperty = (value: object, key: string): string => {
-    const property = Reflect.get(value, key);
-    return typeof property === "string" ? property : "";
-  };
-
-  const parseDetectedServers = (value: unknown): DetectedServer[] => {
-    if (!Array.isArray(value)) return [];
-    return value.flatMap((item) => {
-      if (!item || typeof item !== "object") return [];
-      const modelsValue = Reflect.get(item, "models");
-      const models = Array.isArray(modelsValue)
-        ? modelsValue.filter((model): model is string => typeof model === "string")
-        : [];
-      const server: DetectedServer = {
-        name: getStringProperty(item, "name"),
-        url: getStringProperty(item, "url"),
-        api_base: getStringProperty(item, "api_base"),
-        models,
-        status: getStringProperty(item, "status") || undefined,
-      };
-      return server.name && server.url && server.api_base ? [server] : [];
-    });
   };
 
   const startVectorizationTicker = () => {
@@ -573,273 +516,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 백엔드로부터 LLM 설정 로드
-  const fetchLlmConfig = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/llm/config`);
-      if (response.ok) {
-        const data = await response.json();
-        setLlmEndpoint(data.endpoint);
-        setLlmModel(data.model);
-        if (data.mode === "llamacpp") {
-          setLlmMode("internal");
-        } else {
-          setLlmMode("external");
-        }
-        addLog(`로컬 LLM 설정 로드 완료: ${data.mode} 모드 - ${data.model}`);
-      }
-    } catch (error) {
-      console.error("LLM 설정 조회 실패:", error);
-    }
-  };
-
-  // 백엔드에 LLM 설정 저장 및 동기화
-  const saveLlmConfig = async (endpoint: string, model: string, mode: "llamacpp" | "ollama" | "external") => {
-    try {
-      addLog(`백엔드 LLM 설정 동기화 시도... (${mode} 모드)`);
-      const response = await fetch(`${API_BASE}/api/llm/config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint, model, mode })
-      });
-      const data = await response.json();
-      if (data.status === "success") {
-        addLog("백엔드 LLM 설정 동기화 완료.");
-        setLlmEndpoint(endpoint);
-        setLlmModel(model);
-        setLlmMode(mode === "llamacpp" ? "internal" : "external");
-      } else {
-        addLog(`백엔드 설정 동기화 실패: ${data.message}`);
-      }
-    } catch (error) {
-      addLog(`백엔드 설정 동기화 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
-    }
-  };
-
-  // 연결 해제 처리
-  const handleLlmDisconnect = async () => {
-    addLog("로컬 LLM 연결 해제 요청");
-    await saveLlmConfig("http://localhost:8080/v1", "", "llamacpp");
-  };
-
-  // 실제 로컬 LLM 연결 여부 테스트
-  const handleLlmTest = async (overrideEndpoint?: string, overrideModel?: string) => {
-    const targetEndpoint = overrideEndpoint || llmEndpoint;
-    const targetModel = overrideModel || llmModel;
-    addLog(`로컬 LLM 서버에 연결 테스트 중: ${targetEndpoint} (모델: ${targetModel})`);
-    try {
-      const response = await fetch(`${API_BASE}/api/llm/test`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: targetEndpoint, model: targetModel })
-      });
-      const data = await response.json();
-      if (data.status === "success") {
-        addLog(`로컬 LLM 연결 확인: 성공 (${targetModel} 응답 확인)`);
-        const mode = targetEndpoint.includes("11434") ? "ollama" : "external";
-        await saveLlmConfig(targetEndpoint, targetModel, mode);
-      } else {
-        addLog(`로컬 LLM 연결 실패: ${data.message}`);
-      }
-    } catch (error) {
-      addLog(`로컬 LLM 연결 오류 발생: ${error instanceof Error ? error.message : "네트워크 오류"}`);
-    }
-  };
-
-  // 실행 중인 로컬 LLM 서버 자동 감지 API 호출
-  const scanLocalServers = async () => {
-    setIsDetecting(true);
-    try {
-      const response = await fetch(`${API_BASE}/api/llm/detect`);
-      const data = await response.json();
-      if (data.status === "success") {
-        setDetectedServers(parseDetectedServers(data.servers));
-      }
-    } catch (error) {
-      console.error("로컬 LLM 서버 감지 실패:", error);
-    } finally {
-      setIsDetecting(false);
-    }
-  };
-
-  // 지식 파이프라인 연동 설정 불러오기
-  const loadPipelineSettings = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/settings`);
-      if (response.ok) {
-        const data = await response.json();
-        setObsidianVaultPath(data.obsidian_vault_path || "");
-        setNotionApiKey(data.notion_api_key || "");
-        setNotionPageId(data.notion_page_id || "");
-        setSuppressExternalLlmSensitiveWarning(!!data.suppress_external_llm_sensitive_warning);
-      }
-    } catch (error) {
-      console.error("지식 파이프라인 설정 로드 실패:", error);
-    }
-  };
-
-  // 지식 파이프라인 연동 설정 저장하기
-  const savePipelineSettings = async (vaultPath: string, apiKey: string, pageId: string) => {
-    try {
-      addLog("지식 파이프라인 설정 저장 중...");
-      const response = await fetch(`${API_BASE}/api/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          obsidian_vault_path: vaultPath,
-          notion_api_key: apiKey,
-          notion_page_id: pageId,
-          suppress_external_llm_sensitive_warning: suppressExternalLlmSensitiveWarning,
-        })
-      });
-      const data = await response.json();
-      if (data.status === "success") {
-        addLog("설정이 저장되었습니다.");
-        setObsidianVaultPath(vaultPath);
-        setNotionApiKey(apiKey);
-        setNotionPageId(pageId);
-        return true;
-      } else {
-        addLog(`설정 저장 실패: ${data.message}`);
-        return false;
-      }
-    } catch (error) {
-      addLog(`설정 저장 중 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
-      return false;
-    }
-  };
-
-  const saveExternalLlmWarningPreference = async (suppress: boolean) => {
-    try {
-      addLog("외부 LLM 민감정보 경고 설정 저장 중...");
-      const response = await fetch(`${API_BASE}/api/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          obsidian_vault_path: obsidianVaultPath,
-          notion_api_key: notionApiKey,
-          notion_page_id: notionPageId,
-          suppress_external_llm_sensitive_warning: suppress,
-        }),
-      });
-      const data = await response.json();
-      if (data.status === "success") {
-        setSuppressExternalLlmSensitiveWarning(suppress);
-        addLog("외부 LLM 민감정보 경고 설정이 저장되었습니다.");
-        return true;
-      }
-      addLog(`외부 LLM 민감정보 경고 설정 저장 실패: ${data.message}`);
-      return false;
-    } catch (error) {
-      addLog(`외부 LLM 민감정보 경고 설정 저장 중 오류: ${error instanceof Error ? error.message : "네트워크 오류"}`);
-      return false;
-    }
-  };
-
-  // Obsidian 내보내기
-  const exportToObsidian = async (title: string, content: string, tags?: string[], originals: OriginalExportDocument[] = []) => {
-    try {
-      addLog(`Obsidian으로 내보내는 중... 제목: "${title}"`);
-      const response = await fetch(`${API_BASE}/api/export/obsidian`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content, tags: tags || ["workspace"], originals })
-      });
-      const data = await response.json();
-      if (data.status === "success") {
-        addLog(`Obsidian 내보내기 완료: ${data.filename}`);
-      } else {
-        addLog(`Obsidian 내보내기 실패: ${data.message}`);
-      }
-      return data;
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : "네트워크 오류";
-      addLog(`Obsidian 내보내기 오류: ${errMsg}`);
-      return { status: "error", message: errMsg };
-    }
-  };
-
-  // Notion 내보내기
-  const exportToNotion = async (title: string, content: string, originals: OriginalExportDocument[] = []) => {
-    try {
-      addLog(`Notion으로 내보내는 중... 제목: "${title}"`);
-      const response = await fetch(`${API_BASE}/api/export/notion`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content, originals })
-      });
-      const data = await response.json();
-      if (data.status === "success") {
-        addLog("Notion 내보내기 성공!");
-      } else {
-        addLog(`Notion 내보내기 실패: ${data.message}`);
-      }
-      return data;
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : "네트워크 오류";
-      addLog(`Notion 내보내기 오류: ${errMsg}`);
-      return { status: "error", message: errMsg };
-    }
-  };
-
-  // Notion OAuth 로그인 트리거 및 폴링
-  const triggerNotionLogin = async () => {
-    stopNotionAuthPolling();
-    addLog("Notion OAuth 로그인 창을 엽니다...");
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/notion/url`);
-      const data = await response.json();
-      if (data.status === "success" && data.url) {
-        addLog("Notion 로그인 링크를 브라우저에 엽니다...");
-        try {
-          const { openUrl } = await import("@tauri-apps/plugin-opener");
-          await openUrl(data.url);
-        } catch {
-          window.open(data.url, "_blank");
-        }
-        
-        notionAuthPollingTimerRef.current = window.setInterval(async () => {
-          notionAuthPollingAttemptsRef.current += 1;
-          try {
-            const res = await fetch(`${API_BASE}/api/settings`);
-            const settingsData = await res.json();
-            if (res.ok && settingsData.notion_api_key) {
-              setNotionApiKey(settingsData.notion_api_key);
-              setNotionPageId(settingsData.notion_page_id || "");
-              addLog("Notion OAuth 연동 성공!");
-              stopNotionAuthPolling();
-            }
-          } catch (err) {
-            console.error("Notion 로그인 상태 체크 에러:", err);
-          }
-          if (notionAuthPollingAttemptsRef.current >= 60) {
-            stopNotionAuthPolling();
-            addLog("Notion 로그인 인증 대기 시간이 초과되었습니다.");
-          }
-        }, 2000);
-      } else {
-        addLog(`Notion 인증 실패: ${data.message}`);
-      }
-    } catch (e) {
-      addLog(`Notion 로그인 요청 중 오류: ${e}`);
-    }
-  };
-
-  // Notion 페이지 목록 가져오기
-  const fetchNotionPages = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/notion/pages`);
-      const data = await response.json();
-      if (data.status === "success") {
-        return data.pages || [];
-      }
-      return [];
-    } catch (e) {
-      console.error("Notion 페이지 로드 실패:", e);
-      return [];
-    }
-  };
-
   // Gmail과 Drive 아이템 혼합 및 시간순 정렬 파생 상태
   const workspaceItems = React.useMemo(() => {
     const items: WorkspaceItem[] = [];
@@ -909,8 +585,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (backendStatus === "online") {
       checkGwsAuth();
-      fetchLlmConfig();
-      loadPipelineSettings();
+      llm.fetchLlmConfig();
+      pipeline.loadPipelineSettings();
     }
   }, [backendStatus]);
 
@@ -926,7 +602,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       stopVectorizationTicker();
       stopGoogleAuthPolling();
-      stopNotionAuthPolling();
     };
   }, []);
 
@@ -942,17 +617,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         gmailLabelsLoading,
         driveItems,
         workspaceItems,
-        llmEndpoint,
-        setLlmEndpoint,
-        llmModel,
-        setLlmModel,
-        llmMode,
-        setLlmMode,
-        saveLlmConfig,
-        handleLlmDisconnect,
-        detectedServers,
-        isDetecting,
-        scanLocalServers,
+        ...llm,
         syncStatus,
         syncProgress,
         syncLog,
@@ -967,26 +632,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         vectorizeGmailMessages,
         indexRagSources,
         searchWorkspaceOriginals,
-        handleLlmTest,
         addLog,
         triggerGoogleLogin,
 
-        // 지식 파이프라인 상태 및 함수 주입
-        obsidianVaultPath,
-        setObsidianVaultPath,
-        notionApiKey,
-        setNotionApiKey,
-        notionPageId,
-        setNotionPageId,
-        suppressExternalLlmSensitiveWarning,
-        setSuppressExternalLlmSensitiveWarning,
-        loadPipelineSettings,
-        savePipelineSettings,
-        saveExternalLlmWarningPreference,
-        exportToObsidian,
-        exportToNotion,
-        triggerNotionLogin,
-        fetchNotionPages,
+        // 지식 파이프라인 상태 및 함수 (usePipelineDomain)
+        ...pipeline,
       }}
     >
       {children}
