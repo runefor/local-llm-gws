@@ -4,7 +4,14 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    # PyInstaller onefile 실행 파일에서는 __file__이 매 실행마다 새로 만들어지는
+    # 임시 추출 폴더(_MEIxxxx)를 가리켜, 여기에 저장한 토큰/벡터DB/설정이 재시작 시
+    # 사라진다. 배포본에서는 사용자 로컬 앱 데이터 폴더를 기준으로 삼는다.
+    _persistent_base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    BASE_DIR = Path(_persistent_base) / "local-llm-gws"
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 IS_UNITTEST_COMMAND = any(part == "discover" or part.endswith("unittest") or part == "tests" for part in sys.argv)
 DEFAULT_DATA_DIR = BASE_DIR / "data" / "test-runtime" if IS_UNITTEST_COMMAND else BASE_DIR / "data"
 DATA_DIR = Path(os.getenv("LOCAL_LLM_GWS_DATA_DIR", DEFAULT_DATA_DIR)).resolve()

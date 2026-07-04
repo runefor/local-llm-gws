@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -88,6 +88,8 @@ pub fn run() {
 
                 let mut cmd = Command::new(&python_exe);
                 cmd.arg(&script_path);
+                // 부모(이 앱)가 종료되면 백엔드가 스스로 종료하도록 PID를 넘긴다.
+                cmd.arg("--parent-pid").arg(std::process::id().to_string());
                 cmd.current_dir(&work_dir);
                 cmd.stdin(std::process::Stdio::piped());
 
@@ -110,18 +112,37 @@ pub fn run() {
                 let resource_dir = app.path().resource_dir()
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_default();
+                // 부모(이 앱)가 종료되면 백엔드가 스스로 종료하도록 PID를 넘긴다.
+                let parent_pid = std::process::id().to_string();
 
-                let sidecar_result = if resource_dir.is_empty() {
-                    app.shell().sidecar("gws-backend")
-                } else {
-                    app.shell().sidecar("gws-backend")
-                        .map(|cmd| cmd.args(["--resource-dir", &resource_dir]))
+                let sidecar_result = app.shell().sidecar("gws-backend").map(|cmd| {
+                    let mut cmd = cmd.args(["--parent-pid", &parent_pid]);
+                    if !resource_dir.is_empty() {
+                        cmd = cmd.args(["--resource-dir", &resource_dir]);
+                    }
+                    cmd
+                });
+
+                // 사이드카 기동 실패(해석/spawn 실패, 또는 기동했지만 포트가 끝내 열리지 않음)를
+                // 프론트가 한 이벤트로 받도록 통일한다. 리스너가 아직 붙기 전 타이밍을 감안해 몇 번 재발신한다.
+                let emit_backend_startup_failed = |message: &'static str| {
+                    let app_handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        for _ in 0..5 {
+                            let _ = app_handle.emit(
+                                "backend-startup-failed",
+                                serde_json::json!({ "message": message }),
+                            );
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                        }
+                    });
                 };
 
                 match sidecar_result {
                     Ok(command) => match command.spawn() {
                         Ok((mut events, child)) => {
                             println!("Successfully started Python backend sidecar.");
+                            let app_handle = app.handle().clone();
                             tauri::async_runtime::spawn(async move {
                                 while let Some(event) = events.recv().await {
                                     match event {
@@ -143,13 +164,44 @@ pub fn run() {
                             });
 
                             store_backend_process(app, BackendProcess::Sidecar(child));
+
+                            // 사이드카를 띄웠어도 실제로 포트가 열릴 때까지가 관건이다.
+                            // 30초간 TCP 접속을 폴링하고, 끝내 열리지 않으면 프론트에 실패를 알린다.
+                            let readiness_app_handle = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let backend_addr: std::net::SocketAddr =
+                                    "127.0.0.1:18731".parse().expect("valid backend address");
+                                for _ in 0..30 {
+                                    if std::net::TcpStream::connect_timeout(
+                                        &backend_addr,
+                                        std::time::Duration::from_millis(500),
+                                    )
+                                    .is_ok()
+                                    {
+                                        return;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(500));
+                                }
+
+                                for _ in 0..5 {
+                                    let _ = readiness_app_handle.emit(
+                                        "backend-startup-failed",
+                                        serde_json::json!({
+                                            "message": "백엔드 서버가 응답하지 않습니다. 앱을 다시 시작해 주세요."
+                                        }),
+                                    );
+                                    std::thread::sleep(std::time::Duration::from_secs(1));
+                                }
+                            });
                         }
                         Err(e) => {
                             eprintln!("Failed to start Python backend sidecar: {}", e);
+                            emit_backend_startup_failed("백엔드 프로세스를 시작하지 못했습니다.");
                         }
                     },
                     Err(e) => {
                         eprintln!("Failed to resolve Python backend sidecar: {}", e);
+                        emit_backend_startup_failed("백엔드 실행 파일을 찾을 수 없습니다.");
                     }
                 }
             }

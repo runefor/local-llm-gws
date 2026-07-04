@@ -1,4 +1,6 @@
+import { listen } from "@tauri-apps/api/event";
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import { isTauri } from "../utils/env";
 
 export interface GmailItem {
   id: string;
@@ -80,6 +82,7 @@ export interface DetectedServer {
 
 interface AppContextType {
   backendStatus: "connecting" | "online" | "offline";
+  backendStartupError: string | null;
   isGwsAuthenticated: boolean;
   authChecking: boolean;
   gmailItems: GmailItem[];
@@ -147,6 +150,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   // 백엔드 상태
   const [backendStatus, setBackendStatus] = useState<"connecting" | "online" | "offline">("connecting");
+  const [backendStartupError, setBackendStartupError] = useState<string | null>(null);
   const [isGwsAuthenticated, setIsGwsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState(false);
   
@@ -268,6 +272,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       if (data.status === "ok") {
         setBackendStatus("online");
+        setBackendStartupError(null);
         addLog(`백엔드 서버 연결 성공: ${data.message}`);
       } else {
         setBackendStatus("offline");
@@ -870,6 +875,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     checkBackend();
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Tauri 이벤트는 데스크톱 앱 시작 시 한 번만 구독합니다.
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void listen<{ message: string }>("backend-startup-failed", (event) => {
+      setBackendStatus("offline");
+      setBackendStartupError(event.payload.message);
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    }).catch((error) => {
+      console.error("백엔드 시작 실패 이벤트 구독 실패:", error);
+    });
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
   // 백엔드 온라인 연결 시 설정 로드
   // biome-ignore lint/correctness/useExhaustiveDependencies: backendStatus 전환에만 반응해야 합니다.
   useEffect(() => {
@@ -900,6 +933,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider
       value={{
         backendStatus,
+        backendStartupError,
         isGwsAuthenticated,
         authChecking,
         gmailItems,

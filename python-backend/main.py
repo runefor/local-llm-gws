@@ -982,31 +982,44 @@ def list_notion_pages():
 
 
 if __name__ == "__main__":
-    import sys
     import threading
     import os
+    import time
     import argparse
     from config import config
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--resource-dir", default="", help="Tauri 리소스 디렉토리 경로")
+    parser.add_argument(
+        "--parent-pid",
+        type=int,
+        default=0,
+        help="이 PID(부모 앱)가 종료되면 백엔드도 스스로 종료합니다.",
+    )
     args, _ = parser.parse_known_args()
 
     if args.resource_dir:
         config.TAURI_RESOURCE_DIR = args.resource_dir
 
-    def monitor_parent_stdin():
-        """부모 프로세스(Tauri)의 stdin이 닫히면(즉, 부모가 종료되면) 백엔드를 스스로 종료시킵니다."""
-        try:
-            # stdin이 닫힐 때까지 블로킹 대기 (EOF 시 빈 문자열 반환)
-            sys.stdin.read(1)
-        except Exception:
-            pass
-        # 부모 프로세스가 끊어지면 즉시 완전히 자가 종료
-        os._exit(0)
+    def monitor_parent_process(parent_pid: int):
+        """부모 프로세스(Tauri)가 종료되면 백엔드를 스스로 종료시킵니다.
 
-    # stdin 감시 스레드를 데몬 스레드로 기동
-    monitor_thread = threading.Thread(target=monitor_parent_stdin, daemon=True)
-    monitor_thread.start()
+        과거에는 sys.stdin.read()로 부모 stdin 파이프의 EOF를 감시했으나,
+        stdin fd를 블로킹 read하면 chromadb 초기화(RAG 상태/검색 경로)가
+        무한 대기에 빠지는 문제가 있어 부모 PID 폴링 방식으로 교체했습니다.
+        """
+        import psutil
+
+        while True:
+            if not psutil.pid_exists(parent_pid):
+                os._exit(0)
+            time.sleep(1)
+
+    # 부모 PID가 주어진 경우에만 감시 스레드를 기동한다(Tauri가 항상 --parent-pid를 전달).
+    if args.parent_pid:
+        monitor_thread = threading.Thread(
+            target=monitor_parent_process, args=(args.parent_pid,), daemon=True
+        )
+        monitor_thread.start()
 
     uvicorn.run(app, host="127.0.0.1", port=18731)

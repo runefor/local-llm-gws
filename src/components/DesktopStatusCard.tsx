@@ -1,7 +1,7 @@
 import { useApp } from "../context/AppContext";
 
 export function DesktopStatusCard() {
-  const { backendStatus, checkBackend, authChecking, isGwsAuthenticated, triggerGoogleLogin, checkGwsAuth, syncLog } = useApp();
+  const { backendStatus, backendStartupError, checkBackend, authChecking, isGwsAuthenticated, triggerGoogleLogin, checkGwsAuth, syncLog } = useApp();
   const backendStatusLabel = backendStatus === "online" ? "실행 중" : backendStatus === "connecting" ? "확인 중" : "중지됨";
   const backendStatusClass = backendStatus === "online" ? "bg-emerald-500" : backendStatus === "connecting" ? "bg-amber-500" : "bg-rose-500";
   const googleStatusLabel = authChecking ? "확인 중" : isGwsAuthenticated ? "연결됨" : "로그인 필요";
@@ -83,7 +83,7 @@ export function DesktopStatusCard() {
 
       {backendStatus === "offline" && (
         <div className="hidden rounded-2xl bg-primary-container/30 px-3 py-2 text-[10px] leading-4 text-text-secondary lg:block">
-          백엔드가 꺼져 있으면 원본 조회와 벡터 검색이 제한됩니다.
+          {backendStartupError ?? "백엔드가 꺼져 있으면 원본 조회와 벡터 검색이 제한됩니다."}
           <button
             type="button"
             onClick={checkBackend}
