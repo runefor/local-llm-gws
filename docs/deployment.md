@@ -82,6 +82,14 @@ Invoke-RestMethod http://127.0.0.1:18731/
 Get-Process gws-backend -ErrorAction SilentlyContinue
 ```
 
+설치 파일까지 실제로 검증할 때는 아래 자동 smoke를 우선 사용합니다. NSIS 설치 파일을 조용히 설치하고, 설치된 앱을 실행해 백엔드/창 상태를 확인한 뒤 종료와 제거까지 검증합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\smoke_installed_app.ps1
+```
+
+아래 수동 항목은 자동 smoke를 실행할 수 없을 때의 대체 확인 절차입니다.
+
 - 첫 실행 후 화면 제목이 `Local LLM GWS`로 보이는지 확인합니다.
 - 앱 종료 뒤 `gws-backend` 프로세스와 `18731` 리스너가 남지 않아야 합니다.
 - Google 로그인/Drive 검색/RAG 상태 중 하나라도 실제 계정으로 한 번 눌러 봅니다.

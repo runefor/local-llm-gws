@@ -6,22 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Wait-JsonEndpoint {
-  param(
-    [string]$Uri,
-    [datetime]$Deadline
-  )
-
-  while ((Get-Date) -lt $Deadline) {
-    try {
-      return Invoke-RestMethod -Uri $Uri -TimeoutSec 2
-    } catch {
-      Start-Sleep -Milliseconds 500
-    }
-  }
-
-  return $null
-}
+. (Join-Path $PSScriptRoot "lib\smoke_common.ps1")
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $ExePath) {
@@ -38,6 +23,7 @@ $root = $null
 $rag = $null
 $settings = $null
 $windowTitle = ""
+$windowShown = $false
 
 while ((Get-Date) -lt $deadline) {
   if ($null -eq $root) {
@@ -53,12 +39,17 @@ while ((Get-Date) -lt $deadline) {
   $appProc = Get-Process -Id $app.Id -ErrorAction SilentlyContinue
   if ($appProc) {
     $appProc.Refresh()
+    # tauri decorations:false 창은 OS 타이틀이 비어 있어 제목으로는 판정할 수 없다.
+    # 창이 실제로 떴는지는 MainWindowHandle(0이 아님)로 확인한다.
+    if ($appProc.MainWindowHandle -ne 0) {
+      $windowShown = $true
+    }
     if ($appProc.MainWindowTitle) {
       $windowTitle = $appProc.MainWindowTitle
     }
   }
 
-  if ($root -and $rag -and $settings -and $windowTitle) {
+  if ($root -and $rag -and $settings -and $windowShown) {
     break
   }
 
@@ -68,9 +59,12 @@ while ((Get-Date) -lt $deadline) {
 $appProc = Get-Process -Id $app.Id -ErrorAction SilentlyContinue
 if ($appProc) {
   $appProc.Refresh()
+  if ($appProc.MainWindowHandle -ne 0) {
+    $windowShown = $true
+  }
 }
 
-$backendProcesses = @(Get-Process gws-backend* -ErrorAction SilentlyContinue |
+$backendProcesses = @(Get-GwsBackendProcesses |
   Select-Object Id, ProcessName, MainWindowTitle)
 $finalWindowTitle = if ($appProc -and $appProc.MainWindowTitle) {
   $appProc.MainWindowTitle
@@ -91,7 +85,7 @@ $result = [ordered]@{
     rootOk = ($root.status -eq "ok")
     ragOk = ($rag.status -eq "success")
     settingsOk = ($null -ne $settings)
-    windowOk = [bool]$finalWindowTitle
+    windowOk = $windowShown
   }
 }
 
@@ -100,7 +94,7 @@ if (-not $KeepOpen) {
     Stop-Process -Id $appProc.Id -Force -ErrorAction SilentlyContinue
   }
   Start-Sleep -Milliseconds 800
-  Get-Process gws-backend* -ErrorAction SilentlyContinue |
+  Get-GwsBackendProcesses |
     Stop-Process -Force -ErrorAction SilentlyContinue
 
   Start-Sleep -Milliseconds 500
