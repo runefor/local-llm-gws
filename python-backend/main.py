@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Literal, Optional
 import uvicorn
@@ -12,40 +11,12 @@ from src.evidence import record_relevance_feedback
 from src.chat_sessions import ChatGroundingOptions
 from src.wiki_conditions import ConditionValidationError, WikiConditionStore
 from src.wiki_condition_runner import run_condition
+from src.api.security import configure_security
 
 app = FastAPI(title="Local LLM GWS API", description="Python Backend API for Tauri")
 app.include_router(gws_originals_router)
 
-ALLOWED_ORIGINS = {
-    "http://localhost:18732",
-    "http://127.0.0.1:18732",
-    "http://tauri.localhost",
-    "https://tauri.localhost",
-    "tauri://localhost",
-}
-ALLOWED_HOSTS = {"localhost:18731", "127.0.0.1:18731", "localhost", "127.0.0.1"}
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=sorted(ALLOWED_ORIGINS),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.middleware("http")
-async def enforce_local_app_boundary(request: Request, call_next):
-    """Reject browser requests that do not originate from the local app shell."""
-    host = request.headers.get("host", "")
-    origin = request.headers.get("origin")
-
-    if host not in ALLOWED_HOSTS:
-        return JSONResponse({"status": "error", "message": "허용되지 않은 Host입니다."}, status_code=403)
-
-    if origin and origin not in ALLOWED_ORIGINS:
-        return JSONResponse({"status": "error", "message": "허용되지 않은 Origin입니다."}, status_code=403)
-
-    return await call_next(request)
+configure_security(app)
 
 class SyncRequest(BaseModel):
     max_emails: Optional[int] = Field(default=50, ge=1, le=200)
