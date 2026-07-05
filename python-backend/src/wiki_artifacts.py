@@ -18,7 +18,9 @@ REQUIRED_WIKI_SECTIONS = [
     "확인 범위",
 ]
 CITATION_RE = re.compile(r"\[ev_[A-Za-z0-9_\-]+\]")
-SUBJECTIVE_CLAIM_RE = re.compile(r"(가장|최고|최선|나은|좋은|우수|언급|추정|보임|것으로 보)")
+SUBJECTIVE_CLAIM_RE = re.compile(
+    r"(가장|최고|최선|나은|좋은|우수|훌륭|탁월|명백|확실히|분명|대체로|아마|권장|추천|언급|추정|보임|것으로 보|인 듯|듯하다)"
+)
 
 
 class ArtifactLintIssue(BaseModel):
@@ -99,6 +101,51 @@ def _section_text(content: str, heading: str) -> str:
     return match.group(1) if match else ""
 
 
+def _has_nonempty_section_body(text: str) -> bool:
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or re.fullmatch(r"[-*_]{3,}", stripped):
+            continue
+        return True
+    return False
+
+
+def _is_table_line(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|")
+
+
+def _is_separator_line(line: str) -> bool:
+    return re.fullmatch(r"[-*_|\s:]+", line.strip()) is not None
+
+
+def _is_substantive_fact_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or _is_table_line(stripped) or _is_separator_line(stripped):
+        return False
+    if re.match(r"^[-*+]\s+\S", stripped):
+        return True
+    return re.search(r"(다|요|임|함|됨|했다|이다|있다|없다|[.!?])\s*$", stripped) is not None
+
+
+def _source_map_has_required_table(text: str) -> bool:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if len(lines) < 2 or not _is_table_line(lines[0]) or not _is_table_line(lines[1]):
+        return False
+    separator_cells = [cell.strip() for cell in lines[1].strip("|").split("|")]
+    if not separator_cells or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in separator_cells):
+        return False
+    headers = [re.sub(r"[\s_\-()]+", "", cell.strip().lower()) for cell in lines[0].strip("|").split("|")]
+    requirements = [
+        ("근거id", "근거", "evidenceid", "evidence"),
+        ("출처", "source"),
+        ("날짜", "date"),
+        ("위치", "location"),
+        ("왜중요한지", "왜중요한가", "중요도", "whyitmatters", "why"),
+    ]
+    return all(any(any(token in header for token in tokens) for header in headers) for tokens in requirements)
+
+
 def lint_artifact_content(content: str, evidence_set: Any, artifact_type: str) -> ArtifactLintResult:
     issues: List[ArtifactLintIssue] = []
     evidence_items = list(getattr(evidence_set, "evidence_items", []))
@@ -122,6 +169,13 @@ def lint_artifact_content(content: str, evidence_set: Any, artifact_type: str) -
                         message=f"필수 섹션이 없습니다: ## {section}",
                     )
                 )
+            elif not _has_nonempty_section_body(_section_text(content, section)):
+                issues.append(
+                    ArtifactLintIssue(
+                        code="empty_section",
+                        message=f"필수 섹션에 본문이 없습니다: ## {section}",
+                    )
+                )
         if evidence_items and not citation_markers_for_content(content):
             issues.append(
                 ArtifactLintIssue(
@@ -129,7 +183,22 @@ def lint_artifact_content(content: str, evidence_set: Any, artifact_type: str) -
                     message="근거가 있는 Wiki 후보에는 최소 1개 이상의 [ev_...] 인용이 필요합니다.",
                 )
             )
-        for fact_heading in ("확정에 가까운 사실", "핵심 사실"):
+        for line in _section_text(content, "확정에 가까운 사실").splitlines():
+            if _is_substantive_fact_line(line) and not CITATION_RE.search(line):
+                issues.append(
+                    ArtifactLintIssue(
+                        code="uncited_fact",
+                        message="## 확정에 가까운 사실의 각 사실 라인에는 [ev_...] 인용이 필요합니다.",
+                    )
+                )
+        if _has_heading(content, "출처 지도", level=2) and not _source_map_has_required_table(_section_text(content, "출처 지도")):
+            issues.append(
+                ArtifactLintIssue(
+                    code="source_map_not_table",
+                    message="## 출처 지도는 근거ID, 출처, 날짜, 위치, 왜 중요한지 열을 가진 마크다운 표여야 합니다.",
+                )
+            )
+        for fact_heading in ("한 줄 결론", "확정에 가까운 사실", "핵심 사실"):
             if SUBJECTIVE_CLAIM_RE.search(_section_text(content, fact_heading)):
                 issues.append(
                     ArtifactLintIssue(

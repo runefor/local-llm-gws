@@ -267,9 +267,10 @@ def _artifact_prompt_guidance(artifact_type: str) -> str:
         "Wiki 산출물 작성 규칙:\n"
         "- 다음 섹션을 사용하십시오: # 제목, ## 한 줄 결론, ## 확정에 가까운 사실, "
         "## 주장/평가, ## 검증 필요, ## 우리 앱에 주는 의미, ## 관련 페이지, ## 출처 지도, ## 원문 링크, ## 확인 범위.\n"
-        "- 사실 주장 끝에는 반드시 근거 ID를 붙이십시오. 예: [ev_abcd1234]\n"
-        "- '가장 좋다', '나은 것으로 보인다' 같은 평가성 표현은 ## 주장/평가 또는 ## 검증 필요에만 쓰십시오.\n"
-        "- ## 출처 지도는 근거 ID, 출처 제목, 날짜, 위치, 왜 중요한지를 표로 남기십시오.\n"
+        "- 각 섹션은 최소 1개 이상의 내용 라인을 채우십시오. 빈 섹션으로 두지 마십시오.\n"
+        "- ## 확정에 가까운 사실의 모든 항목은 문장 끝에 [ev_...]를 붙이십시오. 근거가 없으면 ## 검증 필요로 옮기십시오.\n"
+        "- '가장 좋다', '나은 것으로 보인다', '확실히 좋다' 같은 평가성 표현은 ## 주장/평가 또는 ## 검증 필요에만 쓰십시오.\n"
+        "- ## 출처 지도는 | 근거ID | 출처 | 날짜 | 위치 | 왜 중요한지 | 헤더의 마크다운 표로 작성하십시오.\n"
         "- 저장된 정보 묶음 밖의 자료는 별도로 확인했다고 쓰지 마십시오."
     )
 
@@ -331,6 +332,20 @@ def _table_cell(value: str) -> str:
     return " ".join((value or "-").replace("|", "/").split())
 
 
+def _inline_cell(value: str) -> str:
+    return " ".join((value or "-").split())
+
+
+def _source_map_has_date_column(content: str) -> bool:
+    text = _section_text(content, "출처 지도")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            headers = [cell.strip() for cell in stripped.strip("|").split("|")]
+            return any("날짜" in header or "date" in header.lower() for header in headers)
+    return False
+
+
 def _evidence_marker_list(evidence_set: EvidenceSet) -> str:
     return ", ".join(f"[{evidence.evidence_id}]" for evidence in evidence_set.evidence_items)
 
@@ -370,7 +385,7 @@ def _ensure_wiki_required_sections(content: str, evidence_set: EvidenceSet) -> s
         additions.append("## 한 줄 결론\n저장된 근거를 바탕으로 검토가 필요한 Wiki 후보입니다.")
     if not _has_markdown_heading(content, "확정에 가까운 사실"):
         facts = [
-            f"- {evidence.content_snapshot or evidence.snippet or evidence.title} [{evidence.evidence_id}]"
+            f"- {_inline_cell(evidence.content_snapshot or evidence.snippet or evidence.title)} [{evidence.evidence_id}]"
             for evidence in evidence_set.evidence_items
         ]
         additions.append("## 확정에 가까운 사실\n" + ("\n".join(facts) if facts else "- 확인된 근거가 없습니다."))
@@ -382,26 +397,29 @@ def _ensure_wiki_required_sections(content: str, evidence_set: EvidenceSet) -> s
         additions.append("## 우리 앱에 주는 의미\n" + _app_meaning_body(evidence_set))
     if not _has_markdown_heading(content, "관련 페이지"):
         additions.append("## 관련 페이지\n- [[Evidence Set]]\n- [[RAG]]")
-    if not _has_markdown_heading(content, "출처 지도"):
-        rows = [
-            "| 근거 | 출처 | 날짜 | 위치 | 왜 중요한가 |",
-            "|---|---|---|---|---|",
-        ]
-        rows.extend(
-            "| "
-            + " | ".join(
-                [
-                    f"[{evidence.evidence_id}]",
-                    _table_cell(evidence.title),
-                    _table_cell(evidence.date),
-                    _table_cell(_primary_source_location(evidence.source_location)),
-                    _table_cell(str(evidence.metadata.get("match_reason") or evidence.snippet or "선택된 근거")),
-                ]
-            )
-            + " |"
-            for evidence in evidence_set.evidence_items
+    source_map_rows = [
+        "| 근거ID | 출처 | 날짜 | 위치 | 왜 중요한지 |",
+        "|---|---|---|---|---|",
+    ]
+    source_map_rows.extend(
+        "| "
+        + " | ".join(
+            [
+                f"[{evidence.evidence_id}]",
+                _table_cell(evidence.title),
+                _table_cell(evidence.date),
+                _table_cell(_primary_source_location(evidence.source_location)),
+                _table_cell(str(evidence.metadata.get("match_reason") or evidence.snippet or "선택된 근거")),
+            ]
         )
-        additions.append("## 출처 지도\n" + "\n".join(rows))
+        + " |"
+        for evidence in evidence_set.evidence_items
+    )
+    source_map_body = "\n".join(source_map_rows)
+    if _has_markdown_heading(content, "출처 지도") and not _source_map_has_date_column(content):
+        content = _replace_section(content, "출처 지도", source_map_body)
+    elif not _has_markdown_heading(content, "출처 지도"):
+        additions.append("## 출처 지도\n" + source_map_body)
     if not _has_markdown_heading(content, "원문 링크"):
         links = [
             f"- [{evidence.evidence_id}] {evidence.title}: {_primary_source_location(evidence.source_location)}"
