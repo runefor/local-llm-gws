@@ -163,6 +163,24 @@ cd python-backend
 
 ## Run Log
 
+### 2026-07-05
+
+- Context: main HEAD(C1~C6 리팩터 머지 후) 검색 품질 기준 통과 확인 게이트. Wiki 생성층 확장 착수 전 정식 기록.
+- Automated checks: passed.
+  - `npm run build`: passed (exit 0).
+  - `cd python-backend && ./.venv/Scripts/python.exe -m unittest discover -s tests`: passed, 124 tests.
+  - `git diff --check`: passed.
+- Real-embedding fixture eval: passed (gate).
+  - `./.venv/Scripts/python.exe tools/eval_rag.py --mode fixture`: exit 0, 20/20 통과 (100%), 실제 `intfloat/multilingual-e5-small`.
+  - recall@12 전건 1.00, duplicate_rate 전건 0.00. `quote_contract_bundle` recall@5 0.33(교차 도메인, 케이스 임계값대로 통과), `contract_deadline_cross_source`·`payment_report_cross_domain` MRR 0.50(임계값 충족).
+  - 리포트: `data/reports/rag_eval_fixture_2026-07-04T18-13-53.372862Z.json`.
+- Live diagnostic: passed (게이트 없음, 진단).
+  - 사전 재색인: 앱 인덱스가 비어 있어(0 chunks) 6개 도메인(계약/회의/결제/보고/채용/견적) 대표 데이터를 인증된 백엔드 API로 재색인. Gmail 24건 선택 벡터화(JIT 원칙 유지) + Drive 2파일 → gmail 74 / drive 55 / total 129 chunks, `bm25_index.pkl` 재생성.
+  - `./.venv/Scripts/python.exe tools/eval_rag.py --mode live`: 6/6 케이스 각 12 결과, duplicate_rate 0.00, missing_source_location_rate 0.00, latency 180–554ms(웜; 첫 쿼리 5989ms는 콜드 모델 로드). `builtin_report_document`(drive-only) gmail 0 / drive 12 → 출처 필터 정상, 교차 출처 누락 없음.
+  - 리포트: `data/reports/rag_eval_live_2026-07-04T18-17-30.305802Z.json`. 문서 내용/snippet 미기록(개인정보).
+- Manual UI smoke: not run. computer-use가 dev WebView2 창을 grant하지 못하고 Chrome 확장이 미연결이라 API 레벨 재색인·평가로 대체했다. 결과 카드·원문 열기 버튼·외부 LLM 경고 모달의 시각 확인은 다음 인터랙티브 세션 과제로 남긴다.
+- 판정: 정량 기준(fixture 20/20 exit 0 + unittest 124건) 통과, 질적 진단(중복 0·위치 누락 0·출처 분리 유지·넓은 결과) 충족 → 검색 품질 기준 통과. 다음 단계(Wiki 생성층 확장) 착수 가능.
+
 ### 2026-06-22
 
 - Automated checks: passed.
