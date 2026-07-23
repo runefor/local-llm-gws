@@ -14,7 +14,22 @@ enum BackendProcess {
 }
 
 impl BackendProcess {
+    fn pid(&self) -> u32 {
+        match self {
+            Self::Debug(child) => child.id(),
+            Self::Sidecar(child) => child.pid(),
+        }
+    }
+
     fn kill(self) {
+        #[cfg(target_os = "windows")]
+        {
+            if kill_process_tree(self.pid()) {
+                return;
+            }
+            eprintln!("Failed to kill backend process tree; falling back to direct child kill.");
+        }
+
         match self {
             Self::Debug(mut child) => {
                 let _ = child.kill();
@@ -24,6 +39,26 @@ impl BackendProcess {
             }
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn process_tree_kill_command(pid: u32) -> Command {
+    let mut command = Command::new("taskkill");
+    command
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(0x08000000);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn kill_process_tree(pid: u32) -> bool {
+    process_tree_kill_command(pid)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 struct BackendState {
@@ -235,4 +270,20 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::process_tree_kill_command;
+
+    #[test]
+    fn process_tree_kill_includes_descendants() {
+        let command = process_tree_kill_command(42);
+        let args = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(args, ["/PID", "42", "/T", "/F"]);
+    }
 }
