@@ -12,14 +12,14 @@ from config import config
 # -----------------------------------------------------------------------
 PRESET_MODELS = [
     {
-        "id": "gemma3-1b",
-        "name": "Gemma 3 1B IT (초고속/구글 안전성)",
-        "repo_id": "bartowski/gemma-3-1b-it-GGUF",
-        "filename": "gemma-3-1b-it-Q4_K_M.gguf",
+        "id": "qwen2.5-0.5b",
+        "name": "Qwen2.5 0.5B Instruct (초경량/공개)",
+        "repo_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
         "profile": "cpu_only",
-        "ram_gb_required": 4,
+        "ram_gb_required": 2,
         "vram_gb_required": 0,
-        "description": "구글의 최신 초경량 1B 모델. 중국어 리스크가 없으며 약 1GB의 적은 메모리로도 빠른 속도를 보여줍니다.",
+        "description": "인증 없이 받을 수 있는 공식 Qwen 초경량 모델. 약 491MB의 Q4_K_M 파일로 한국어를 포함한 다국어 대화를 지원합니다.",
         "category": "recommended",
     },
     {
@@ -149,16 +149,18 @@ def get_hardware_profile() -> HardwareProfile:
 def get_recommended_model_id() -> str:
     """현재 하드웨어 프로파일에 맞는 추천 모델 ID를 반환합니다."""
     hw = get_hardware_profile()
+    lightweight_model_id = "qwen2.5-0.5b"
+
     if hw.ram_gb < 8:
-        return "gemma3-1b"
+        return lightweight_model_id
     tier_map = {
-        "cpu_only":   "llama3.2-3b",
+        "cpu_only":   lightweight_model_id,
         "entry_6gb":  "qwen3.5-9b",
         "mid_8gb":    "gemma4-12b-q4",
         "high_12gb":  "gemma4-12b-q5",
         "ultra_16gb": "deepseek-r1-14b",
     }
-    return tier_map.get(hw.profile_tier, "llama3.2-3b")
+    return tier_map.get(hw.profile_tier, lightweight_model_id)
 
 
 def get_preset_models() -> List[Dict]:
