@@ -102,13 +102,16 @@ class BackendAuditFixTests(unittest.TestCase):
 
             with patch.object(server.config, "MODELS_DIR", models_dir), \
                  patch("src.llm.server._find_binary", return_value=models_dir / "llama-server"), \
-                 patch("src.llm.server.subprocess.Popen", return_value=fake_process), \
+                 patch("src.llm.server.subprocess.Popen", return_value=fake_process) as popen, \
                  patch("src.llm.server._wait_until_ready", return_value=False):
                 result = server.start_server("safe.gguf")
 
             self.assertEqual(result["status"], "error")
             self.assertTrue(fake_process.terminated)
             self.assertEqual(server.get_server_status()["running"], False)
+            command = popen.call_args.args[0]
+            flash_attn_index = command.index("--flash-attn")
+            self.assertEqual(command[flash_attn_index + 1], "auto")
 
     def test_drive_index_empty_fetch_preserves_existing_chunks(self):
         collection = _FakeCollection()

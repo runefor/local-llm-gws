@@ -136,7 +136,7 @@ def start_server(model_filename: str) -> dict:
             "--port", str(port),
             "--ctx-size", "8192",
             "--n-gpu-layers", "99",   # GPU에 최대한 올리기 (없으면 CPU 폴백)
-            "--flash-attn",           # Flash Attention (지원 시 속도 향상)
+            "--flash-attn", "auto",
             "--log-disable",          # 콘솔 로그 억제
         ]
 
