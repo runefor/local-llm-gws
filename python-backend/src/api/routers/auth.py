@@ -1,3 +1,4 @@
+import html
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -6,6 +7,15 @@ from fastapi.responses import HTMLResponse
 from config import config
 
 router = APIRouter()
+
+
+def _html_error(title: str, message: str, status_code: int) -> HTMLResponse:
+    safe_message = html.escape(str(message), quote=True)
+    return HTMLResponse(
+        content=f"<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>{title}</h1><p>{safe_message}</p></div></body></html>",
+        status_code=status_code
+    )
+
 
 @router.get("/api/auth/status")
 def auth_status():
@@ -36,10 +46,7 @@ def auth_callback(request: Request):
         import os
 
         if not _active_flow:
-            return HTMLResponse(
-                content="<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>인증 실패</h1><p>만료되었거나 유효하지 않은 세션입니다. 다시 로그인해 주세요.</p></div></body></html>",
-                status_code=400
-            )
+            return _html_error("인증 실패", "만료되었거나 유효하지 않은 세션입니다. 다시 로그인해 주세요.", 400)
 
         # oauthlib 내부 검증을 위해 http 루프백 허용
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -97,10 +104,7 @@ def auth_callback(request: Request):
         with open(error_log_path, "w", encoding="utf-8") as f:
             f.write(f"콜백 에러 메시지: {str(e)}\n")
             f.write(traceback.format_exc())
-        return HTMLResponse(
-            content=f"<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>인증 오류 발생</h1><p>{str(e)}</p></div></body></html>",
-            status_code=500
-        )
+        return _html_error("인증 오류 발생", str(e), 500)
 
 @router.get("/api/auth/notion/url")
 def get_notion_auth_url():
@@ -118,15 +122,9 @@ def get_notion_auth_url():
 def notion_auth_callback(code: Optional[str] = None, error: Optional[str] = None):
     """노션 OAuth 인증 완료 후 호출되는 콜백입니다."""
     if error:
-        return HTMLResponse(
-            content=f"<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>인증 에러</h1><p>{error}</p></div></body></html>",
-            status_code=400
-        )
+        return _html_error("인증 에러", error, 400)
     if not code:
-        return HTMLResponse(
-            content="<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>인증 실패</h1><p>code 파라미터가 누락되었습니다.</p></div></body></html>",
-            status_code=400
-        )
+        return _html_error("인증 실패", "code 파라미터가 누락되었습니다.", 400)
     
     import base64
     import httpx
@@ -138,10 +136,7 @@ def notion_auth_callback(code: Optional[str] = None, error: Optional[str] = None
     redirect_uri = config.NOTION_REDIRECT_URI
     
     if not client_id or not client_secret:
-        return HTMLResponse(
-            content="<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>서버 설정 에러</h1><p>Notion Client ID 또는 Client Secret 설정이 누락되었습니다.</p></div></body></html>",
-            status_code=500
-        )
+        return _html_error("서버 설정 에러", "Notion Client ID 또는 Client Secret 설정이 누락되었습니다.", 500)
         
     token_url = "https://api.notion.com/v1/oauth/token"
     auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
@@ -159,10 +154,7 @@ def notion_auth_callback(code: Optional[str] = None, error: Optional[str] = None
     try:
         resp = httpx.post(token_url, json=payload, headers=headers, timeout=10.0)
         if resp.status_code != 200:
-            return HTMLResponse(
-                content=f"<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>토큰 발급 실패</h1><p>{resp.text}</p></div></body></html>",
-                status_code=400
-            )
+            return _html_error("토큰 발급 실패", resp.text, 400)
             
         data = resp.json()
         access_token = data.get("access_token")
@@ -197,10 +189,7 @@ def notion_auth_callback(code: Optional[str] = None, error: Optional[str] = None
             """
         )
     except Exception as e:
-        return HTMLResponse(
-            content=f"<html><body><div style='text-align:center;margin-top:100px;font-family:sans-serif;'><h1>오류 발생</h1><p>{str(e)}</p></div></body></html>",
-            status_code=500
-        )
+        return _html_error("오류 발생", str(e), 500)
 
 @router.get("/api/notion/pages")
 def list_notion_pages():

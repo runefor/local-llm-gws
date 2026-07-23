@@ -14,6 +14,7 @@ from config import config
 from src.gws.auth import is_authenticated
 from src.gws.gmail import get_message
 from src.gws.text_cleaner import clean_original_markdown, remove_email_quoted_text
+from src.rag.embedding import collection_name, get_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -31,37 +32,22 @@ def normalize_sources(sources: Optional[List[str]] = None) -> List[str]:
         raise ValueError("최소 하나 이상의 검색 재료를 선택해 주세요. 사용 가능: gmail, drive")
     return normalized
 
-# 임베딩 모델 캐싱
-_embedding_model = None
-
 def clean_rag_text(text: str) -> str:
     """Strip HTML/layout noise before vector storage or search display."""
     cleaned = clean_original_markdown(text)
     return remove_email_quoted_text(cleaned)
 
-def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        from sentence_transformers import SentenceTransformer
-
-        logger.info("SentenceTransformer 모델 로드 중...")
-        _embedding_model = SentenceTransformer("intfloat/multilingual-e5-small")
-    return _embedding_model
-
 def get_chroma_client():
     import chromadb
-    import chromadb.utils.embedding_functions as embedding_functions
     from chromadb.config import Settings
-
-    if not hasattr(embedding_functions, "ONNXMiniLM_L6_V2"):
-        from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
-
-        embedding_functions.ONNXMiniLM_L6_V2 = ONNXMiniLM_L6_V2
 
     return chromadb.PersistentClient(
         path=str(config.CHROMA_DB_PATH),
         settings=Settings(anonymized_telemetry=False)
     )
+
+def get_chroma_collection_name(base_name: str) -> str:
+    return collection_name(base_name)
 
 def get_chroma_collection(client, name: str):
     try:
@@ -583,8 +569,8 @@ def rebuild_bm25_index() -> Dict[str, Any]:
     """ChromaDB의 전체 문서를 읽어 BM25 인덱스를 생성하고 파일로 저장합니다."""
     logger.info("BM25 인덱스 생성 시작...")
     client = get_chroma_client()
-    gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
-    drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
+    gmail_col = get_chroma_collection(client, get_chroma_collection_name(config.CHROMA_COLLECTION_GMAIL))
+    drive_col = get_chroma_collection(client, get_chroma_collection_name(config.CHROMA_COLLECTION_DRIVE))
     
     # ChromaDB에서 모든 문서 가져오기 (충분히 큰 한계값 설정)
     gmail_data = gmail_col.get(limit=10000, include=["documents", "metadatas"])
@@ -646,7 +632,7 @@ def index_gmail_raw(msg_details: List[Dict[str, Any]]) -> int:
     """주어진 Gmail 상세 메시지 리스트를 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
     model = None
-    gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
+    gmail_col = get_chroma_collection(client, get_chroma_collection_name(config.CHROMA_COLLECTION_GMAIL))
     
     gmail_indexed = 0
     for msg_detail in msg_details:
@@ -721,7 +707,7 @@ def index_drive_raw(files: List[Dict[str, Any]]) -> int:
     """주어진 Google Drive 파일 리스트를 다운로드 및 ChromaDB에 인덱싱합니다."""
     client = get_chroma_client()
     model = None
-    drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
+    drive_col = get_chroma_collection(client, get_chroma_collection_name(config.CHROMA_COLLECTION_DRIVE))
     
     drive_indexed = 0
     for f in files:
@@ -828,15 +814,25 @@ def index_all(sources: Optional[List[str]] = None, drive_files: Optional[List[Di
         "timestamp": datetime.now().isoformat()
     }
 
+def _count_collection_chunks(collection: Any, label: str) -> int:
+    try:
+        return collection.count()
+    except Exception as exc:
+        logger.exception("ChromaDB 컬렉션 카운트 실패: %s", label)
+        raise RuntimeError(f"ChromaDB 컬렉션 카운트 실패: {label}") from exc
+
+
 def get_index_status() -> Dict[str, Any]:
     """현재 ChromaDB 인덱스 상태 정보를 조회합니다."""
     try:
         client = get_chroma_client()
-        gmail_col = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
-        drive_col = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
+        gmail_name = get_chroma_collection_name(config.CHROMA_COLLECTION_GMAIL)
+        drive_name = get_chroma_collection_name(config.CHROMA_COLLECTION_DRIVE)
+        gmail_col = get_chroma_collection(client, gmail_name)
+        drive_col = get_chroma_collection(client, drive_name)
         
-        gmail_count = gmail_col.count()
-        drive_count = drive_col.count()
+        gmail_count = _count_collection_chunks(gmail_col, gmail_name)
+        drive_count = _count_collection_chunks(drive_col, drive_name)
         
         return {
             "status": "success",
@@ -845,4 +841,5 @@ def get_index_status() -> Dict[str, Any]:
             "total_chunks": gmail_count + drive_count
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.exception("RAG 인덱스 상태 조회 실패")
+        return {"status": "error", "message": str(e) or e.__class__.__name__}

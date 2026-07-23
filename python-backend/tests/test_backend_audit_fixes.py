@@ -1,7 +1,6 @@
 import json
 import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -12,54 +11,6 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-
-def _install_dependency_stubs() -> None:
-    googleapiclient = types.ModuleType("googleapiclient")
-    discovery = types.ModuleType("googleapiclient.discovery")
-    setattr(discovery, "build", lambda *args, **kwargs: None)
-    setattr(googleapiclient, "discovery", discovery)
-    sys.modules.setdefault("googleapiclient", googleapiclient)
-    sys.modules.setdefault("googleapiclient.discovery", discovery)
-
-    google = types.ModuleType("google")
-    google_auth = types.ModuleType("google.auth")
-    google_auth_transport = types.ModuleType("google.auth.transport")
-    google_auth_requests = types.ModuleType("google.auth.transport.requests")
-    setattr(google_auth_requests, "Request", lambda *args, **kwargs: None)
-    google_oauth2 = types.ModuleType("google.oauth2")
-    google_oauth2_credentials = types.ModuleType("google.oauth2.credentials")
-    credentials = type("Credentials", (), {"from_authorized_user_file": staticmethod(lambda *args, **kwargs: None)})
-    setattr(google_oauth2_credentials, "Credentials", credentials)
-    google_auth_oauthlib = types.ModuleType("google_auth_oauthlib")
-    google_auth_oauthlib_flow = types.ModuleType("google_auth_oauthlib.flow")
-    flow = type("Flow", (), {"from_client_secrets_file": staticmethod(lambda *args, **kwargs: None)})
-    setattr(google_auth_oauthlib_flow, "Flow", flow)
-    sys.modules.setdefault("google", google)
-    sys.modules.setdefault("google.auth", google_auth)
-    sys.modules.setdefault("google.auth.transport", google_auth_transport)
-    sys.modules.setdefault("google.auth.transport.requests", google_auth_requests)
-    sys.modules.setdefault("google.oauth2", google_oauth2)
-    sys.modules.setdefault("google.oauth2.credentials", google_oauth2_credentials)
-    sys.modules.setdefault("google_auth_oauthlib", google_auth_oauthlib)
-    sys.modules.setdefault("google_auth_oauthlib.flow", google_auth_oauthlib_flow)
-
-    chromadb = types.ModuleType("chromadb")
-    setattr(chromadb, "PersistentClient", lambda *args, **kwargs: None)
-    chromadb_config = types.ModuleType("chromadb.config")
-    setattr(chromadb_config, "Settings", lambda *args, **kwargs: None)
-    sys.modules.setdefault("chromadb", chromadb)
-    sys.modules.setdefault("chromadb.config", chromadb_config)
-
-    markdownify = types.ModuleType("markdownify")
-    setattr(markdownify, "markdownify", lambda value: value)
-    sys.modules.setdefault("markdownify", markdownify)
-
-    rank_bm25 = types.ModuleType("rank_bm25")
-    setattr(rank_bm25, "BM25Okapi", lambda *args, **kwargs: None)
-    sys.modules.setdefault("rank_bm25", rank_bm25)
-
-
-_install_dependency_stubs()
 
 import main
 from src import evidence, settings, wiki_conditions
@@ -87,7 +38,7 @@ class _FakeCollection:
 
 
 class _FakeClient:
-    def __init__(self, collection: _FakeCollection) -> None:
+    def __init__(self, collection: object) -> None:
         self.collection = collection
 
     def get_or_create_collection(self, name):
@@ -172,6 +123,18 @@ class BackendAuditFixTests(unittest.TestCase):
         self.assertIsNone(collection.deleted_ids)
         self.assertIsNone(collection.upsert_payload)
         get_embedding_model.assert_not_called()
+
+    def test_index_status_reports_collection_count_failure(self):
+        class FailingCollection:
+            def count(self):
+                raise StopIteration()
+
+        with patch("src.rag.indexer.get_chroma_client", return_value=_FakeClient(FailingCollection())):
+            status = indexer.get_index_status()
+
+        self.assertEqual(status["status"], "error")
+        self.assertIn("컬렉션 카운트 실패", status["message"])
+        self.assertNotIn("total_chunks", status)
 
     def test_originless_settings_get_masks_notion_api_key(self):
         client = TestClient(main.app)

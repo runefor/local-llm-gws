@@ -10,6 +10,7 @@ $RepoRoot = Split-Path -Parent $ScriptDir
 $BackendDir = Join-Path $RepoRoot "python-backend"
 $TauriBinDir = Join-Path $RepoRoot "src-tauri\bin"
 $SidecarBaseName = "gws-backend"
+$ReleaseRequirements = Join-Path $BackendDir "requirements-release.txt"
 
 if (-not $env:UV_CACHE_DIR) {
     $env:UV_CACHE_DIR = Join-Path $RepoRoot ".uv-cache"
@@ -42,7 +43,7 @@ function Resolve-TargetTriple {
 }
 
 function Resolve-ExecutableSuffix {
-    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    if ($env:OS -eq "Windows_NT" -or [System.Environment]::OSVersion.Platform -eq "Win32NT") {
         return ".exe"
     }
 
@@ -75,11 +76,10 @@ try {
             Invoke-CheckedNative { uv venv } "uv venv"
         }
 
-        Invoke-CheckedNative { uv pip install -r requirements.txt } "uv pip install requirements"
-        Invoke-CheckedNative { uv pip install pyinstaller } "uv pip install pyinstaller"
+        Invoke-CheckedNative { uv pip install -r $ReleaseRequirements } "uv pip install release requirements"
     }
 
-    Invoke-CheckedNative { uv run pyinstaller --noconfirm --clean --onefile --collect-all chromadb --name $SidecarBaseName main.py } "PyInstaller"
+    Invoke-CheckedNative { uv run pyinstaller --noconfirm --clean gws-backend.spec } "PyInstaller"
 }
 finally {
     Pop-Location

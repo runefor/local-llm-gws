@@ -41,12 +41,11 @@ def get_auth_url_and_start_server():
     global _active_flow
     
     with _auth_lock:
-        if not os.path.exists(config.CREDENTIALS_PATH):
-            raise FileNotFoundError(f"OAuth 자격증명 파일이 없습니다: {config.CREDENTIALS_PATH}")
+        client_config_path = config.resolve_google_client_config_path()
             
         # 백엔드 자체 포트(18731)를 콜백 엔드포인트로 설정
         flow = Flow.from_client_secrets_file(
-            config.CREDENTIALS_PATH, 
+            client_config_path,
             scopes=SCOPES,
             redirect_uri="http://localhost:18731/api/auth/callback"
         )
@@ -79,4 +78,3 @@ def is_authenticated():
     except Exception:
         return False
     return False
-

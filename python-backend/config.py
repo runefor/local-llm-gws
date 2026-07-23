@@ -2,6 +2,7 @@ import os
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 if getattr(sys, "frozen", False):
@@ -39,6 +40,64 @@ class Config:
     def __init__(self):
         # JSON 기반 사용자 설정 파일 우선 로드 및 오버라이드
         self.load_user_config()
+
+    def _validate_google_client_config(self, path: Path) -> None:
+        required = ("client_id", "client_secret", "auth_uri", "token_uri")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Google OAuth 설정 파일이 올바른 JSON이 아닙니다: {path}") from e
+        except OSError as e:
+            raise FileNotFoundError(f"Google OAuth 설정 파일을 읽을 수 없습니다: {path}") from e
+
+        if not isinstance(data, dict):
+            raise ValueError("Google OAuth 설정 파일의 최상위 값은 객체여야 합니다.")
+
+        installed = data.get("installed")
+        if not isinstance(installed, dict):
+            raise ValueError("Google OAuth 설정 파일에 installed 객체가 없습니다.")
+
+        missing = [
+            field
+            for field in required
+            if not isinstance(installed.get(field), str) or not installed[field].strip()
+        ]
+        if missing:
+            raise ValueError(f"Google OAuth 설정 파일에 필수 항목이 없습니다: {', '.join(missing)}")
+
+        redirects = installed.get("redirect_uris")
+        if not isinstance(redirects, list) or not any(
+            isinstance(uri, str)
+            and (parsed := urlparse(uri)).scheme == "http"
+            and parsed.hostname in {"localhost", "127.0.0.1"}
+            for uri in redirects
+        ):
+            raise ValueError("Google OAuth 설정 파일에 loopback redirect_uris 항목이 없습니다.")
+
+    def resolve_google_client_config_path(self) -> Path:
+        user_path = Path(self.CREDENTIALS_PATH)
+        if user_path.exists():
+            self._validate_google_client_config(user_path)
+            return user_path
+
+        if getattr(sys, "frozen", False):
+            bundle_root = getattr(sys, "_MEIPASS", None)
+            if not bundle_root:
+                raise FileNotFoundError("앱의 Google OAuth 설정 경로를 확인할 수 없습니다.")
+            bundled_path = Path(bundle_root) / "client_secrets.json"
+            if bundled_path.exists():
+                self._validate_google_client_config(bundled_path)
+                return bundled_path
+            raise FileNotFoundError(
+                "앱에 Google OAuth 설정 파일이 포함되어 있지 않습니다. "
+                "릴리스 빌드 입력 GOOGLE_OAUTH_CLIENT_CONFIG_PATH를 확인해 주세요."
+            )
+
+        raise FileNotFoundError(
+            f"Google OAuth 설정 파일이 없습니다. 개발 환경에서는 {user_path}에 "
+            "Desktop OAuth client JSON을 저장해 주세요."
+        )
 
     def load_user_config(self):
         if self.USER_CONFIG_PATH.exists():

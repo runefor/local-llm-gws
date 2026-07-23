@@ -27,7 +27,6 @@ dist-ssr
 python-backend/venv/
 python-backend/.venv/
 python-backend/build/
-python-backend/gws-backend.spec
 **/__pycache__/
 *.pyc
 *.pyo

@@ -1,123 +1,144 @@
 param (
-    [switch]$Force
+    [switch]$Force,
+    [string]$ArchivePath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$BinDir = Join-Path -Path $PSScriptRoot -ChildPath "..\src-tauri\bin"
-$TempDir = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "llama_cpp_temp"
-
-# Ensure bin directory exists
-if (-not (Test-Path -Path $BinDir)) {
-    New-Item -ItemType Directory -Path $BinDir | Out-Null
-    Write-Host "Created directory: $BinDir"
-}
-
-# Required files
+$LlamaTag = "b10088"
+$AssetName = "llama-b10088-bin-win-vulkan-x64.zip"
+$ArchiveSha256 = "ced37906bfa57dca6079b0e66163edc4f319b43ba8260bda5427fbd20a08324b"
+$DownloadUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$LlamaTag/$AssetName"
 $RequiredFiles = @(
     "llama-server.exe",
-    "ggml-vulkan.dll",
+    "ggml.dll",
     "ggml-base.dll",
+    "ggml-cpu-alderlake.dll",
+    "ggml-cpu-cannonlake.dll",
+    "ggml-cpu-cascadelake.dll",
+    "ggml-cpu-cooperlake.dll",
+    "ggml-cpu-haswell.dll",
+    "ggml-cpu-icelake.dll",
+    "ggml-cpu-ivybridge.dll",
+    "ggml-cpu-piledriver.dll",
+    "ggml-cpu-sandybridge.dll",
+    "ggml-cpu-sapphirerapids.dll",
+    "ggml-cpu-skylakex.dll",
+    "ggml-cpu-sse42.dll",
+    "ggml-cpu-x64.dll",
+    "ggml-cpu-zen4.dll",
+    "ggml-rpc.dll",
+    "ggml-vulkan.dll",
+    "libomp140.x86_64.dll",
     "llama.dll",
-    "ggml.dll"
+    "llama-common.dll",
+    "llama-server-impl.dll",
+    "mtmd.dll"
 )
 
-# Check if files already exist
-$AllExist = $true
-foreach ($file in $RequiredFiles) {
-    if (-not (Test-Path -Path (Join-Path -Path $BinDir -ChildPath $file))) {
-        $AllExist = $false
-        break
+$BinDir = Join-Path -Path $PSScriptRoot -ChildPath "..\src-tauri\bin"
+$ManifestPath = Join-Path -Path $BinDir -ChildPath "llama-manifest.json"
+$TempDir = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "llama_cpp_$([System.Guid]::NewGuid().ToString('N'))"
+
+function Assert-LlamaArchiveHash {
+    param([string]$Path)
+
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host "llama.cpp tag: $LlamaTag"
+    Write-Host "llama.cpp asset: $AssetName"
+    Write-Host "Expected SHA256: $ArchiveSha256"
+    Write-Host "Actual SHA256:   $actual"
+    if ($actual -ne $ArchiveSha256) {
+        throw "llama.cpp archive SHA256 mismatch."
     }
+    return $actual
 }
 
-if ($AllExist -and -not $Force) {
-    Write-Host "llama-server and required DLLs already exist in $BinDir."
-    Write-Host "Use -Force to redownload and overwrite."
+function Test-PreparedInventory {
+    if (-not (Test-Path -LiteralPath $ManifestPath)) {
+        return $false
+    }
+
+    try {
+        $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+
+    if ($manifest.tag -ne $LlamaTag -or
+        $manifest.asset -ne $AssetName -or
+        $manifest.expectedSha256 -ne $ArchiveSha256 -or
+        $manifest.actualSha256 -ne $ArchiveSha256) {
+        return $false
+    }
+
+    foreach ($file in $RequiredFiles) {
+        if (-not (Test-Path -LiteralPath (Join-Path -Path $BinDir -ChildPath $file))) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+if ((-not $Force) -and (Test-PreparedInventory)) {
+    Write-Host "Pinned llama.cpp $LlamaTag inventory already exists in $BinDir."
     exit 0
 }
 
-Write-Host "Fetching latest release information from GitHub..."
-$ApiUrl = "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
 try {
-    $ReleaseInfo = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing
-} catch {
-    Write-Error "Failed to fetch release info: $_"
-    exit 1
+    New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+    $zipPath = Join-Path -Path $TempDir -ChildPath $AssetName
+
+    if ($ArchivePath.Trim().Length -gt 0) {
+        $resolvedArchive = (Resolve-Path -LiteralPath $ArchivePath).Path
+        Copy-Item -LiteralPath $resolvedArchive -Destination $zipPath -Force
+        Write-Host "Using supplied llama.cpp archive."
+    } else {
+        Write-Host "Downloading pinned llama.cpp archive: $DownloadUrl"
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath -UseBasicParsing
+    }
+
+    $actualHash = Assert-LlamaArchiveHash -Path $zipPath
+
+    $ExtractDir = Join-Path -Path $TempDir -ChildPath "extract"
+    New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $ExtractDir -Force
+
+    $server = Get-ChildItem -LiteralPath $ExtractDir -Recurse -File -Filter "llama-server.exe" |
+        Select-Object -First 1
+    if ($null -eq $server) {
+        throw "llama-server.exe was not found in $AssetName."
+    }
+
+    $BuildDirPath = $server.Directory.FullName
+    foreach ($file in $RequiredFiles) {
+        $source = Join-Path -Path $BuildDirPath -ChildPath $file
+        if (-not (Test-Path -LiteralPath $source)) {
+            throw "Required llama.cpp file missing from archive: $file"
+        }
+    }
+
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    foreach ($file in $RequiredFiles) {
+        Copy-Item -LiteralPath (Join-Path -Path $BuildDirPath -ChildPath $file) `
+            -Destination (Join-Path -Path $BinDir -ChildPath $file) -Force
+        Write-Host "Copied $file"
+    }
+
+    $manifest = [ordered]@{
+        tag = $LlamaTag
+        asset = $AssetName
+        expectedSha256 = $ArchiveSha256
+        actualSha256 = $actualHash
+        files = $RequiredFiles
+    }
+    $manifest | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
+    Write-Host "Wrote llama.cpp manifest: $ManifestPath"
+    Write-Host "Done. Pinned llama.cpp $LlamaTag is ready."
 }
-
-$DownloadUrl = $null
-$AssetName = $null
-
-foreach ($asset in $ReleaseInfo.assets) {
-    if ($asset.name -match "llama-.*-bin-win-vulkan-x64\.zip") {
-        $DownloadUrl = $asset.browser_download_url
-        $AssetName = $asset.name
-        break
+finally {
+    if (Test-Path -LiteralPath $TempDir) {
+        Remove-Item -LiteralPath $TempDir -Recurse -Force
     }
 }
-
-if (-not $DownloadUrl) {
-    Write-Error "Could not find Vulkan Windows x64 build in the latest release."
-    exit 1
-}
-
-Write-Host "Found asset: $AssetName"
-
-if (Test-Path -Path $TempDir) {
-    Remove-Item -Path $TempDir -Recurse -Force
-}
-New-Item -ItemType Directory -Path $TempDir | Out-Null
-
-$ZipPath = Join-Path -Path $TempDir -ChildPath $AssetName
-
-Write-Host "Downloading $DownloadUrl ..."
-Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing
-
-Write-Host "Extracting archive..."
-Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
-
-$BuildDirPath = $null
-$SubDirs = Get-ChildItem -Path $TempDir -Directory
-foreach ($dir in $SubDirs) {
-    if ($dir.Name -match "llama-.*-bin-win-vulkan-x64") {
-        $BuildDirPath = $dir.FullName
-        break
-    }
-}
-
-if (-not $BuildDirPath) {
-    # If it extracted directly to TempDir without a subfolder
-    $BuildDirPath = $TempDir
-}
-
-Write-Host "Copying files to $BinDir..."
-# 1. Copy llama-server.exe
-$ExeFile = "llama-server.exe"
-$SourceExe = Join-Path -Path $BuildDirPath -ChildPath $ExeFile
-$DestExe = Join-Path -Path $BinDir -ChildPath $ExeFile
-if (Test-Path -Path $SourceExe) {
-    Copy-Item -Path $SourceExe -Destination $DestExe -Force
-    Write-Host "Copied $ExeFile"
-} else {
-    Write-Warning "Could not find $ExeFile in the extracted archive."
-}
-
-# 2. Copy all DLL files dynamically
-$DllFiles = Get-ChildItem -Path $BuildDirPath -Filter *.dll
-if ($DllFiles) {
-    foreach ($dll in $DllFiles) {
-        $SourceDll = $dll.FullName
-        $DestDll = Join-Path -Path $BinDir -ChildPath $dll.Name
-        Copy-Item -Path $SourceDll -Destination $DestDll -Force
-        Write-Host "Copied $($dll.Name)"
-    }
-} else {
-    Write-Warning "No DLL files found in the extracted archive."
-}
-
-Write-Host "Cleaning up temporary files..."
-Remove-Item -Path $TempDir -Recurse -Force
-
-Write-Host "Done! llama-server is ready."
-exit 0

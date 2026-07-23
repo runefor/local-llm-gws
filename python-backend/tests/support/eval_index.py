@@ -9,6 +9,7 @@ from typing import Any, Dict, cast
 config = importlib.import_module("config").config
 _indexer = importlib.import_module("src.rag.indexer")
 get_chroma_collection = _indexer.get_chroma_collection
+get_chroma_collection_name = _indexer.get_chroma_collection_name
 tokenize_text = _indexer.tokenize_text
 
 
@@ -58,8 +59,8 @@ def build_fixture_index(tmp_dir: Path, corpus: list[dict[str, Any]]) -> tuple[An
         path=str(tmp_dir),
         settings=Settings(anonymized_telemetry=False),
     )
-    gmail_collection = get_chroma_collection(client, config.CHROMA_COLLECTION_GMAIL)
-    drive_collection = get_chroma_collection(client, config.CHROMA_COLLECTION_DRIVE)
+    gmail_collection = get_chroma_collection(client, get_chroma_collection_name(config.CHROMA_COLLECTION_GMAIL))
+    drive_collection = get_chroma_collection(client, get_chroma_collection_name(config.CHROMA_COLLECTION_DRIVE))
     embedder = FakeDeterministicEmbedder()
 
     chunks = []
